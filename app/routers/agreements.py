@@ -1,0 +1,553 @@
+"""Agreement generation + signing endpoints for invite flows and owner Master POA."""
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi.responses import Response
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.invitation import Invitation
+from app.models.user import User
+from app.models.agreement_signature import AgreementSignature
+from app.models.owner_poa_signature import OwnerPOASignature
+from app.schemas.agreements import (
+    AgreementDocResponse,
+    AgreementSignRequest,
+    AgreementSignResponse,
+    OwnerPOADocResponse,
+    OwnerPOASignRequest,
+    OwnerPOASignatureResponse,
+)
+from app.services.agreements import (
+    build_invitation_agreement,
+    build_owner_poa_document,
+    fill_guest_signature_in_content,
+    agreement_content_to_pdf,
+    poa_content_with_signature,
+)
+from app.services.audit_log import create_log, CATEGORY_GUEST_SIGNATURE, CATEGORY_STATUS_CHANGE, CATEGORY_FAILED_ATTEMPT
+from app.services.notifications import send_email
+from app.services.dropbox_sign import send_signature_request, get_signed_pdf
+from app.dependencies import require_owner
+
+router = APIRouter(prefix="/agreements", tags=["agreements"])
+
+
+@router.get("/invitation/{invitation_code}", response_model=AgreementDocResponse)
+def get_invitation_agreement(
+    invitation_code: str,
+    guest_full_name: str | None = Query(None),
+    guest_email: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    doc = build_invitation_agreement(db, invitation_code=invitation_code, guest_full_name=guest_full_name)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Invitation not found or not pending")
+
+    content = doc.content
+    already_signed = False
+    signed_at = None
+    signed_by = None
+    signature_id = None
+    has_dropbox_signed_pdf = False
+
+    email_clean = guest_email.strip().lower() if guest_email else ""
+    if email_clean:
+        sig = (
+            db.query(AgreementSignature)
+            .filter(
+                AgreementSignature.invitation_code == invitation_code.strip().upper(),
+                AgreementSignature.guest_email == email_clean,
+            )
+            .order_by(AgreementSignature.signed_at.desc())
+            .first()
+        )
+        if sig:
+            already_signed = True
+            signed_at = sig.signed_at
+            signed_by = sig.typed_signature
+            signature_id = sig.id
+            has_dropbox_signed_pdf = bool(getattr(sig, "dropbox_sign_request_id", None) or getattr(sig, "signed_pdf_bytes", None))
+            date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+            content = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str)
+
+    return AgreementDocResponse(
+        document_id=doc.document_id,
+        region_code=doc.region_code,
+        title=doc.title,
+        content=content,
+        document_hash=doc.document_hash,
+        property_address=doc.property_address,
+        stay_start_date=doc.stay_start_date,
+        stay_end_date=doc.stay_end_date,
+        host_name=doc.host_name,
+        already_signed=already_signed,
+        signed_at=signed_at,
+        signed_by=signed_by,
+        signature_id=signature_id,
+        has_dropbox_signed_pdf=has_dropbox_signed_pdf,
+    )
+
+
+@router.get("/invitation/{invitation_code}/pdf")
+def get_invitation_agreement_pdf(
+    invitation_code: str,
+    guest_full_name: str | None = Query(None),
+    guest_email: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Return the agreement as a PDF. If guest_email is provided and a signature exists, the PDF includes the signature."""
+    doc = build_invitation_agreement(db, invitation_code=invitation_code, guest_full_name=guest_full_name)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Invitation not found or not pending")
+
+    content = doc.content
+    email_clean = guest_email.strip().lower() if guest_email else ""
+    if email_clean:
+        sig = (
+            db.query(AgreementSignature)
+            .filter(
+                AgreementSignature.invitation_code == invitation_code.strip().upper(),
+                AgreementSignature.guest_email == email_clean,
+            )
+            .order_by(AgreementSignature.signed_at.desc())
+            .first()
+        )
+        if sig:
+            date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+            content = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str)
+
+    pdf_bytes = agreement_content_to_pdf(doc.title, content)
+    filename = f"DocuStay-Agreement-{invitation_code.strip().upper()}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+@router.post("/sign", response_model=AgreementSignResponse)
+def sign_invitation_agreement(
+    req: Request,
+    data: AgreementSignRequest,
+    db: Session = Depends(get_db),
+):
+    code = (data.invitation_code or "").strip().upper()
+    inv = db.query(Invitation).filter(Invitation.invitation_code == code, Invitation.status == "pending").first()
+    if not inv:
+        create_log(
+            db,
+            CATEGORY_FAILED_ATTEMPT,
+            "Agreement sign: invalid or expired invitation",
+            f"Sign attempt with invalid or expired invitation code: {code}.",
+            property_id=None,
+            invitation_id=None,
+            actor_email=data.guest_email,
+            ip_address=req.client.host if req.client else None,
+            user_agent=(req.headers.get("user-agent") or "").strip() or None,
+            meta={"invitation_code_attempted": code},
+        )
+        db.commit()
+        raise HTTPException(status_code=400, detail="Invalid or expired invitation code")
+
+    doc = build_invitation_agreement(db, invitation_code=code, guest_full_name=data.guest_full_name)
+    if not doc:
+        raise HTTPException(status_code=400, detail="Agreement could not be generated")
+    if (data.document_hash or "").strip().lower() != doc.document_hash.lower():
+        create_log(
+            db,
+            CATEGORY_FAILED_ATTEMPT,
+            "Agreement sign: document hash mismatch",
+            f"Sign attempt with outdated document hash for invitation {code}. Stale agreement copy.",
+            property_id=inv.property_id,
+            invitation_id=inv.id,
+            actor_email=data.guest_email,
+            ip_address=req.client.host if req.client else None,
+            user_agent=(req.headers.get("user-agent") or "").strip() or None,
+            meta={"invitation_code": code, "expected_hash": doc.document_hash},
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail="Agreement has changed. Please reopen and sign again.")
+
+    ip = (req.client.host if req.client else None) or None
+    ua = (req.headers.get("user-agent") or "").strip() or None
+
+    sig = AgreementSignature(
+        invitation_code=code,
+        region_code=doc.region_code,
+        guest_email=str(data.guest_email).strip().lower(),
+        guest_full_name=data.guest_full_name.strip(),
+        typed_signature=data.typed_signature.strip(),
+        signature_method="typed",
+        acks_read=data.acks.read,
+        acks_temporary=data.acks.temporary,
+        acks_vacate=data.acks.vacate,
+        acks_electronic=data.acks.electronic,
+        document_id=doc.document_id,
+        document_title=doc.title,
+        document_hash=doc.document_hash,
+        document_content=doc.content,
+        ip_address=ip,
+        user_agent=ua[:400] if ua else None,
+    )
+    db.add(sig)
+    db.commit()
+    db.refresh(sig)
+
+    date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+    content_with_sig = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str)
+    sig.signed_pdf_bytes = agreement_content_to_pdf(doc.title, content_with_sig)
+    db.commit()
+
+    create_log(
+        db,
+        CATEGORY_GUEST_SIGNATURE,
+        "Agreement signed",
+        f"Guest signed agreement for invitation {code}: {sig.guest_full_name} <{sig.guest_email}>, signature_id={sig.id}.",
+        property_id=inv.property_id,
+        invitation_id=inv.id,
+        actor_email=sig.guest_email,
+        ip_address=ip,
+        user_agent=ua,
+        meta={"signature_id": sig.id, "invitation_code": code, "document_id": doc.document_id},
+    )
+    db.commit()
+
+    owner = db.query(User).filter(User.id == inv.owner_id).first()
+    owner_email = (owner.email if owner else None) or None
+    subject = f"[DocuStay] Agreement signed for invitation {code}"
+
+    text = (
+        f"DocuStay Agreement Signed\n\n"
+        f"Invitation: {code}\n"
+        f"Region: {doc.region_code}\n"
+        f"Guest: {sig.guest_full_name} <{sig.guest_email}>\n"
+        f"Signed At: {sig.signed_at}\n"
+        f"IP: {sig.ip_address or '-'}\n\n"
+        f"Document ID: {doc.document_id}\n"
+        f"Document Hash: {doc.document_hash}\n\n"
+        f"{doc.content}\n"
+    )
+    html = (
+        f"<p><strong>DocuStay Agreement Signed</strong></p>"
+        f"<p><strong>Invitation:</strong> {code}<br/>"
+        f"<strong>Region:</strong> {doc.region_code}<br/>"
+        f"<strong>Guest:</strong> {sig.guest_full_name} &lt;{sig.guest_email}&gt;</p>"
+        f"<p><strong>Document ID:</strong> {doc.document_id}<br/>"
+        f"<strong>Document Hash:</strong> {doc.document_hash}</p>"
+        f"<pre style='white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace'>{doc.content}</pre>"
+    )
+
+    # Fire-and-forget: sending failures should not block signature recording.
+    try:
+        send_email(sig.guest_email, subject, html_content=html, text_content=text)
+        if owner_email and owner_email.lower() != sig.guest_email.lower():
+            send_email(owner_email, subject, html_content=html, text_content=text)
+    except Exception:
+        pass
+
+    return AgreementSignResponse(signature_id=sig.id)
+
+
+@router.post("/sign-with-dropbox", response_model=AgreementSignResponse)
+def sign_invitation_agreement_with_dropbox(
+    req: Request,
+    data: AgreementSignRequest,
+    db: Session = Depends(get_db),
+):
+    """Record signature and send the agreement to Dropbox Sign. Signer receives email to sign; signed PDF available once complete."""
+    code = (data.invitation_code or "").strip().upper()
+    inv = db.query(Invitation).filter(Invitation.invitation_code == code, Invitation.status == "pending").first()
+    if not inv:
+        create_log(
+            db,
+            CATEGORY_FAILED_ATTEMPT,
+            "Agreement sign (Dropbox): invalid or expired invitation",
+            f"Sign attempt with invalid or expired invitation code: {code}.",
+            property_id=None,
+            invitation_id=None,
+            actor_email=data.guest_email,
+            ip_address=req.client.host if req.client else None,
+            user_agent=(req.headers.get("user-agent") or "").strip() or None,
+            meta={"invitation_code_attempted": code},
+        )
+        db.commit()
+        raise HTTPException(status_code=400, detail="Invalid or expired invitation code")
+
+    doc = build_invitation_agreement(db, invitation_code=code, guest_full_name=data.guest_full_name)
+    if not doc:
+        raise HTTPException(status_code=400, detail="Agreement could not be generated")
+    if (data.document_hash or "").strip().lower() != doc.document_hash.lower():
+        create_log(
+            db,
+            CATEGORY_FAILED_ATTEMPT,
+            "Agreement sign (Dropbox): document hash mismatch",
+            f"Sign attempt with outdated document hash for invitation {code}.",
+            property_id=inv.property_id,
+            invitation_id=inv.id,
+            actor_email=data.guest_email,
+            ip_address=req.client.host if req.client else None,
+            user_agent=(req.headers.get("user-agent") or "").strip() or None,
+            meta={"invitation_code": code, "expected_hash": doc.document_hash},
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail="Agreement has changed. Please reopen and sign again.")
+
+    ip = (req.client.host if req.client else None) or None
+    ua = (req.headers.get("user-agent") or "").strip() or None
+
+    sig = AgreementSignature(
+        invitation_code=code,
+        region_code=doc.region_code,
+        guest_email=str(data.guest_email).strip().lower(),
+        guest_full_name=data.guest_full_name.strip(),
+        typed_signature=data.typed_signature.strip(),
+        signature_method="typed",
+        acks_read=data.acks.read,
+        acks_temporary=data.acks.temporary,
+        acks_vacate=data.acks.vacate,
+        acks_electronic=data.acks.electronic,
+        document_id=doc.document_id,
+        document_title=doc.title,
+        document_hash=doc.document_hash,
+        document_content=doc.content,
+        ip_address=ip,
+        user_agent=ua[:400] if ua else None,
+    )
+    db.add(sig)
+    db.commit()
+    db.refresh(sig)
+
+    date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+    content_with_sig = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str)
+    sig.signed_pdf_bytes = agreement_content_to_pdf(doc.title, content_with_sig)
+    db.commit()
+
+    create_log(
+        db,
+        CATEGORY_GUEST_SIGNATURE,
+        "Agreement signed (Dropbox Sign)",
+        f"Guest signed agreement via Dropbox Sign for invitation {code}: {sig.guest_full_name} <{sig.guest_email}>, signature_id={sig.id}.",
+        property_id=inv.property_id,
+        invitation_id=inv.id,
+        actor_email=sig.guest_email,
+        ip_address=ip,
+        user_agent=ua,
+        meta={"signature_id": sig.id, "invitation_code": code, "document_id": doc.document_id},
+    )
+    db.commit()
+
+    pdf_bytes = agreement_content_to_pdf(doc.title, doc.content)
+    request_id = send_signature_request(
+        pdf_bytes,
+        title=doc.title,
+        signer_email=sig.guest_email,
+        signer_name=sig.guest_full_name,
+    )
+    if request_id:
+        sig.dropbox_sign_request_id = request_id
+        db.commit()
+
+    return AgreementSignResponse(signature_id=sig.id)
+
+
+@router.get("/signature/{signature_id}/signed-pdf")
+def get_signed_agreement_pdf(
+    signature_id: int,
+    db: Session = Depends(get_db),
+):
+    """Return the signed PDF: from DB if stored, else from Dropbox Sign if available, else generate and store."""
+    sig = db.query(AgreementSignature).filter(AgreementSignature.id == signature_id).first()
+    if not sig:
+        raise HTTPException(status_code=404, detail="Signed PDF not available")
+
+    if sig.signed_pdf_bytes:
+        return Response(
+            content=sig.signed_pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
+        )
+    if sig.dropbox_sign_request_id:
+        pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
+        if pdf_bytes:
+            sig.signed_pdf_bytes = pdf_bytes
+            db.commit()
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
+            )
+
+    date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+    content = fill_guest_signature_in_content(sig.document_content, sig.typed_signature, date_str)
+    pdf_bytes = agreement_content_to_pdf(sig.document_title, content)
+    sig.signed_pdf_bytes = pdf_bytes
+    db.commit()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
+    )
+
+
+# --- Owner Master POA (onboarding) ---
+
+@router.get("/owner-poa", response_model=OwnerPOADocResponse)
+def get_owner_poa_document(
+    owner_email: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get the Master POA document for owner signup. If owner_email is provided and that email has already signed, returns already_signed and signature_id."""
+    doc_id, title, content, doc_hash = build_owner_poa_document()
+    already_signed = False
+    signed_at = None
+    signed_by = None
+    signature_id = None
+    has_dropbox_signed_pdf = False
+    if owner_email and (owner_email or "").strip():
+        email_clean = owner_email.strip().lower()
+        sig = (
+            db.query(OwnerPOASignature)
+            .filter(OwnerPOASignature.owner_email == email_clean)
+            .order_by(OwnerPOASignature.signed_at.desc())
+            .first()
+        )
+        if sig:
+            already_signed = True
+            signed_at = sig.signed_at
+            signed_by = sig.typed_signature
+            signature_id = sig.id
+            has_dropbox_signed_pdf = bool(getattr(sig, "dropbox_sign_request_id", None) or getattr(sig, "signed_pdf_bytes", None))
+    return OwnerPOADocResponse(
+        document_id=doc_id,
+        title=title,
+        content=content,
+        document_hash=doc_hash,
+        already_signed=already_signed,
+        signed_at=signed_at,
+        signed_by=signed_by,
+        signature_id=signature_id,
+        has_dropbox_signed_pdf=has_dropbox_signed_pdf,
+    )
+
+
+@router.post("/owner-poa/sign-with-dropbox", response_model=AgreementSignResponse)
+def sign_owner_poa_with_dropbox(
+    req: Request,
+    data: OwnerPOASignRequest,
+    db: Session = Depends(get_db),
+):
+    """Record Master POA signature and send to Dropbox Sign. Used during owner signup (no auth)."""
+    doc_id, title, content, doc_hash = build_owner_poa_document()
+    if (data.document_hash or "").strip().lower() != doc_hash.lower():
+        raise HTTPException(status_code=409, detail="Document has changed. Please refresh and sign again.")
+    ip = (req.client.host if req.client else None) or None
+    ua = (req.headers.get("user-agent") or "").strip() or None
+    sig = OwnerPOASignature(
+        owner_email=str(data.owner_email).strip().lower(),
+        owner_full_name=data.owner_full_name.strip(),
+        typed_signature=data.typed_signature.strip(),
+        signature_method="typed",
+        acks_read=data.acks.read,
+        acks_temporary=data.acks.temporary,
+        acks_vacate=data.acks.vacate,
+        acks_electronic=data.acks.electronic,
+        document_id=doc_id,
+        document_title=title,
+        document_hash=doc_hash,
+        document_content=content,
+        ip_address=ip,
+        user_agent=ua[:400] if ua else None,
+    )
+    db.add(sig)
+    db.commit()
+    db.refresh(sig)
+
+    date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+    content_with_sig = poa_content_with_signature(content, sig.typed_signature, date_str)
+    sig.signed_pdf_bytes = agreement_content_to_pdf(title, content_with_sig)
+    db.commit()
+
+    create_log(
+        db,
+        CATEGORY_STATUS_CHANGE,
+        "Master POA signed",
+        f"Owner signed Master POA: {sig.owner_full_name} <{sig.owner_email}>, signature_id={sig.id}.",
+        actor_email=sig.owner_email,
+        ip_address=ip,
+        user_agent=ua,
+        meta={"signature_id": sig.id, "document_id": doc_id},
+    )
+    db.commit()
+    pdf_bytes = agreement_content_to_pdf(title, content)
+    request_id = send_signature_request(
+        pdf_bytes,
+        title=title,
+        signer_email=sig.owner_email,
+        signer_name=sig.owner_full_name,
+        subject="DocuStay – Please sign the Master Power of Attorney",
+        message="Please sign the Master POA to complete your owner account registration.",
+    )
+    if request_id:
+        sig.dropbox_sign_request_id = request_id
+        db.commit()
+    return AgreementSignResponse(signature_id=sig.id)
+
+
+@router.get("/owner-poa/my-signature", response_model=OwnerPOASignatureResponse | None)
+def get_my_owner_poa_signature(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner),
+):
+    """Return the current owner's Master POA signature (for Settings)."""
+    sig = (
+        db.query(OwnerPOASignature)
+        .filter(OwnerPOASignature.used_by_user_id == current_user.id)
+        .order_by(OwnerPOASignature.signed_at.desc())
+        .first()
+    )
+    if not sig:
+        return None
+    return OwnerPOASignatureResponse(
+        signature_id=sig.id,
+        signed_at=sig.signed_at,
+        signed_by=sig.typed_signature,
+        document_title=sig.document_title,
+        document_id=sig.document_id,
+        has_dropbox_signed_pdf=bool(getattr(sig, "dropbox_sign_request_id", None) or getattr(sig, "signed_pdf_bytes", None)),
+    )
+
+
+@router.get("/owner-poa/signature/{signature_id}/signed-pdf")
+def get_owner_poa_signed_pdf(
+    signature_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner),
+):
+    """Return the signed Master POA PDF: from DB if stored, else Dropbox, else generate and store."""
+    sig = db.query(OwnerPOASignature).filter(OwnerPOASignature.id == signature_id).first()
+    if not sig or sig.used_by_user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Signed PDF not available")
+
+    if sig.signed_pdf_bytes:
+        return Response(
+            content=sig.signed_pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'inline; filename="DocuStay-Master-POA-Signed.pdf"'},
+        )
+    if sig.dropbox_sign_request_id:
+        pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
+        if pdf_bytes:
+            sig.signed_pdf_bytes = pdf_bytes
+            db.commit()
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": 'inline; filename="DocuStay-Master-POA-Signed.pdf"'},
+            )
+
+    date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+    content_with_sig = poa_content_with_signature(sig.document_content, sig.typed_signature, date_str)
+    pdf_bytes = agreement_content_to_pdf(sig.document_title, content_with_sig)
+    sig.signed_pdf_bytes = pdf_bytes
+    db.commit()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="DocuStay-Master-POA-Signed.pdf"'},
+    )
+
