@@ -1,0 +1,7 @@
+{
+  "name": "DocuStay AI - Secure Property Protection",
+  "description": "A legal-tech platform for property owners and guests to manage temporary stays securely, preventing squatter rights through AI-verified identity and jurisdiction-aware legal limits.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
