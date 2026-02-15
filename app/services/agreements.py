@@ -279,13 +279,23 @@ def poa_content_with_signature(content: str, signer_name: str, signed_date: str)
     return content.rstrip() + f"\n\nSigned by {signer_name} on {signed_date}"
 
 
+def _escape_for_reportlab(s: str) -> str:
+    """Escape text for ReportLab Paragraph (XML-like markup)."""
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def agreement_content_to_pdf(title: str, content: str) -> bytes:
-    """Generate a PDF from agreement title and content using reportlab."""
+    """Generate a PDF from agreement title and content using reportlab. Content wraps to page width and is justified."""
     from io import BytesIO
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.enums import TA_JUSTIFY
     from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Preformatted
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -297,7 +307,17 @@ def agreement_content_to_pdf(title: str, content: str) -> bytes:
         bottomMargin=0.75 * inch,
     )
     styles = getSampleStyleSheet()
-    story = [Paragraph(title.replace("\n", " "), styles["Title"]), Spacer(1, 0.2 * inch)]
-    story.append(Preformatted(content, styles["Normal"]))
+    title_style = styles["Title"]
+    body_style = styles["Normal"].clone("JustifiedBody", alignment=TA_JUSTIFY, spaceAfter=6)
+
+    story = [Paragraph(_escape_for_reportlab(title.replace("\n", " ")), title_style), Spacer(1, 0.2 * inch)]
+
+    for line in content.splitlines():
+        line = line.strip()
+        if line:
+            story.append(Paragraph(_escape_for_reportlab(line), body_style))
+        else:
+            story.append(Spacer(1, 0.12 * inch))
+
     doc.build(story)
     return buf.getvalue()

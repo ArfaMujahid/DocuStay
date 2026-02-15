@@ -31,27 +31,62 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
   const [showLinkResult, setShowLinkResult] = useState(false);
   const [properties, setProperties] = useState<Array<{ id: number; name: string | null; street: string; city: string; state: string; zip_code: string | null }>>([]);
   const [propertyId, setPropertyId] = useState<number | null>(null);
+  const [propertiesLoading, setPropertiesLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setShowLinkResult(false);
       setInviteLink('');
       setFormData({ guest_name: '', checkin_date: '', checkout_date: '' });
+      setPropertiesLoading(false);
       return;
     }
-    propertiesApi.list()
+    // When opening from a property page, preselect that property immediately so the form is usable
+    if (initialPropertyId != null) {
+      setPropertyId(initialPropertyId);
+    }
+    setPropertiesLoading(true);
+    propertiesApi
+      .list()
       .then((list) => {
         setProperties(list);
         if (list.length > 0) {
-          const preferred = initialPropertyId != null && list.some((p) => p.id === initialPropertyId)
-            ? initialPropertyId
-            : list[0].id;
+          const preferred =
+            initialPropertyId != null && list.some((p) => p.id === initialPropertyId)
+              ? initialPropertyId
+              : list[0].id;
           setPropertyId(preferred);
+        } else if (initialPropertyId != null) {
+          // List empty but we came from a property page: fetch this property so the form can show it
+          propertiesApi
+            .get(initialPropertyId)
+            .then((prop) => {
+              setProperties([prop]);
+              setPropertyId(prop.id);
+            })
+            .catch(() => {})
+            .finally(() => setPropertiesLoading(false));
+          return;
         } else {
           setPropertyId(null);
         }
+        setPropertiesLoading(false);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (initialPropertyId != null) {
+          propertiesApi
+            .get(initialPropertyId)
+            .then((prop) => {
+              setProperties([prop]);
+              setPropertyId(prop.id);
+            })
+            .catch(() => {})
+            .finally(() => setPropertiesLoading(false));
+        } else {
+          setPropertiesLoading(false);
+        }
+      });
   }, [open, initialPropertyId]);
 
   const selectedProperty = properties.find((p) => p.id === propertyId);
@@ -70,7 +105,7 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
       notify('error', 'End date must be after start date.');
       return;
     }
-    setLoading(true);
+    setSubmitting(true);
     try {
       const result = await invitationsApi.create({
         owner_id: user?.user_id ?? '',
@@ -79,7 +114,6 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
         checkin_date: formData.checkin_date,
         checkout_date: formData.checkout_date,
       });
-      setLoading(false);
       if (result.status === 'success' && result.data?.invitation_code) {
         notify('success', 'Invitation link generated.');
         const link = `${window.location.origin}${window.location.pathname}#invite/${result.data.invitation_code}`;
@@ -90,8 +124,9 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
         notify('error', result.message || 'Invitation failed.');
       }
     } catch (err) {
-      setLoading(false);
       notify('error', (err as Error)?.message || 'Invitation failed.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -108,7 +143,13 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="Invite a guest" className="max-w-lg">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Invite a guest"
+      className="max-w-lg"
+      disableBackdropClose={submitting || showLinkResult}
+    >
       <div className="p-6">
         {showLinkResult ? (
           <div className="space-y-4">
@@ -125,7 +166,9 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Property</label>
-              {properties.length === 0 ? (
+              {propertiesLoading && properties.length === 0 ? (
+                <p className="text-sm text-slate-500 py-2">Loading property…</p>
+              ) : properties.length === 0 ? (
                 <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
                   <p className="text-sm text-amber-800">Add a property first.</p>
                   <Button variant="outline" type="button" onClick={() => { handleClose(); navigate('add-property'); }} className="shrink-0">Add property</Button>
@@ -166,8 +209,10 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
             <p className="text-xs text-slate-500">Dead Man&apos;s Switch is always on: if the stay end date passes without you updating (checkout or renewal), you&apos;ll get alerts 48h before and on the end date, then the system will auto-set the property to vacant and activate utility lock after 48h. Alerts are sent by email and dashboard notification.</p>
 
             <div className="flex gap-3 pt-2">
-              <Button variant="outline" type="button" onClick={handleClose} className="flex-1">Cancel</Button>
-              <Button type="submit" className="flex-1" disabled={properties.length === 0}>Generate invite link</Button>
+              <Button variant="outline" type="button" onClick={handleClose} className="flex-1" disabled={submitting}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={properties.length === 0 || submitting}>
+                {submitting ? 'Generating…' : 'Generate invite link'}
+              </Button>
             </div>
           </form>
         )}

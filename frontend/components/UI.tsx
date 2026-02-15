@@ -105,11 +105,13 @@ export const Modal: React.FC<{
   children: React.ReactNode;
   onClose: () => void;
   className?: string;
-}> = ({ open, title, children, onClose, className }) => {
+  /** When true, clicking the backdrop does not close the modal (e.g. while submitting or showing result) */
+  disableBackdropClose?: boolean;
+}> = ({ open, title, children, onClose, className, disableBackdropClose = false }) => {
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-[100]">
-      <div className="absolute inset-0 bg-black/20" onClick={onClose} aria-hidden="true" />
+      <div className="absolute inset-0 bg-black/20" onClick={disableBackdropClose ? undefined : onClose} aria-hidden="true" />
       <div className="absolute inset-0 p-4 flex items-center justify-center pointer-events-none">
         <div className={`w-full max-w-4xl bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden pointer-events-auto ${className || ""}`} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">

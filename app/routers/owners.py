@@ -1,15 +1,17 @@
 """Module B1: Owner onboarding."""
+import csv
+import io
 import secrets
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
-from app.models.owner import OwnerProfile, Property, USAT_TOKEN_STAGED, USAT_TOKEN_RELEASED
+from app.models.owner import OwnerProfile, Property, PropertyType, USAT_TOKEN_STAGED, USAT_TOKEN_RELEASED
 from app.models.invitation import Invitation
 from app.models.guest import PurposeOfStay, RelationshipToOwner
-from app.schemas.owner import PropertyCreate, PropertyResponse, PropertyUpdate, ReleaseUsatTokenRequest
+from app.schemas.owner import BulkUploadResult, PropertyCreate, PropertyResponse, PropertyUpdate, ReleaseUsatTokenRequest
 from app.dependencies import get_current_user, require_owner
 from app.models.stay import Stay
 from app.models.guest import GuestProfile
@@ -86,6 +88,7 @@ def list_my_properties(
 
 @router.post("/properties", response_model=PropertyResponse)
 def add_property(
+    request: Request,
     data: PropertyCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_owner),
@@ -128,9 +131,239 @@ def add_property(
     else:
         prop.usat_token = _generate_usat_token() + "-" + str(prop.id)
         prop.usat_token_state = USAT_TOKEN_STAGED
+
+    property_display = (data.property_name or "").strip() or f"{street}, {data.city}, {data.state}".strip(", ")
+    create_log(
+        db,
+        CATEGORY_STATUS_CHANGE,
+        "Property registered",
+        f"Owner registered property: {property_display} (id={prop.id}).",
+        property_id=prop.id,
+        actor_user_id=current_user.id,
+        actor_email=current_user.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=(request.headers.get("user-agent") or "").strip() or None,
+        meta={"property_id": prop.id, "street": street, "city": data.city, "state": data.state, "region_code": region},
+    )
     db.commit()
     db.refresh(prop)
     return PropertyResponse.model_validate(prop)
+
+
+def _normalize_addr(s: str | None) -> str:
+    """Normalize for address matching: strip, collapse spaces, upper."""
+    if not s or not isinstance(s, str):
+        return ""
+    return " ".join(s.strip().split()).upper()
+
+
+def _parse_bool_cell(val: str | None) -> bool:
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return False
+    v = (val.strip().lower() if isinstance(val, str) else str(val)).lower()
+    return v in ("1", "true", "yes", "y")
+
+
+@router.post("/properties/bulk-upload", response_model=BulkUploadResult)
+def bulk_upload_properties(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner),
+):
+    """Upload properties via CSV. Required columns: street_address (or street), city, state. Optional: property_name, zip_code, region_code, property_type, bedrooms, is_primary_residence. Existing properties matched by (street, city, state) are updated only when values change; empty optional cells keep existing values."""
+    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="No owner profile")
+
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a CSV file.")
+
+    content = b""
+    try:
+        content = file.file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read file: {e!s}")
+    if not content:
+        raise HTTPException(status_code=400, detail="File is empty.")
+
+    try:
+        text = content.decode("utf-8-sig").strip()
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.")
+
+    reader = csv.DictReader(io.StringIO(text))
+    orig_headers = list(reader.fieldnames or [])
+    norm_to_orig = {h.strip().lower().replace(" ", "_"): h for h in orig_headers}
+    rows = list(reader)
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV has no data rows.")
+
+    created = 0
+    updated = 0
+    failed_from_row = None
+    failure_reason = None
+    existing_props: list[Property] = (
+        db.query(Property)
+        .filter(
+            Property.owner_profile_id == profile.id,
+            Property.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    def _get_cell(row: dict, *keys: str) -> str | None:
+        for k in keys:
+            orig = norm_to_orig.get(k) or norm_to_orig.get(k.replace("_", ""))
+            if orig and row.get(orig) is not None:
+                v = str(row[orig]).strip()
+                if v:
+                    return v
+        return None
+
+    for idx, row in enumerate(rows, start=1):
+        row_num = idx
+        street = _get_cell(row, "street_address", "street")
+        city = _get_cell(row, "city")
+        state = _get_cell(row, "state")
+
+        if not street:
+            failed_from_row = row_num
+            failure_reason = "Missing required column: street_address or street."
+            break
+        if not city:
+            failed_from_row = row_num
+            failure_reason = "Missing required column: city."
+            break
+        if not state:
+            failed_from_row = row_num
+            failure_reason = "Missing required column: state."
+            break
+
+        state_upper = state.upper()[:50]
+        city_norm = _normalize_addr(city)
+        street_norm = _normalize_addr(street)
+        if not city_norm or not street_norm:
+            failed_from_row = row_num
+            failure_reason = "street, city, and state cannot be blank after trimming."
+            break
+
+        zip_code = _get_cell(row, "zip_code")
+        region_raw = _get_cell(row, "region_code")
+        region_code = (region_raw or state_upper).upper()[:20]
+        property_type_label = _get_cell(row, "property_type")
+        bedrooms = _get_cell(row, "bedrooms")
+        if bedrooms is not None:
+            bedrooms = bedrooms[:10]
+        is_primary = _parse_bool_cell(_get_cell(row, "is_primary_residence"))
+        property_name = _get_cell(row, "property_name")
+
+        property_type_enum = None
+        if property_type_label:
+            pl = property_type_label.lower().strip()
+            if pl in ("entire_home", "entire home"):
+                property_type_enum = PropertyType.entire_home
+            elif pl in ("private_room", "private room"):
+                property_type_enum = PropertyType.private_room
+
+        state_norm = _normalize_addr(state)
+        existing_match = None
+        for p in existing_props:
+            if _normalize_addr(p.street) == street_norm and _normalize_addr(p.city) == city_norm and _normalize_addr(p.state) == state_norm:
+                existing_match = p
+                break
+
+        if existing_match is None:
+            prop = Property(
+                owner_profile_id=profile.id,
+                name=property_name,
+                street=street.strip(),
+                city=city.strip(),
+                state=state_upper,
+                zip_code=zip_code,
+                region_code=region_code,
+                owner_occupied=is_primary,
+                property_type=property_type_enum,
+                property_type_label=property_type_label,
+                bedrooms=bedrooms,
+            )
+            db.add(prop)
+            db.flush()
+            for _ in range(10):
+                token = "USAT-" + secrets.token_hex(12).upper()
+                if db.query(Property).filter(Property.usat_token == token).first() is None:
+                    prop.usat_token = token
+                    prop.usat_token_state = USAT_TOKEN_STAGED
+                    break
+            else:
+                prop.usat_token = "USAT-" + secrets.token_hex(8).upper() + "-" + str(prop.id)
+                prop.usat_token_state = USAT_TOKEN_STAGED
+            created += 1
+            property_display = (property_name or "").strip() or f"{street.strip()}, {city.strip()}, {state_upper}".strip(", ")
+            create_log(
+                db,
+                CATEGORY_STATUS_CHANGE,
+                "Property registered",
+                f"Owner registered property via bulk upload: {property_display} (id={prop.id}, row {row_num}).",
+                property_id=prop.id,
+                actor_user_id=current_user.id,
+                actor_email=current_user.email,
+                ip_address=request.client.host if request.client else None,
+                user_agent=(request.headers.get("user-agent") or "").strip() or None,
+                meta={"property_id": prop.id, "bulk_upload_row": row_num, "street": street.strip(), "city": city.strip(), "state": state_upper},
+            )
+            db.commit()
+            db.refresh(prop)
+            existing_props.append(prop)
+        else:
+            updates = {}
+            if property_name is not None and (existing_match.name or "").strip() != property_name:
+                updates["name"] = property_name
+            if street.strip() != (existing_match.street or "").strip():
+                updates["street"] = street.strip()
+            if city.strip() != (existing_match.city or "").strip():
+                updates["city"] = city.strip()
+            if state_upper != (existing_match.state or "").strip():
+                updates["state"] = state_upper
+            if zip_code is not None and (existing_match.zip_code or "").strip() != (zip_code or "").strip():
+                updates["zip_code"] = zip_code or None
+            if region_raw is not None and (existing_match.region_code or "").strip() != (region_code or "").strip():
+                updates["region_code"] = region_code
+            if is_primary != existing_match.owner_occupied:
+                updates["owner_occupied"] = is_primary
+            if property_type_enum is not None and existing_match.property_type != property_type_enum:
+                updates["property_type"] = property_type_enum
+            if property_type_label is not None and (existing_match.property_type_label or "").strip() != (property_type_label or "").strip():
+                updates["property_type_label"] = property_type_label or None
+            if bedrooms is not None and (existing_match.bedrooms or "").strip() != (bedrooms or "").strip():
+                updates["bedrooms"] = bedrooms
+
+            for key, val in updates.items():
+                if key == "name":
+                    existing_match.name = val
+                elif key == "street":
+                    existing_match.street = val
+                elif key == "city":
+                    existing_match.city = val
+                elif key == "state":
+                    existing_match.state = val
+                elif key == "zip_code":
+                    existing_match.zip_code = val
+                elif key == "region_code":
+                    existing_match.region_code = val.upper()[:20]
+                elif key == "owner_occupied":
+                    existing_match.owner_occupied = val
+                elif key == "property_type":
+                    existing_match.property_type = val
+                elif key == "property_type_label":
+                    existing_match.property_type_label = val
+                elif key == "bedrooms":
+                    existing_match.bedrooms = val
+            if updates:
+                updated += 1
+            db.commit()
+
+    return BulkUploadResult(created=created, updated=updated, failed_from_row=failed_from_row, failure_reason=failure_reason)
 
 
 @router.get("/properties/{property_id}", response_model=PropertyResponse)

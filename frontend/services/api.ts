@@ -380,6 +380,13 @@ export interface Property {
   shield_mode_enabled?: boolean;
 }
 
+export interface BulkUploadResult {
+  created: number;
+  updated: number;
+  failed_from_row: number | null;
+  failure_reason: string | null;
+}
+
 export const propertiesApi = {
   /** Active properties only (dashboard main list and invite dropdown). */
   list: () => request<Property[]>("/owners/properties"),
@@ -425,6 +432,39 @@ export const propertiesApi = {
   /** Reactivate an inactive (soft-deleted) property. */
   reactivate: (id: number) =>
     request<Property>(`/owners/properties/${id}/reactivate`, { method: "POST" }),
+  /** Bulk upload properties from CSV. Returns created/updated counts and first failure row if any. */
+  bulkUpload: async (file: File): Promise<BulkUploadResult> => {
+    const token = getToken();
+    const headers: HeadersInit = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_URL}/owners/properties/bulk-upload`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    if (res.status === 401) {
+      setToken(null);
+      if (typeof window !== "undefined") {
+        window.location.hash = "login";
+        window.location.reload();
+      }
+      throw new Error("Session expired. Please log in again.");
+    }
+    const text = await res.text();
+    if (!res.ok) {
+      let detail = text;
+      try {
+        const j = JSON.parse(text);
+        detail = Array.isArray(j.detail) ? j.detail.map((d: any) => d.msg || d).join(", ") : (j.detail || text);
+      } catch {
+        // use text
+      }
+      throw new Error(detail);
+    }
+    return text ? JSON.parse(text) : { created: 0, updated: 0, failed_from_row: null, failure_reason: null };
+  },
   /** Release USAT token to the selected guest stay(s). Only those guests will see the token. */
   releaseUsatToken: (propertyId: number, stayIds: number[]) =>
     request<Property>(`/owners/properties/${propertyId}/release-usat-token`, {

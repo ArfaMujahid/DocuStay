@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
-import { Card, Button, Modal } from '../../components/UI';
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, Button, Modal, LoadingOverlay } from '../../components/UI';
 import { InviteGuestModal } from '../../components/InviteGuestModal';
 import { UserSession } from '../../types';
-import { dashboardApi, propertiesApi, type OwnerStayView, type OwnerInvitationView, type OwnerAuditLogEntry, type Property } from '../../services/api';
+import { dashboardApi, propertiesApi, type OwnerStayView, type OwnerInvitationView, type OwnerAuditLogEntry, type Property, type BulkUploadResult } from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
 import Settings from '../Settings/Settings';
 import HelpCenter from '../Support/HelpCenter';
@@ -33,8 +33,8 @@ function formatStayDuration(startStr: string, endStr: string): string {
   return `${fmt(start)} – ${fmt(end)} (${days} day${days !== 1 ? 's' : ''})`;
 }
 
-const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => void; setLoading?: (l: boolean) => void; notify?: (t: 'success' | 'error', m: string) => void }> = ({ user, navigate, setLoading = (_l: boolean) => {}, notify = (_t: 'success' | 'error', _m: string) => {} }) => {
-  const [activeTab, setActiveTab] = useState('dashboard');
+const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => void; setLoading?: (l: boolean) => void; notify?: (t: 'success' | 'error', m: string) => void; initialTab?: string }> = ({ user, navigate, setLoading = (_l: boolean) => {}, notify = (_t: 'success' | 'error', _m: string) => {}, initialTab }) => {
+  const [activeTab, setActiveTab] = useState(initialTab ?? 'dashboard');
   const [stays, setStays] = useState<OwnerStayView[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [inactiveProperties, setInactiveProperties] = useState<Property[]>([]);
@@ -59,6 +59,11 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
   const [logsCategory, setLogsCategory] = useState('');
   const [logsSearch, setLogsSearch] = useState('');
   const [logMessageModalEntry, setLogMessageModalEntry] = useState<OwnerAuditLogEntry | null>(null);
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+  const [showBulkUploadRulesModal, setShowBulkUploadRulesModal] = useState(false);
+  const [bulkUploadResult, setBulkUploadResult] = useState<BulkUploadResult | null>(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const bulkUploadFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const setLoadingWrapper = (x: boolean) => { setLoadingState(x); setLoading(x); };
 
@@ -88,6 +93,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   const releaseTokenToSelected = async () => {
     if (!releaseTokenModal || releaseTokenSelectedStayIds.length === 0) return;
@@ -154,8 +163,8 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
 
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
-      {/* Sidebar Navigation */}
-      <aside className="hidden lg:flex w-72 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 p-6">
+      {/* Sidebar Navigation (fixed width so it does not shrink) */}
+      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 p-6">
         <div className="space-y-2 flex-shrink-0">
           {[
             { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -225,12 +234,30 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 {activeTab === 'properties' ? 'View, edit, or remove your registered properties.' : activeTab === 'guests' ? 'Guests currently staying at your properties and their stay details.' : activeTab === 'invitations' ? 'Pending invitations waiting for guests to accept.' : activeTab === 'logs' ? 'Immutable audit trail: status changes, guest signatures, and failed attempts. Filter by time, category, or search.' : 'Protecting your properties with AI Enforcement.'}
               </p>
             </div>
-            <div className="flex gap-4">
+            <div className="flex gap-4 flex-wrap items-center">
               {activeTab !== 'properties' && (
                 <Button variant="outline" onClick={() => setShowInviteModal(true)} className="px-6 flex items-center gap-2">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
                   Invite Guest
                 </Button>
+              )}
+              {activeTab === 'properties' && (
+                <div className="flex items-center gap-1.5">
+                  <Button variant="outline" onClick={() => setShowBulkUploadModal(true)} className="px-6 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    Upload in bulk
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkUploadRulesModal(true)}
+                    className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                    aria-label="Bulk upload rules"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                  </button>
+                </div>
               )}
               <Button variant="primary" onClick={() => navigate('add-property')} className="px-6">
                 Register Property
@@ -858,21 +885,26 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                               <span>Region: <span className="text-slate-600 font-medium">{prop.region_code}</span></span>
                             </div>
                           </div>
-                          <Button
-                            variant="outline"
-                            onClick={async () => {
-                              try {
-                                await propertiesApi.reactivate(prop.id);
-                                notify('success', 'Property reactivated. It appears in Active properties and in the invite list again.');
-                                loadData();
-                              } catch (e) {
-                                notify('error', (e as Error)?.message ?? 'Failed to reactivate.');
-                              }
-                            }}
-                            className="px-4 flex-shrink-0"
-                          >
-                            Reactivate
-                          </Button>
+                          <div className="flex flex-wrap gap-3 flex-shrink-0">
+                            <Button variant="outline" onClick={() => navigate(`property/${prop.id}`)} className="px-4">
+                              View
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={async () => {
+                                try {
+                                  await propertiesApi.reactivate(prop.id);
+                                  notify('success', 'Property reactivated. It appears in Active properties and in the invite list again.');
+                                  loadData();
+                                } catch (e) {
+                                  notify('error', (e as Error)?.message ?? 'Failed to reactivate.');
+                                }
+                              }}
+                              className="px-4"
+                            >
+                              Reactivate
+                            </Button>
+                          </div>
                         </div>
                       </Card>
                     );
@@ -1108,6 +1140,110 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
           </>
         )}
       </main>
+
+      {/* Bulk upload rules modal (opened by info icon) */}
+      <Modal
+        open={showBulkUploadRulesModal}
+        title="Bulk upload rules"
+        onClose={() => setShowBulkUploadRulesModal(false)}
+        className="max-w-lg"
+      >
+        <div className="px-6 py-4 space-y-3 text-slate-600 text-sm">
+          <p><strong>Required columns:</strong> <code className="bg-slate-100 px-1 rounded">street_address</code> (or <code className="bg-slate-100 px-1 rounded">street</code>), <code className="bg-slate-100 px-1 rounded">city</code>, <code className="bg-slate-100 px-1 rounded">state</code>.</p>
+          <p><strong>Optional columns:</strong> <code className="bg-slate-100 px-1 rounded">property_name</code>, <code className="bg-slate-100 px-1 rounded">zip_code</code>, <code className="bg-slate-100 px-1 rounded">region_code</code>, <code className="bg-slate-100 px-1 rounded">property_type</code>, <code className="bg-slate-100 px-1 rounded">bedrooms</code>, <code className="bg-slate-100 px-1 rounded">is_primary_residence</code> (true/false).</p>
+          <p>Existing properties (same street, city, state) are updated only when values change. Empty optional cells keep existing values.</p>
+          <p>If the upload fails partway, rows before the failure are saved.</p>
+        </div>
+      </Modal>
+
+      {/* Bulk upload modal */}
+      <Modal
+        open={showBulkUploadModal}
+        title="Upload properties in bulk"
+        onClose={() => !bulkUploading && setShowBulkUploadModal(false)}
+        className="max-w-lg"
+      >
+        <div className="px-6 py-4 space-y-4">
+          <p className="text-slate-600 text-sm">
+            Use a CSV file with the following columns. <strong>Required:</strong> <code className="bg-slate-100 px-1 rounded">street_address</code> (or <code className="bg-slate-100 px-1 rounded">street</code>), <code className="bg-slate-100 px-1 rounded">city</code>, <code className="bg-slate-100 px-1 rounded">state</code>. <strong>Optional:</strong> <code className="bg-slate-100 px-1 rounded">property_name</code>, <code className="bg-slate-100 px-1 rounded">zip_code</code>, <code className="bg-slate-100 px-1 rounded">region_code</code>, <code className="bg-slate-100 px-1 rounded">property_type</code>, <code className="bg-slate-100 px-1 rounded">bedrooms</code>, <code className="bg-slate-100 px-1 rounded">is_primary_residence</code> (true/false).
+          </p>
+          <p className="text-xs text-slate-500">
+            Existing properties (same street, city, state) are updated only when values change. Empty optional cells keep existing values. If the upload fails partway, rows before the failure are saved.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const header = 'property_name,street_address,city,state,zip_code,region_code,property_type,bedrooms,is_primary_residence';
+                const example = 'Beach House,123 Ocean Ave,Miami,FL,33139,FL,entire_home,2,false';
+                const blob = new Blob([header + '\n' + example], { type: 'text/csv' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'properties_template.csv';
+                a.click();
+                URL.revokeObjectURL(a.href);
+              }}
+            >
+              Download CSV template
+            </Button>
+            <Button
+              variant="primary"
+              disabled={bulkUploading}
+              onClick={() => bulkUploadFileInputRef.current?.click()}
+            >
+              Choose CSV file
+            </Button>
+            <input
+              ref={bulkUploadFileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (!file) return;
+                setShowBulkUploadModal(false);
+                setBulkUploading(true);
+                try {
+                  const result = await propertiesApi.bulkUpload(file);
+                  setBulkUploadResult(result);
+                  loadData();
+                } catch (err) {
+                  notify('error', (err as Error)?.message ?? 'Bulk upload failed.');
+                } finally {
+                  setBulkUploading(false);
+                }
+              }}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Bulk upload result modal */}
+      <Modal
+        open={bulkUploadResult !== null}
+        title={bulkUploadResult?.failed_from_row == null ? 'Bulk upload complete' : 'Bulk upload partially completed'}
+        onClose={() => setBulkUploadResult(null)}
+        className="max-w-md"
+      >
+        <div className="px-6 py-4 space-y-4">
+          {bulkUploadResult != null && (
+            bulkUploadResult.failed_from_row == null ? (
+              <p className="text-slate-600 text-sm">
+                <strong>{bulkUploadResult.created}</strong> propert{bulkUploadResult.created === 1 ? 'y' : 'ies'} created, <strong>{bulkUploadResult.updated}</strong> updated.
+              </p>
+            ) : (
+              <p className="text-slate-600 text-sm">
+                Properties until row <strong>{bulkUploadResult.failed_from_row - 1}</strong> were uploaded successfully (<strong>{bulkUploadResult.created}</strong> created, <strong>{bulkUploadResult.updated}</strong> updated). The rest failed from row <strong>{bulkUploadResult.failed_from_row}</strong>: {bulkUploadResult.failure_reason ?? 'Unknown error.'}
+              </p>
+            )
+          )}
+          <Button onClick={() => setBulkUploadResult(null)}>Done</Button>
+        </div>
+      </Modal>
+
+      {/* Loading overlay while bulk upload is processing */}
+      {bulkUploading && <LoadingOverlay message="Uploading properties…" />}
 
       {/* Remove property (soft-delete) confirmation modal */}
       {deleteConfirmProperty && (

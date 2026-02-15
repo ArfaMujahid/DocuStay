@@ -43,6 +43,14 @@ class ReleaseUsatTokenRequest(BaseModel):
     stay_ids: list[int] = []  # at least one required; validated in endpoint
 
 
+class BulkUploadResult(BaseModel):
+    """Result of CSV bulk upload: counts and first failure info."""
+    created: int = 0
+    updated: int = 0
+    failed_from_row: int | None = None  # 1-based; None if all succeeded
+    failure_reason: str | None = None
+
+
 class PropertyResponse(BaseModel):
     id: int
     name: str | None

@@ -149,7 +149,15 @@ const App: React.FC = () => {
         {view === 'verify' && state.pendingVerification && <VerifyContact verification={state.pendingVerification} navigate={navigate} setLoading={setLoading} notify={showNotification} onVerified={(user) => setState(prev => ({ ...prev, user }))} />}
         
         {/* Owner Dashboard Views */}
-        {view === 'dashboard' && state.user?.user_type === UserType.PROPERTY_OWNER && <OwnerDashboard user={state.user} navigate={navigate} setLoading={setLoading} notify={showNotification} />}
+        {(view === 'dashboard' || view === 'dashboard/properties') && state.user?.user_type === UserType.PROPERTY_OWNER && (
+          <OwnerDashboard
+            user={state.user}
+            navigate={navigate}
+            setLoading={setLoading}
+            notify={showNotification}
+            initialTab={view === 'dashboard/properties' ? 'properties' : undefined}
+          />
+        )}
         {view === 'add-property' && <AddProperty user={state.user} navigate={navigate} setLoading={setLoading} notify={showNotification} />}
         {view === 'settings' && <Settings user={state.user} navigate={navigate} />}
         {view === 'help' && <HelpCenter navigate={navigate} />}
