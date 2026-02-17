@@ -10,7 +10,6 @@ import VerifyContact from './pages/Auth/VerifyContact';
 import OwnerDashboard from './pages/Owner/OwnerDashboard';
 import AddProperty from './pages/Owner/AddProperty';
 import RegisterFromInvite from './pages/Guest/RegisterFromInvite';
-import IdentityVerification from './pages/Guest/IdentityVerification';
 import { GuestDashboard } from './pages/Guest/GuestDashboard';
 import { PropertyDetail } from './pages/Owner/PropertyDetail';
 import SignAgreement from './pages/Guest/SignAgreement';
@@ -68,7 +67,13 @@ const App: React.FC = () => {
       }
       const hash = window.location.hash;
       if (hash) {
-        setView(hashToView(hash));
+        const viewName = hashToView(hash);
+        if (viewName === 'guest-identity') {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search + '#guest-dashboard');
+          setView('guest-dashboard');
+          return;
+        }
+        setView(viewName);
         return;
       }
       if (window.location.pathname === '/onboarding/identity-complete') {
@@ -259,7 +264,6 @@ const App: React.FC = () => {
         
         {/* Guest Flow Views */}
         {view === 'guest-dashboard' && state.user?.user_type === UserType.GUEST && <GuestDashboard user={state.user} navigate={navigate} notify={showNotification} />}
-        {view === 'guest-identity' && state.user?.user_type === UserType.GUEST && <IdentityVerification user={state.user} navigate={navigate} setLoading={setLoading} notify={showNotification} />}
         {view === 'sign-agreement' && state.user?.user_type === UserType.GUEST && <SignAgreement user={state.user} navigate={navigate} notify={showNotification} />}
 
         {/* Home / Default – also fallback when hash is a protected route but user not loaded (avoids blank page) */}

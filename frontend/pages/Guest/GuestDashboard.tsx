@@ -586,7 +586,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
             <div className="bg-slate-50 p-4 rounded-xl mb-6 inline-block">
               <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=DocuStay-Stay-${selectedStay?.stay_id ?? 0}`} alt="QR Code" className="w-48 h-48 rounded-lg" />
             </div>
-            <p className="text-xs text-slate-500">For identity verification and access. Does not grant tenancy.</p>
+            <p className="text-xs text-slate-500">For access. Does not grant tenancy.</p>
           </div>
         </div>
       )}
