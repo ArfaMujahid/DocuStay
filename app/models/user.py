@@ -10,6 +10,12 @@ class UserRole(str, enum.Enum):
     guest = "guest"
 
 
+class OwnerType(str, enum.Enum):
+    """Owner of Record vs Authorized Agent (e.g. property manager)."""
+    owner_of_record = "owner_of_record"
+    authorized_agent = "authorized_agent"
+
+
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (UniqueConstraint("email", "role", name="uq_users_email_role"),)
@@ -28,6 +34,14 @@ class User(Base):
     email_verified = Column(Boolean, default=False, nullable=False)
     email_verification_code = Column(String(10), nullable=True)
     email_verification_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Owner/Manager identity verification (Stripe Identity) – required before POA and dashboard
+    identity_verified_at = Column(DateTime(timezone=True), nullable=True)
+    stripe_verification_session_id = Column(String(255), nullable=True, index=True)
+
+    # Owner type: Owner of Record vs Authorized Agent (property manager)
+    owner_type = Column(SQLEnum(OwnerType), nullable=True)  # only for role=owner
+    authorized_agent_certified_at = Column(DateTime(timezone=True), nullable=True)  # when Agent certified authority
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

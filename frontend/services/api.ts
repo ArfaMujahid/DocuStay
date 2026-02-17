@@ -9,7 +9,7 @@ function getToken(): string | null {
   return localStorage.getItem("docustay_token");
 }
 
-function setToken(token: string | null) {
+export function setToken(token: string | null) {
   if (typeof window === "undefined") return;
   if (token) localStorage.setItem("docustay_token", token);
   else localStorage.removeItem("docustay_token");
@@ -34,9 +34,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw e;
   }
   if (res.status === 401) {
-    setToken(null);
     const isLoginRequest = path === "/auth/login";
-    if (!isLoginRequest && typeof window !== "undefined") {
+    const isOnboardingPage =
+      typeof window !== "undefined" &&
+      (window.location.hash.includes("onboarding/identity") ||
+        window.location.hash.includes("onboarding/poa") ||
+        window.location.pathname.includes("onboarding/identity") ||
+        window.location.pathname.includes("onboarding/poa"));
+    if (!isLoginRequest && typeof window !== "undefined" && !isOnboardingPage) {
+      setToken(null);
       window.location.hash = "login";
       window.location.reload();
     }
@@ -62,6 +68,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       // use text as-is
     }
+    if (res.status === 403 && typeof window !== "undefined") {
+      const d = (detail || "").toLowerCase();
+      if (d.includes("identity verification")) window.location.hash = "onboarding/identity";
+      else if (d.includes("master poa") || d.includes("poa")) window.location.hash = "onboarding/poa";
+    }
     throw new Error(detail);
   }
   if (res.status === 204 || res.headers.get("content-length") === "0") return undefined as T;
@@ -79,6 +90,8 @@ export interface UserSession {
   email: string;
   account_status: AccountStatus;
   token: string;
+  identity_verified?: boolean;
+  poa_linked?: boolean;
 }
 
 interface BackendUser {
@@ -89,15 +102,17 @@ interface BackendUser {
   phone?: string | null;
   state?: string | null;
   city?: string | null;
+  identity_verified?: boolean;
+  poa_linked?: boolean;
 }
 
-interface TokenResponse {
+export interface TokenResponse {
   access_token: string;
   token_type: string;
   user: BackendUser;
 }
 
-function toUserSession(t: TokenResponse): UserSession {
+export function toUserSession(t: TokenResponse): UserSession {
   const u = t.user;
   return {
     user_id: String(u.id),
@@ -106,6 +121,8 @@ function toUserSession(t: TokenResponse): UserSession {
     email: u.email,
     account_status: "ACTIVE",
     token: t.access_token,
+    identity_verified: u.identity_verified ?? false,
+    poa_linked: u.poa_linked ?? false,
   };
 }
 
@@ -179,7 +196,8 @@ export const authApi = {
         validation.terms = { error: "You must agree to the Terms of Service" };
         validation.privacy = { error: "You must agree to the Privacy Policy" };
       }
-      if (msg.includes("already registered")) validation.email = { error: "Email already registered" };
+      if (msg.includes("property owner")) validation.email = { error: "This email is already registered as a property owner. Please log in on the Owner Login page." };
+      else if (msg.includes("already registered")) validation.email = { error: "Email already registered" };
       return { status: "error", message: msg, validation };
     }
   },
@@ -238,10 +256,70 @@ export const authApi = {
         email: body.email,
         account_status: "ACTIVE",
         token,
+        identity_verified: body.identity_verified ?? false,
+        poa_linked: body.poa_linked ?? false,
       };
     } catch {
       return null;
     }
+  },
+
+  /** Link Master POA signature to current owner (after identity verification). Set authorizedAgentCertified true when user is Authorized Agent. */
+  async linkOwnerPoa(poaSignatureId: number, authorizedAgentCertified = false): Promise<{ status: string; message?: string }> {
+    const res = await request<{ status?: string; message?: string }>("/auth/owner/link-poa", {
+      method: "POST",
+      body: JSON.stringify({ poa_signature_id: poaSignatureId, authorized_agent_certified: authorizedAgentCertified }),
+    });
+    return { status: (res as any)?.status ?? "ok", message: (res as any)?.message };
+  },
+};
+
+// --- Identity verification (Stripe Identity for owner onboarding) ---
+export const identityApi = {
+  /** Create a verification session (for existing owner user); returns URL to redirect to Stripe Identity. */
+  async createVerificationSession(): Promise<{ client_secret: string; url?: string | null }> {
+    return request<{ client_secret: string; url?: string | null }>("/auth/identity/verification-session", {
+      method: "POST",
+    });
+  },
+  /** Confirm identity after return from Stripe (for existing owner user). */
+  async confirmIdentity(verificationSessionId: string): Promise<{ status: string; message?: string }> {
+    return request<{ status?: string; message?: string }>("/auth/identity/confirm", {
+      method: "POST",
+      body: JSON.stringify({ verification_session_id: verificationSessionId }),
+    });
+  },
+};
+
+// --- Pending owner signup flow (after email verify, before user exists in DB) ---
+export const pendingOwnerApi = {
+  /** Create Stripe Identity session for pending owner. Return URL includes pending_id. */
+  async createIdentitySession(): Promise<{ client_secret: string; url?: string | null }> {
+    return request<{ client_secret: string; url?: string | null }>("/auth/pending-owner/identity-session", {
+      method: "POST",
+    });
+  },
+  /** Confirm identity after Stripe redirect (updates pending record). */
+  async confirmIdentity(verificationSessionId: string): Promise<{ status: string; message?: string }> {
+    return request<{ status?: string; message?: string }>("/auth/pending-owner/confirm-identity", {
+      method: "POST",
+      body: JSON.stringify({ verification_session_id: verificationSessionId }),
+    });
+  },
+  /** Get the verification_session_id we stored when creating the session. Use when Stripe redirect omits session_id in URL. */
+  async getLatestIdentitySession(): Promise<{ verification_session_id: string }> {
+    return request<{ verification_session_id: string }>("/auth/pending-owner/latest-identity-session");
+  },
+  /** Get email/full_name for POA modal. */
+  async me(): Promise<{ email: string; full_name: string | null }> {
+    return request<{ email: string; full_name: string | null }>("/auth/pending-owner/me");
+  },
+  /** Create user, link POA, delete pending; returns token + user. */
+  async completeSignup(poaSignatureId: number): Promise<{ access_token: string; token_type: string; user: BackendUser }> {
+    return request<{ access_token: string; token_type: string; user: BackendUser }>("/auth/pending-owner/complete-signup", {
+      method: "POST",
+      body: JSON.stringify({ poa_signature_id: poaSignatureId }),
+    });
   },
 };
 

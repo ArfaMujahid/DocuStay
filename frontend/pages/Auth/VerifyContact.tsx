@@ -68,15 +68,7 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
       setLoading(false);
       if (result.status === 'success' && result.data) {
         notify('success', 'Verification successful! Account is now fully verified.');
-        onVerified({
-          user_id: result.data.user_id,
-          user_name: result.data.user_name,
-          user_type: result.data.user_type as UserType,
-          account_status: result.data.account_status,
-          email: result.data.email,
-          token: result.data.token
-        });
-        navigate(result.data.user_type === 'GUEST' ? 'guest-dashboard' : 'dashboard');
+        onVerified(result.data);
       } else {
         setAttempts(prev => prev + 1);
         notify('error', result.message ?? 'Invalid or expired code. Try again.');

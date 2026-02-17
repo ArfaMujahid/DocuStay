@@ -35,10 +35,7 @@ export default function OwnerPOASignModal(props: {
     setLoading(true);
     ownerPoaApi
       .getDocument(ownerEmail?.trim() || undefined)
-      .then((d) => {
-        setDoc(d);
-        if (d?.already_signed && d?.signature_id != null) onSigned(d.signature_id);
-      })
+      .then((d) => setDoc(d))
       .catch((e) => notify("error", (e as Error)?.message || "Could not load Master POA document."))
       .finally(() => setLoading(false));
   }, [open, ownerEmail, ownerFullName, notify, onSigned]);
@@ -91,7 +88,12 @@ export default function OwnerPOASignModal(props: {
             <span className="text-slate-600 text-sm">
               {doc.signed_by} on {doc.signed_at ? new Date(doc.signed_at).toLocaleDateString() : ""}
             </span>
-            <span className="text-slate-500 text-sm">Close this window and click Create Secure Account to continue.</span>
+            <Button
+              onClick={() => doc?.signature_id != null && onSigned(doc.signature_id)}
+              disabled={doc?.signature_id == null}
+            >
+              Use this signature and complete signup
+            </Button>
           </div>
         )}
 

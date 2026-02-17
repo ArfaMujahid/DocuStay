@@ -15,7 +15,7 @@ from app.models import (  # noqa: F401
     Invitation, GuestPendingInvite, AgreementSignature, ReferenceOption,
     AuditLog, OwnerPOASignature, PendingRegistration,
 )
-from app.routers import auth, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements
+from app.routers import auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, debug=settings.debug)
@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(identity.router)
 app.include_router(owners.router)
 app.include_router(guests.router)
 app.include_router(stays.router)

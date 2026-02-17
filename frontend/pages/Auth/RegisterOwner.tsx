@@ -1,8 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
-import { Card, Input, Button, ErrorModal } from '../../components/UI';
+import { Input, Button, ErrorModal } from '../../components/UI';
 import { authApi } from '../../services/api';
-import OwnerPOASignModal from '../../components/OwnerPOASignModal';
 
 interface Props {
   setPendingVerification: (data: any) => void;
@@ -28,8 +26,6 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
   const [errors, setErrors] = useState<any>({});
   const [passwordStrength, setPasswordStrength] = useState(0);
   const [errorModal, setErrorModal] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
-  const [poaModalOpen, setPoaModalOpen] = useState(false);
-  const [poaSignatureId, setPoaSignatureId] = useState<number | null>(null);
 
   useEffect(() => {
     let strength = 0;
@@ -43,20 +39,13 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    if (!poaSignatureId) {
-      setPoaModalOpen(true);
-      return;
-    }
     setLoading(true);
     try {
-      const result = await authApi.register({ ...formData, poa_signature_id: poaSignatureId });
+      const result = await authApi.register({ ...formData });
       setLoading(false);
       if (result.status === 'success' && result.data) {
-        if (result.skipVerification && result.data && 'token' in result.data && onLogin) {
-          notify('success', 'Account created. You are now signed in.');
-          onLogin(result.data);
-          navigate('dashboard');
-        } else if ('user_id' in result.data) {
+        // Always go to email verification when backend returns user_id (pending signup).
+        if ('user_id' in result.data) {
           setPendingVerification({
             userId: result.data.user_id,
             type: 'email',
@@ -64,6 +53,11 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
           });
           notify('success', 'Check your email for the verification code.');
           navigate('verify');
+        } else if (result.data && 'token' in result.data && onLogin) {
+          // Continue onboarding (existing incomplete owner).
+          notify('success', 'Welcome back. Next: verify your identity.');
+          onLogin(result.data);
+          navigate('onboarding/identity');
         }
       } else {
         setErrors(result.validation || {});
@@ -108,7 +102,7 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
           <div className="max-w-2xl mx-auto w-full">
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-xl font-semibold text-gray-900">Create Owner Account</h1>
-              <span className="text-xs text-gray-500 uppercase tracking-wide">Step 1 of 3 · Sign Master POA required</span>
+              <span className="text-xs text-gray-500 uppercase tracking-wide">Step 1 of 3 · Identity & POA next</span>
             </div>
             
             <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-x-6 gap-y-4">
@@ -210,11 +204,7 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
               </div>
 
               <div className="md:col-span-2 mt-6 flex flex-col items-center">
-                {poaSignatureId ? (
-                  <p className="text-sm text-emerald-600 font-medium mb-2">✓ Master POA signed</p>
-                ) : (
-                  <p className="text-sm text-slate-500 mb-2">You must sign the Master POA before creating your account.</p>
-                )}
+                <p className="text-sm text-slate-500 mb-2">After signup you will verify your identity, then sign the Master POA.</p>
                 <Button type="submit" className="w-full md:min-w-[200px] py-3">
                   Create Secure Account
                 </Button>
@@ -230,14 +220,6 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
         </div>
       </div>
 
-      <OwnerPOASignModal
-        open={poaModalOpen}
-        ownerEmail={formData.email}
-        ownerFullName={formData.full_name}
-        onClose={() => setPoaModalOpen(false)}
-        onSigned={(id) => { setPoaSignatureId(id); setPoaModalOpen(false); }}
-        notify={notify}
-      />
       <ErrorModal
         open={errorModal.open}
         message={errorModal.message}

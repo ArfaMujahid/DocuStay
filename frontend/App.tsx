@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { AppState, UserType, AccountStatus } from './types';
 import { Card, Button, LoadingOverlay, ErrorModal } from './components/UI';
 import { NotificationCenter } from './components/NotificationCenter';
-import { authApi } from './services/api';
+import { authApi, setToken, toUserSession, type TokenResponse } from './services/api';
 import Login from './pages/Auth/Login';
 import RegisterOwner from './pages/Auth/RegisterOwner';
 import VerifyContact from './pages/Auth/VerifyContact';
@@ -18,36 +18,94 @@ import Settings from './pages/Settings/Settings';
 import HelpCenter from './pages/Support/HelpCenter';
 import GuestSignup from './pages/Guest/GuestSignup';
 import GuestLogin from './pages/Guest/GuestLogin';
+import OnboardingIdentity from './pages/Onboarding/OnboardingIdentity';
+import OnboardingIdentityComplete from './pages/Onboarding/OnboardingIdentityComplete';
+import OnboardingPOA from './pages/Onboarding/OnboardingPOA';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     user: null,
   });
-  const [view, setView] = useState<string>('login');
+  /** Normalize hash to view name (strip query/params: "onboarding/identity-complete&session_id=x" -> "onboarding/identity-complete"). */
+  const hashToView = (raw: string) => {
+    const h = (raw || '').replace(/^#/, '').trim();
+    if (!h) return '';
+    const base = h.split('?')[0].split('&')[0];
+    return base || h;
+  };
+  const hasSessionIdInUrl = () => {
+    if (typeof window === 'undefined') return false;
+    const s = window.location.search || '';
+    const h = window.location.hash || '';
+    return /[?&]session_id=/.test(s) || /[?&]session_id=/.test(h) || /session_id=/.test(h);
+  };
+  const [view, setView] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    if (hasSessionIdInUrl()) return 'onboarding/identity-complete';
+    const hash = window.location.hash;
+    if (hash) return hashToView(hash);
+    if (window.location.pathname === '/onboarding/identity-complete') return 'onboarding/identity-complete';
+    return '';
+  });
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success'; message: string } | null>(null);
   const [errorModal, setErrorModal] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
-
-  useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (hash) setView(hash);
-      else setView('');
-    };
-    window.addEventListener('hashchange', handleHashChange);
-    handleHashChange();
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
 
   const navigate = (newView: string) => {
     window.location.hash = newView;
     setView(newView);
   };
 
+  useEffect(() => {
+    const syncViewFromUrl = () => {
+      if (hasSessionIdInUrl()) {
+        setView('onboarding/identity-complete');
+        if (!window.location.hash || !window.location.hash.includes('onboarding/identity-complete')) {
+          const q = window.location.search || '';
+          window.history.replaceState(null, '', window.location.pathname + q + '#onboarding/identity-complete');
+        }
+        return;
+      }
+      const hash = window.location.hash;
+      if (hash) {
+        setView(hashToView(hash));
+        return;
+      }
+      if (window.location.pathname === '/onboarding/identity-complete') {
+        setView('onboarding/identity-complete');
+        if (!window.location.hash) {
+          const q = window.location.search ? window.location.search : '';
+          window.history.replaceState(null, '', window.location.pathname + q + '#onboarding/identity-complete');
+        }
+        return;
+      }
+      setView('');
+    };
+    syncViewFromUrl();
+    window.addEventListener('hashchange', syncViewFromUrl);
+    window.addEventListener('popstate', syncViewFromUrl);
+    return () => {
+      window.removeEventListener('hashchange', syncViewFromUrl);
+      window.removeEventListener('popstate', syncViewFromUrl);
+    };
+  }, []);
+
+  // Do NOT call authApi.me() when on onboarding/identity-complete (or identity/poa). We have a pending-owner token there; /auth/me requires a full user and would 401, then the API client would redirect to #login and break the signup flow. Let OnboardingIdentityComplete confirm with the backend and then navigate to POA.
+
+  // Redirect owner to onboarding step if they try to open dashboard/property before completing onboarding
+  useEffect(() => {
+    if (state.user?.user_type === UserType.PROPERTY_OWNER && (view === 'dashboard' || view === 'dashboard/properties' || view.startsWith('add-property') || view.startsWith('property/'))) {
+      if (!state.user.identity_verified) navigate('onboarding/identity');
+      else if (!state.user.poa_linked) navigate('onboarding/poa');
+    }
+  }, [state.user, view]);
+
   const handleLogin = (userData: any) => {
     setState(prev => ({ ...prev, user: userData }));
     if (userData.user_type === UserType.PROPERTY_OWNER) {
-      navigate('dashboard');
+      if (!userData.identity_verified) navigate('onboarding/identity');
+      else if (!userData.poa_linked) navigate('onboarding/poa');
+      else navigate('dashboard');
     } else {
       navigate('guest-dashboard');
     }
@@ -146,8 +204,44 @@ const App: React.FC = () => {
             onGuestLogin={(user) => { setState(prev => ({ ...prev, user })); navigate('guest-dashboard'); }}
           />
         )}
-        {view === 'verify' && state.pendingVerification && <VerifyContact verification={state.pendingVerification} navigate={navigate} setLoading={setLoading} notify={showNotification} onVerified={(user) => setState(prev => ({ ...prev, user }))} />}
-        
+        {view === 'verify' && state.pendingVerification && (
+          <VerifyContact
+            verification={state.pendingVerification}
+            navigate={navigate}
+            setLoading={setLoading}
+            notify={showNotification}
+            onVerified={(user) => {
+              setState(prev => ({ ...prev, user }));
+              // Defer navigate so state is committed before we show onboarding/identity (avoids wrong isPendingOwner + duplicate calls).
+              const next = user.user_type === UserType.PROPERTY_OWNER
+                ? (!user.identity_verified ? 'onboarding/identity' : !user.poa_linked ? 'onboarding/poa' : 'dashboard')
+                : 'guest-dashboard';
+              setTimeout(() => navigate(next), 0);
+            }}
+          />
+        )}
+
+        {/* Owner onboarding: verify email first (register → verify), then Stripe identity, then POA. Show identity only with token or owner user so we don't call authApi.me() here. */}
+        {view === 'onboarding/identity' && (state.user?.user_type === UserType.PROPERTY_OWNER || state.user?.user_id === '0' || authApi.getToken()) && (
+          <OnboardingIdentity isPendingOwner={!state.user || state.user?.user_id === '0'} navigate={navigate} setLoading={setLoading} notify={showNotification} />
+        )}
+        {view === 'onboarding/identity-complete' && (
+          <OnboardingIdentityComplete navigate={navigate} setLoading={setLoading} notify={showNotification} />
+        )}
+        {view === 'onboarding/poa' && (state.user != null || authApi.getToken()) && (
+          <OnboardingPOA
+            user={state.user}
+            onCompleteSignup={(data: TokenResponse) => {
+              setToken(data.access_token);
+              setState(prev => ({ ...prev, user: toUserSession(data) }));
+              navigate('dashboard');
+            }}
+            navigate={navigate}
+            setLoading={setLoading}
+            notify={showNotification}
+          />
+        )}
+
         {/* Owner Dashboard Views */}
         {(view === 'dashboard' || view === 'dashboard/properties') && state.user?.user_type === UserType.PROPERTY_OWNER && (
           <OwnerDashboard
@@ -168,8 +262,8 @@ const App: React.FC = () => {
         {view === 'guest-identity' && state.user?.user_type === UserType.GUEST && <IdentityVerification user={state.user} navigate={navigate} setLoading={setLoading} notify={showNotification} />}
         {view === 'sign-agreement' && state.user?.user_type === UserType.GUEST && <SignAgreement user={state.user} navigate={navigate} notify={showNotification} />}
 
-        {/* Home / Default */}
-        {view === '' && (
+        {/* Home / Default – also fallback when hash is a protected route but user not loaded (avoids blank page) */}
+        {(view === '' || (view && !state.user && ['dashboard', 'add-property', 'settings', 'guest-dashboard', 'onboarding/identity'].some((v) => view === v || view.startsWith(v + '/')))) && (
           <div className="flex-grow flex flex-col items-center justify-center py-20 px-4">
             <div className="text-center max-w-2xl mx-auto">
               <h1 className="text-4xl md:text-5xl font-semibold text-gray-900 mb-4 leading-tight">
@@ -187,7 +281,7 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {!['', 'login', 'register', 'verify'].includes(view) && !view.startsWith('guest-login') && !view.startsWith('guest-signup') && !view.startsWith('invite/') && (
+      {!['', 'login', 'register', 'verify'].includes(view) && !view.startsWith('guest-login') && !view.startsWith('guest-signup') && !view.startsWith('invite/') && !view.startsWith('onboarding/') && (
         <footer className="bg-white border-t border-gray-200 py-10">
           <div className="max-w-7xl mx-auto px-4 text-center">
             <p className="text-gray-500 text-sm">© 2024 DocuStay AI. Legal technology platform—not a law firm.</p>

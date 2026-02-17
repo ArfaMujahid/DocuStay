@@ -1,17 +1,16 @@
 """Module H: Notification service (Mailgun/SendGrid email, optional SMS)."""
 from app.config import get_settings
 
-settings = get_settings()
-
 
 def send_email(to_email: str, subject: str, html_content: str, text_content: str | None = None) -> bool:
     """Send email via Mailgun (preferred) or SendGrid. Returns True if sent (or skipped when unconfigured)."""
+    settings = get_settings()
     if settings.mailgun_api_key and settings.mailgun_domain:
         print(f"[Email] Calling Mailgun API: to={to_email} subject={subject} domain={settings.mailgun_domain}")
-        return _send_email_mailgun(to_email, subject, html_content, text_content=text_content)
+        return _send_email_mailgun(to_email, subject, html_content, text_content=text_content, settings=settings)
     if settings.sendgrid_api_key:
-        return _send_email_sendgrid(to_email, subject, html_content, text_content=text_content)
-    print(f"Email not sent (no Mailgun/SendGrid configured): to={to_email} subject={subject}. Set MAILGUN_API_KEY and MAILGUN_DOMAIN in .env")
+        return _send_email_sendgrid(to_email, subject, html_content, text_content=text_content, settings=settings)
+    print(f"[Email] NOT SENT (no Mailgun/SendGrid configured): to={to_email} subject={subject}. Set MAILGUN_API_KEY and MAILGUN_DOMAIN in .env and restart the server.")
     return False
 
 
@@ -19,7 +18,9 @@ MAILGUN_US_BASE = "https://api.mailgun.net"
 MAILGUN_EU_BASE = "https://api.eu.mailgun.net"
 
 
-def _send_email_mailgun(to_email: str, subject: str, html_content: str, text_content: str | None = None) -> bool:
+def _send_email_mailgun(to_email: str, subject: str, html_content: str, text_content: str | None = None, settings=None):
+    if settings is None:
+        settings = get_settings()
     try:
         import httpx
 
@@ -31,7 +32,7 @@ def _send_email_mailgun(to_email: str, subject: str, html_content: str, text_con
             from_addr = f"noreply@{domain}"
             print(f"[Mailgun] Using from={from_addr} (must match domain {domain} for delivery)")
         from_email = f"{settings.mailgun_from_name} <{from_addr}>"
-        url = f"{base}/v3/{settings.mailgun_domain}/messages"
+        url = f"{base}/v3/{domain}/messages"
         data = {
             "from": from_email,
             "to": to_email,
@@ -43,25 +44,32 @@ def _send_email_mailgun(to_email: str, subject: str, html_content: str, text_con
             r = client.post(url, auth=("api", settings.mailgun_api_key), data=data)
             ok = 200 <= r.status_code < 300
             if ok:
-                print(f"[Mailgun] API success: email sent to={to_email} subject={subject}")
+                try:
+                    msg_id = (r.json() or {}).get("id", "")
+                except Exception:
+                    msg_id = ""
+                print(f"[Mailgun] API success: to={to_email} status={r.status_code} id={msg_id}. If email not received, check spam or Mailgun sandbox: add recipient in Mailgun dashboard.")
                 return True
             if r.status_code == 401 and base == MAILGUN_US_BASE:
-                print("Mailgun 401 with US endpoint. Retrying with EU endpoint...")
-                url_eu = f"{MAILGUN_EU_BASE}/v3/{settings.mailgun_domain}/messages"
+                print("[Mailgun] 401 with US endpoint. Retrying with EU endpoint...")
+                url_eu = f"{MAILGUN_EU_BASE}/v3/{domain}/messages"
                 r2 = client.post(url_eu, auth=("api", settings.mailgun_api_key), data=data)
                 if 200 <= r2.status_code < 300:
-                    print(f"[Mailgun] API success (EU): email sent to={to_email} subject={subject}")
+                    print(f"[Mailgun] API success (EU): to={to_email}. If email not received, check spam or add recipient in Mailgun sandbox.")
                     return True
-                print(f"Mailgun EU request failed: status={r2.status_code} body={r2.text[:500]}")
+                print(f"[Mailgun] EU request failed: status={r2.status_code} body={r2.text}")
                 return False
-            print(f"[Mailgun] API failed: status={r.status_code} to={to_email} body={r.text[:500]}")
+            err_body = r.text
+            print(f"[Mailgun] API failed: status={r.status_code} to={to_email} body={err_body[:500]}")
             return False
     except Exception as e:
-        print(f"[Mailgun] API error calling Mailgun: to={to_email} error={e}")
+        print(f"[Mailgun] Exception: to={to_email} error={type(e).__name__}: {e}")
         return False
 
 
-def _send_email_sendgrid(to_email: str, subject: str, html_content: str, text_content: str | None = None) -> bool:
+def _send_email_sendgrid(to_email: str, subject: str, html_content: str, text_content: str | None = None, settings=None) -> bool:
+    if settings is None:
+        settings = get_settings()
     try:
         from sendgrid import SendGridAPIClient
         from sendgrid.helpers.mail import Mail
@@ -82,7 +90,8 @@ def _send_email_sendgrid(to_email: str, subject: str, html_content: str, text_co
 
 def send_verification_email(to_email: str, code: str) -> bool:
     """Send 6-digit verification code email for signup. Uses same Mailgun path as test-email (send_email -> _send_email_mailgun)."""
-    print(f"[Verification] Sending code to {to_email} (domain={settings.mailgun_domain or '(none)'} from={getattr(settings, 'mailgun_from_email', '(none)')})")
+    s = get_settings()
+    print(f"[Verification] Sending code to {to_email} domain={s.mailgun_domain or '(none)'} from={getattr(s, 'mailgun_from_email', '(none)')}")
     subject = "[DocuStay] Your verification code"
     text_content = f"Your DocuStay verification code is: {code}. It expires in 10 minutes."
     html_content = f"""

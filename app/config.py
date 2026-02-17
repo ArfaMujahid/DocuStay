@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     dropbox_sign_api_key: str = ""
     dropbox_sign_client_id: str = ""
 
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_identity_flow_id: str = ""
+    stripe_identity_return_url: str = ""
+
     notification_days_before_limit: int = 5
     notification_cron_enabled: bool = True
 

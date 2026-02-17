@@ -1,6 +1,6 @@
 """Module A: Auth schemas."""
 from pydantic import BaseModel, EmailStr, model_validator
-from app.models.user import UserRole
+from app.models.user import UserRole, OwnerType
 
 
 class UserCreate(BaseModel):
@@ -15,7 +15,8 @@ class UserCreate(BaseModel):
     terms_agreed: bool = False
     privacy_agreed: bool = False
     role: UserRole = UserRole.owner
-    poa_signature_id: int | None = None  # required when role is owner (Master POA signed at signup)
+    poa_signature_id: int | None = None  # optional; owner signs POA after identity verification
+    owner_type: OwnerType | None = None  # Owner of Record vs Authorized Agent (property manager)
 
     @model_validator(mode="after")
     def passwords_match_and_agreed(self):
@@ -23,8 +24,6 @@ class UserCreate(BaseModel):
             raise ValueError("Passwords do not match")
         if not self.terms_agreed or not self.privacy_agreed:
             raise ValueError("You must agree to Terms and Privacy Policy")
-        if self.role == UserRole.owner and (self.poa_signature_id is None or self.poa_signature_id < 1):
-            raise ValueError("You must sign the Master Power of Attorney before creating an owner account")
         return self
 
 
@@ -42,6 +41,8 @@ class UserResponse(BaseModel):
     phone: str | None = None
     state: str | None = None
     city: str | None = None
+    identity_verified: bool = False
+    poa_linked: bool = False  # owner has linked Master POA signature
 
     class Config:
         from_attributes = True
@@ -111,3 +112,32 @@ class RegisterPendingResponse(BaseModel):
     """Response from register when email verification is required (no token yet)."""
     user_id: int
     message: str = "Check your email for the verification code."
+
+
+class LinkPOARequest(BaseModel):
+    """Link an existing Master POA signature to the current owner (after identity verification)."""
+    poa_signature_id: int
+    authorized_agent_certified: bool = False  # required True when owner_type is authorized_agent
+
+
+class PendingOwnerIdentitySessionResponse(BaseModel):
+    client_secret: str
+    url: str | None = None
+
+
+class PendingOwnerConfirmIdentityRequest(BaseModel):
+    verification_session_id: str
+
+
+class PendingOwnerMeResponse(BaseModel):
+    email: str
+    full_name: str | None
+
+
+class PendingOwnerLatestIdentitySessionResponse(BaseModel):
+    """Session id we stored when creating the identity session; use when Stripe redirect omits session_id in URL."""
+    verification_session_id: str
+
+
+class CompleteOwnerSignupRequest(BaseModel):
+    poa_signature_id: int

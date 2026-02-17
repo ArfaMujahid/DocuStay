@@ -16,7 +16,7 @@ from app.services.jle import resolve_jurisdiction
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_FAILED_ATTEMPT
 from app.services.notifications import send_vacate_12h_notice, send_owner_guest_checkout_email, send_owner_guest_cancelled_stay_email
 from app.schemas.jle import JLEInput
-from app.dependencies import get_current_user, require_owner, require_guest
+from app.dependencies import get_current_user, require_owner, require_owner_onboarding_complete, require_guest
 from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -149,7 +149,7 @@ PENDING_INVITATION_EXPIRE_HOURS = 12
 @router.get("/owner/invitations", response_model=list[OwnerInvitationView])
 def owner_invitations(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Owner view: all invitations (pending, accepted, cancelled) with property name. Pending invites older than 12h are marked is_expired."""
     invs = db.query(Invitation).filter(Invitation.owner_id == current_user.id).order_by(Invitation.created_at.desc()).all()
@@ -187,7 +187,7 @@ def owner_cancel_invitation(
     request: Request,
     invitation_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Cancel a pending invitation (set status to cancelled). Accepted invitations cannot be cancelled."""
     inv = db.query(Invitation).filter(
@@ -224,7 +224,7 @@ def owner_cancel_invitation(
 @router.get("/owner/stays", response_model=list[OwnerStayView])
 def owner_stays(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Owner view: guest name, stay dates, region, legal classification, max stay, risk, applicable laws."""
     stays = db.query(Stay).filter(Stay.owner_id == current_user.id).all()
@@ -281,7 +281,7 @@ def revoke_stay(
     request: Request,
     stay_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Revoke a stay (Kill Switch): set revoked_at, guest must vacate in 12 hours. Sends email to guest."""
     stay = db.query(Stay).filter(Stay.id == stay_id, Stay.owner_id == current_user.id).first()
@@ -523,7 +523,7 @@ def _parse_optional_utc(s: str | None) -> datetime | None:
 @router.get("/owner/logs", response_model=list[OwnerAuditLogEntry])
 def owner_logs(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
     from_ts: str | None = None,
     to_ts: str | None = None,
     category: str | None = None,

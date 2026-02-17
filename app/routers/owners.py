@@ -12,7 +12,7 @@ from app.models.owner import OwnerProfile, Property, PropertyType, USAT_TOKEN_ST
 from app.models.invitation import Invitation
 from app.models.guest import PurposeOfStay, RelationshipToOwner
 from app.schemas.owner import BulkUploadResult, PropertyCreate, PropertyResponse, PropertyUpdate, ReleaseUsatTokenRequest
-from app.dependencies import get_current_user, require_owner
+from app.dependencies import get_current_user, require_owner, require_owner_onboarding_complete
 from app.models.stay import Stay
 from app.models.guest import GuestProfile
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_SHIELD_MODE
@@ -62,7 +62,7 @@ def _ensure_property_usat_token(prop: Property, db: Session) -> None:
 @router.get("/properties", response_model=list[PropertyResponse])
 def list_my_properties(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
     inactive: bool = False,
 ):
     """List properties. Default: active only (for dashboard main list and invite dropdown). inactive=1: inactive only (soft-deleted)."""
@@ -91,7 +91,7 @@ def add_property(
     request: Request,
     data: PropertyCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     street = data.street_address or data.street
     if not street:
@@ -169,7 +169,7 @@ def bulk_upload_properties(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Upload properties via CSV. Required columns: street_address (or street), city, state. Optional: property_name, zip_code, region_code, property_type, bedrooms, is_primary_residence. Existing properties matched by (street, city, state) are updated only when values change; empty optional cells keep existing values."""
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
@@ -370,7 +370,7 @@ def bulk_upload_properties(
 def get_property(
     property_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
     if not profile:
@@ -390,7 +390,7 @@ def release_usat_token(
     property_id: int,
     data: ReleaseUsatTokenRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Release the property's USAT token to the selected guest stay(s). Only those guests will see the token. Owner must choose at least one active stay for this property."""
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
@@ -494,7 +494,7 @@ def update_property(
     property_id: int,
     data: PropertyUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
     if not profile:
@@ -597,7 +597,7 @@ def delete_property(
     request: Request,
     property_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Soft-delete property: set deleted_at so it is hidden from dashboard and invite list; can be reactivated. Only allowed when there is no active stay (past stays are OK). Data is kept for logs."""
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
@@ -638,7 +638,7 @@ def delete_property(
 def reactivate_property(
     property_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Reactivate an inactive (soft-deleted) property so it appears in dashboard and invite list again."""
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
@@ -661,7 +661,7 @@ def create_invitation(
     request: Request,
     data: InvitationCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_onboarding_complete),
 ):
     """Create a guest invitation; store it and return code for the link."""
     prop_id = data.property_id

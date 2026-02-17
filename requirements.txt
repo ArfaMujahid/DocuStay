@@ -30,3 +30,6 @@ apscheduler>=3.10.4
 python-dotenv>=1.0.1
 httpx>=0.25.0
 reportlab>=4.0.0
+
+# Stripe (Identity verification)
+stripe>=8.0.0
