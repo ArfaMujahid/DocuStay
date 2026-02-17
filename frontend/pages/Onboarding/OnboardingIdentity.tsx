@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Card, Button } from "../../components/UI";
+import { getOwnerSignupErrorFriendly } from "../../utils/ownerSignupErrors";
 
 const API_URL = (import.meta as any).env?.VITE_API_URL || (typeof window !== "undefined" ? "/api" : "http://127.0.0.1:8000");
 const getToken = () => (typeof window !== "undefined" ? localStorage.getItem("docustay_token") : null);
@@ -27,9 +28,10 @@ export default function OnboardingIdentity({ isPendingOwner, navigate, setLoadin
     const TIMEOUT_MS = 15000;
     const timeoutId = setTimeout(() => {
       if (cancelled) return;
-      setError("Request timed out. Check your connection and Stripe configuration, then try again.");
+      const friendly = getOwnerSignupErrorFriendly("Request timed out.");
+      setError(friendly.message);
       setLoading(false);
-      notify("error", "Identity verification request timed out.");
+      notify("error", friendly.message);
     }, TIMEOUT_MS);
 
     const path = isPendingOwner ? "/auth/pending-owner/identity-session" : "/auth/identity/verification-session";
@@ -59,8 +61,9 @@ export default function OnboardingIdentity({ isPendingOwner, navigate, setLoadin
         clearTimeout(timeoutId);
         if (res == null) {
           if (!cancelled) {
-            setError("No response from server. Please try again.");
-            notify("error", "No response from server.");
+            const friendly = getOwnerSignupErrorFriendly("No response from server.");
+            setError(friendly.message);
+            notify("error", friendly.message);
           }
           return;
         }
@@ -81,16 +84,17 @@ export default function OnboardingIdentity({ isPendingOwner, navigate, setLoadin
           return;
         }
         if (!cancelled) {
-          setError("Verification link not available. Please try again or contact support.");
-          notify("error", "Verification link not available.");
+          const friendly = getOwnerSignupErrorFriendly("Verification link not available.");
+          setError(friendly.message);
+          notify("error", friendly.message);
         }
       })
       .catch((e) => {
         if (!cancelled) {
           clearTimeout(timeoutId);
-          const msg = (e as Error)?.message ?? "Could not start identity verification.";
-          setError(msg);
-          notify("error", msg);
+          const friendly = getOwnerSignupErrorFriendly((e as Error)?.message ?? "Could not start identity verification.");
+          setError(friendly.message);
+          notify("error", friendly.message);
         }
       })
       .finally(() => {
@@ -116,9 +120,14 @@ export default function OnboardingIdentity({ isPendingOwner, navigate, setLoadin
         {error ? (
           <>
             <p className="text-red-600 text-sm mb-4">{error}</p>
-            <Button onClick={() => navigate("onboarding/identity")} className="w-full">
-              Try again
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button onClick={() => { setError(null); window.location.reload(); }} className="w-full">
+                Try again
+              </Button>
+              <button type="button" onClick={() => navigate("verify")} className="text-sm text-slate-600 hover:text-slate-900 underline">
+                Back to verification
+              </button>
+            </div>
           </>
         ) : (
           <p className="text-slate-500 text-sm">Redirecting to verification…</p>

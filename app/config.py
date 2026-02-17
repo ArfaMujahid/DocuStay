@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     mailgun_from_email: str = "noreply@docustay.demo"
     mailgun_from_name: str = "DocuStay"
 
-    @field_validator("mailgun_api_key", "mailgun_domain", "mailgun_base_url", mode="before")
+    @field_validator("mailgun_api_key", "mailgun_domain", "mailgun_base_url", "mailgun_from_email", mode="before")
     @classmethod
     def strip_mailgun(cls, v: str) -> str:
         return (v or "").strip()

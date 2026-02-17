@@ -3,6 +3,7 @@ import { Card, Button } from "../../components/UI";
 import OwnerPOASignModal from "../../components/OwnerPOASignModal";
 import { authApi, pendingOwnerApi } from "../../services/api";
 import type { UserSession, TokenResponse } from "../../services/api";
+import { getOwnerSignupErrorFriendly } from "../../utils/ownerSignupErrors";
 
 interface Props {
   user: UserSession | null;
@@ -18,6 +19,7 @@ export default function OnboardingPOA({ user, onCompleteSignup, navigate, setLoa
   const [linking, setLinking] = useState(false);
   const [pendingData, setPendingData] = useState<{ email: string; full_name: string } | null>(null);
   const [pendingFailed, setPendingFailed] = useState(false);
+  const [poaError, setPoaError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.user_id === "0" || !user) {
@@ -31,8 +33,8 @@ export default function OnboardingPOA({ user, onCompleteSignup, navigate, setLoa
   const handleSigned = async (signatureId: number) => {
     setPoaModalOpen(false);
     setLinking(true);
+    setPoaError(null);
     try {
-      // Try pending-owner complete-signup first (we have the token in the request). If 401, try link-poa for existing owner.
       try {
         const res = await pendingOwnerApi.completeSignup(signatureId);
         notify("success", "Account created. Taking you to your dashboard.");
@@ -50,7 +52,12 @@ export default function OnboardingPOA({ user, onCompleteSignup, navigate, setLoa
         throw pendingErr;
       }
     } catch (e) {
-      notify("error", (e as Error)?.message ?? "Could not complete signup.");
+      const friendly = getOwnerSignupErrorFriendly((e as Error)?.message ?? "Could not complete signup.");
+      setPoaError(friendly.message);
+      notify("error", friendly.message);
+      if (friendly.redirectTo) {
+        navigate(friendly.redirectTo);
+      }
     } finally {
       setLinking(false);
     }
@@ -87,9 +94,17 @@ export default function OnboardingPOA({ user, onCompleteSignup, navigate, setLoa
         <p className="text-gray-600 mb-6">
           Your identity is verified. Sign the Master Power of Attorney to complete your account and authorize DocuStay for your properties.
         </p>
-        <Button onClick={() => setPoaModalOpen(true)} disabled={linking} className="w-full">
+        {poaError && (
+          <div className="mb-4 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm text-left" role="alert">
+            {poaError}
+          </div>
+        )}
+        <Button onClick={() => { setPoaError(null); setPoaModalOpen(true); }} disabled={linking} className="w-full">
           {linking ? "Completing…" : "Sign Master POA"}
         </Button>
+        <button type="button" onClick={() => navigate("onboarding/identity")} className="mt-3 text-sm text-slate-600 hover:text-slate-900 underline">
+          Back to identity verification
+        </button>
       </Card>
 
       <OwnerPOASignModal

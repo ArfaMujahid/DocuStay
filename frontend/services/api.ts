@@ -57,6 +57,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       }
       throw new Error(detail);
     }
+    // 401 on pending-owner (e.g. pending was deleted after Stripe failed): show verification failed, not session expired
+    if (path.includes("/auth/pending-owner/")) {
+      throw new Error("Identity verification failed. Please start over from registration.");
+    }
     throw new Error("Session expired. Please log in again.");
   }
   if (!res.ok) {
@@ -198,6 +202,7 @@ export const authApi = {
       }
       if (msg.includes("property owner")) validation.email = { error: "This email is already registered as a property owner. Please log in on the Owner Login page." };
       else if (msg.includes("already registered")) validation.email = { error: "Email already registered" };
+      if (msg.toLowerCase().includes("phone") || msg.includes("digits")) validation.phone = { error: msg };
       return { status: "error", message: msg, validation };
     }
   },

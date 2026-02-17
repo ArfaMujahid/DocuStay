@@ -1,6 +1,28 @@
 """Module A: Auth schemas."""
-from pydantic import BaseModel, EmailStr, model_validator
+import re
+from pydantic import BaseModel, EmailStr, model_validator, field_validator
 from app.models.user import UserRole, OwnerType
+
+PHONE_MIN_DIGITS = 10
+PHONE_MAX_DIGITS = 15
+
+
+def _normalize_phone(value: str | None) -> str:
+    if value is None:
+        return ""
+    s = value.strip()
+    digits = re.sub(r"\D", "", s)
+    return digits
+
+
+def _validate_phone_digits(phone: str) -> None:
+    digits = _normalize_phone(phone)
+    if not digits:
+        raise ValueError("Phone number is required.")
+    if len(digits) < PHONE_MIN_DIGITS:
+        raise ValueError(f"Phone number must have at least {PHONE_MIN_DIGITS} digits (e.g. 5551234567 or +1 555 123 4567).")
+    if len(digits) > PHONE_MAX_DIGITS:
+        raise ValueError(f"Phone number cannot exceed {PHONE_MAX_DIGITS} digits.")
 
 
 class UserCreate(BaseModel):
@@ -17,6 +39,12 @@ class UserCreate(BaseModel):
     role: UserRole = UserRole.owner
     poa_signature_id: int | None = None  # optional; owner signs POA after identity verification
     owner_type: OwnerType | None = None  # Owner of Record vs Authorized Agent (property manager)
+
+    @field_validator("phone")
+    @classmethod
+    def phone_valid(cls, v: str) -> str:
+        _validate_phone_digits(v or "")
+        return (v or "").strip()
 
     @model_validator(mode="after")
     def passwords_match_and_agreed(self):

@@ -118,6 +118,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
                     status_code=400,
                     detail="An account with this email exists but onboarding wasn't completed. Please log in with your password on the Owner Login page to continue.",
                 )
+            print(f"[Auth] Existing owner (incomplete onboarding): returning token for {data.email} — no verification email sent.", flush=True)
             token = create_access_token(existing_same_role.id, existing_same_role.email, existing_same_role.role)
             return Token(access_token=token, user=_user_to_response(existing_same_role, db))
         raise HTTPException(
@@ -131,6 +132,20 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 
     # Owner signup always requires email verification via Mailgun (no bypass).
     if data.role == UserRole.owner:
+        # Remove any existing pending owner for this email so they can start fresh (e.g. abandoned email verify or Stripe failed).
+        existing_pending = db.query(PendingRegistration).filter(
+            PendingRegistration.email == data.email,
+            PendingRegistration.role == UserRole.owner,
+        ).all()
+        for p in existing_pending:
+            db.delete(p)
+        if existing_pending:
+            db.commit()
+            print(f"[Auth] Removed {len(existing_pending)} existing pending owner(s) for {data.email} so signup can start fresh", flush=True)
+
+        # Reload config so UI flow uses same .env as script (avoid stale cache)
+        from app.services.notifications import _get_fresh_settings
+        _get_fresh_settings()
         if not _mailgun_configured():
             raise HTTPException(
                 status_code=503,
@@ -155,15 +170,27 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
         db.add(pending)
         db.commit()
         db.refresh(pending)
-        print(f"[Auth] Sending verification email to {data.email} (owner signup pending_id={pending.id})")
-        sent = send_verification_email(data.email, code)
-        print(f"[Auth] Verification email sent={sent} for {data.email}")
+        _log_mailgun_status = _mailgun_configured()
+        print(f"[Auth] Owner signup: Mailgun configured={_log_mailgun_status} domain={get_settings().mailgun_domain or '(none)'}", flush=True)
+        print(f"[Auth] Sending verification email to {data.email} (owner signup pending_id={pending.id})", flush=True)
+        try:
+            # send_verification_email clears config cache and calls send_email -> _send_email_mailgun
+            sent = send_verification_email(data.email, code)
+        except Exception as e:
+            print(f"[Auth] Verification email exception: {type(e).__name__}: {e}", flush=True)
+            db.delete(pending)
+            db.commit()
+            raise HTTPException(
+                status_code=503,
+                detail="We could not send the verification email. Please check MAILGUN_API_KEY, MAILGUN_DOMAIN, and MAILGUN_FROM_EMAIL in .env, then restart the server and try again.",
+            ) from e
+        print(f"[Auth] Verification email sent={sent} for {data.email}", flush=True)
         if not sent:
             db.delete(pending)
             db.commit()
             raise HTTPException(
                 status_code=503,
-                detail="We could not send the verification email. Please check MAILGUN_API_KEY, MAILGUN_DOMAIN, and MAILGUN_FROM_EMAIL in .env and try again.",
+                detail="We could not send the verification email. Please check MAILGUN_API_KEY, MAILGUN_DOMAIN, and MAILGUN_FROM_EMAIL in .env and restart the server, then try again.",
             )
         return RegisterPendingResponse(user_id=pending.id)
 
@@ -225,7 +252,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
         if not sent:
             db.delete(pending)
             db.commit()
-            print(f"Verification email not sent to {data.email}. Check MAILGUN_* settings (domain, from_email).")
+            print(f"Verification email not sent to {data.email}. Check MAILGUN_* settings (domain, from_email).", flush=True)
             raise HTTPException(
                 status_code=503,
                 detail="We could not send the verification email. Please check your email address and try again, or try again later. If the problem continues, check that Mailgun is configured with MAILGUN_DOMAIN and MAILGUN_FROM_EMAIL for your sending domain.",
@@ -481,7 +508,9 @@ def verify_email(request: Request, data: VerifyEmailRequest, db: Session = Depen
     user = db.query(User).filter(User.id == data.user_id).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid request")
-    if getattr(user, "email_verified", False):
+    # Only skip code check when user is already verified AND no code was provided (re-requesting token).
+    # If a code was provided we must validate it so a wrong code never returns success.
+    if getattr(user, "email_verified", False) and (not code or len(code) != 6):
         token = create_access_token(user.id, user.email, user.role)
         return Token(access_token=token, user=_user_to_response(user, db))
     stored_user_code = _normalize_verification_code(user.email_verification_code)
@@ -534,7 +563,7 @@ def resend_verification(data: ResendVerificationRequest, db: Session = Depends(g
         db.commit()
         sent = send_verification_email(pending.email, code)
         if not sent:
-            print(f"Resend verification email not sent to {pending.email}")
+            print(f"Resend verification email not sent to {pending.email}", flush=True)
             raise HTTPException(
                 status_code=503,
                 detail="We could not send the verification email. Check MAILGUN_DOMAIN and MAILGUN_FROM_EMAIL in .env and restart the server, then try again.",
@@ -553,7 +582,7 @@ def resend_verification(data: ResendVerificationRequest, db: Session = Depends(g
     db.commit()
     sent = send_verification_email(user.email, code)
     if not sent:
-        print(f"Resend verification email not sent to {user.email}")
+        print(f"Resend verification email not sent to {user.email}", flush=True)
         raise HTTPException(
             status_code=503,
             detail="We could not send the verification email. Check MAILGUN_DOMAIN and MAILGUN_FROM_EMAIL in .env and restart the server, then try again.",
@@ -679,6 +708,11 @@ def pending_owner_confirm_identity(
     # Success = Stripe status "verified"; any other status (requires_input, processing, canceled, etc.) = failure.
     if session.status != "verified":
         print(f"[Stripe Identity] VERIFICATION NOT COMPLETED status={session.status} session_id={session_id} (use status/last_error above to decide)")
+        # Remove this pending owner so the email can start signup again as if they never existed.
+        pending_email = pending.email
+        db.delete(pending)
+        db.commit()
+        print(f"[Stripe Identity] Deleted pending owner for {pending_email} so they can re-register", flush=True)
         raise HTTPException(status_code=400, detail=_stripe_session_failure_detail(session))
     print(f"[Stripe Identity] SUCCESS confirm-identity: marking pending_id={pending.id} as identity-verified")
     pending.extra_data = {

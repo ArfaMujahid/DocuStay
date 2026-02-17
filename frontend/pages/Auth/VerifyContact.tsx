@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button } from '../../components/UI';
 import { authApi } from '../../services/api';
-import { UserType } from '../../types';
+import { getOwnerSignupErrorFriendly } from '../../utils/ownerSignupErrors';
 
 interface Props {
   verification: {
@@ -21,6 +21,8 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [timer, setTimer] = useState(60);
   const [attempts, setAttempts] = useState(0);
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -61,24 +63,35 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
     if (e) e.preventDefault();
     const code = otp.join('');
     if (code.length < 6) return;
+    if (verifying) return;
 
+    setInlineError(null);
+    setVerifying(true);
     setLoading(true);
     try {
       const result = await authApi.verifyEmail(verification.userId, code);
       setLoading(false);
-      if (result.status === 'success' && result.data) {
-        notify('success', 'Verification successful! Account is now fully verified.');
+      setVerifying(false);
+      // Only treat as success when API returned success and we have valid session data (token + user).
+      const hasValidSession = result.status === 'success' && result.data && result.data.token && result.data.user_id;
+      if (hasValidSession) {
+        notify('success', 'Verification successful! Next: verify your identity.');
         onVerified(result.data);
       } else {
         setAttempts(prev => prev + 1);
-        notify('error', result.message ?? 'Invalid or expired code. Try again.');
+        const friendly = getOwnerSignupErrorFriendly(result.message || 'Verification failed.');
+        setInlineError(friendly.message);
+        notify('error', friendly.message);
         setOtp(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();
       }
-    } catch {
+    } catch (err) {
       setLoading(false);
+      setVerifying(false);
       setAttempts(prev => prev + 1);
-      notify('error', 'Verification failed. Try again.');
+      const friendly = getOwnerSignupErrorFriendly((err as Error)?.message);
+      setInlineError(friendly.message);
+      notify('error', friendly.message);
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     }
@@ -114,6 +127,11 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
           Enter the 6-digit verification code we sent to your <span className="text-slate-800 font-bold">{verification.type}</span>.
         </p>
 
+        {inlineError && (
+          <div className="mb-4 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm" role="alert">
+            {inlineError}
+          </div>
+        )}
         <div className="flex justify-between gap-3 mb-10" onPaste={handlePaste}>
           {otp.map((digit, i) => (
             <input
@@ -131,7 +149,7 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
         </div>
         
         <div className="space-y-6">
-          <Button onClick={() => handleVerify()} disabled={otp.join('').length < 6} className="w-full py-4 text-lg">Verify & Proceed</Button>
+          <Button onClick={() => handleVerify()} disabled={otp.join('').length < 6 || verifying} className="w-full py-4 text-lg">Verify & Proceed</Button>
           
           <div className="flex flex-col items-center gap-4">
             <div className="text-sm text-slate-500">

@@ -143,7 +143,10 @@ export const ErrorModal: React.FC<{
   title?: string;
   message: string;
   onClose: () => void;
-}> = ({ open, title = "Error", message, onClose }) => {
+  /** Optional primary action (e.g. "Go to login") — when set, shown next to OK. */
+  actionLabel?: string;
+  onAction?: () => void;
+}> = ({ open, title = "Error", message, onClose, actionLabel, onAction }) => {
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-[60]">
@@ -175,7 +178,12 @@ export const ErrorModal: React.FC<{
           </div>
           <div className="px-6 py-4">
             <p id="error-modal-desc" className="text-slate-700 leading-relaxed">{message}</p>
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex justify-end gap-3">
+              {actionLabel && onAction && (
+                <Button variant="primary" onClick={() => { onAction(); onClose(); }} className="bg-blue-600 hover:bg-blue-700 focus:ring-blue-500">
+                  {actionLabel}
+                </Button>
+              )}
               <Button variant="primary" onClick={onClose} className="bg-red-600 hover:bg-red-700 focus:ring-red-500">
                 OK
               </Button>

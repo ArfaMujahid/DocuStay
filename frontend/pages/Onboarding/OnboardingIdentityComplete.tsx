@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Card, Button } from "../../components/UI";
 import { pendingOwnerApi } from "../../services/api";
+import { getOwnerSignupErrorFriendly } from "../../utils/ownerSignupErrors";
 
 interface Props {
   navigate: (v: string) => void;
@@ -8,12 +9,16 @@ interface Props {
   notify: (t: "success" | "error", m: string) => void;
 }
 
-/** Landing page after Stripe Identity redirect. pending_id = new signup flow; else existing owner. Confirm then go to POA. */
+/** Landing page after Stripe Identity redirect. Confirm once then go to POA or show failure with option to go back to signup. */
 export default function OnboardingIdentityComplete({ navigate, setLoading, notify }: Props) {
   const [status, setStatus] = useState<"confirming" | "success" | "error">("confirming");
   const [message, setMessage] = useState<string>("");
+  const hasRunRef = useRef(false);
 
   useEffect(() => {
+    if (hasRunRef.current) return;
+    hasRunRef.current = true;
+
     const search = window.location.search;
     const hash = window.location.hash.replace(/^#/, "");
     const params = new URLSearchParams(search);
@@ -26,7 +31,6 @@ export default function OnboardingIdentityComplete({ navigate, setLoading, notif
       hashParams?.get("session_id") ||
       (fromHref ? decodeURIComponent(fromHref.replace(/%2F/g, "/")) : null) ||
       null;
-    const pendingId = params.get("pending_id") || hashParams?.get("pending_id") || null;
 
     const onSuccess = () => {
       setStatus("success");
@@ -34,17 +38,20 @@ export default function OnboardingIdentityComplete({ navigate, setLoading, notif
       setLoading(false);
       setTimeout(() => navigate("onboarding/poa"), 1500);
     };
+    const onFailure = (errMessage: string) => {
+      setStatus("error");
+      const friendly = getOwnerSignupErrorFriendly(errMessage);
+      setMessage(friendly.message);
+      notify("error", friendly.message);
+      setLoading(false);
+    };
     const doConfirm = (sessionId: string) => {
       setLoading(true);
-      // This page is only used in pending-owner onboarding; always use pending-owner confirm (identityApi is for existing users and would 401).
       pendingOwnerApi
         .confirmIdentity(sessionId)
         .then(onSuccess)
         .catch((e) => {
-          setStatus("error");
-          setMessage((e as Error)?.message ?? "Could not confirm identity.");
-          notify("error", (e as Error)?.message ?? "Could not confirm identity.");
-          setLoading(false);
+          onFailure((e as Error)?.message ?? "Could not confirm identity.");
         });
     };
 
@@ -53,7 +60,7 @@ export default function OnboardingIdentityComplete({ navigate, setLoading, notif
       return;
     }
 
-    // Stripe sometimes redirects without session_id in URL (e.g. test mode or hash-only). Use backend-stored session id for this pending owner.
+    // Stripe sometimes redirects without session_id in URL. Use backend-stored session id for this pending owner.
     setLoading(true);
     pendingOwnerApi
       .getLatestIdentitySession()
@@ -61,14 +68,7 @@ export default function OnboardingIdentityComplete({ navigate, setLoading, notif
         doConfirm(r.verification_session_id);
       })
       .catch((e) => {
-        setStatus("error");
-        const msg = (e as Error)?.message ?? "";
-        setMessage(
-          msg.includes("No identity session") || msg.includes("404")
-            ? "No verification session found. Please go back and start verification from the identity step, then complete it on Stripe."
-            : msg || "No verification session ID in URL. Start verification from the identity step, then complete it on Stripe."
-        );
-        setLoading(false);
+        onFailure((e as Error)?.message ?? "");
       });
   }, [navigate, notify, setLoading]);
 
@@ -85,8 +85,9 @@ export default function OnboardingIdentityComplete({ navigate, setLoading, notif
         {status === "error" && (
           <>
             <p className="text-red-600 text-sm mb-4">{message}</p>
-            <Button onClick={() => navigate("onboarding/identity")} className="w-full">
-              Start verification again
+            <p className="text-slate-600 text-sm mb-6">Please start over from registration.</p>
+            <Button onClick={() => navigate("register")} className="w-full">
+              Back to owner signup
             </Button>
           </>
         )}

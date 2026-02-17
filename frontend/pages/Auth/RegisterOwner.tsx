@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Input, Button, ErrorModal } from '../../components/UI';
 import { authApi } from '../../services/api';
+import { getOwnerSignupErrorFriendly } from '../../utils/ownerSignupErrors';
+import { validatePhone } from '../../utils/validatePhone';
 
 interface Props {
   setPendingVerification: (data: any) => void;
@@ -39,6 +41,11 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+    const phoneCheck = validatePhone(formData.phone);
+    if (!phoneCheck.valid) {
+      setErrors((prev: any) => ({ ...prev, phone: { error: phoneCheck.error } }));
+      return;
+    }
     setLoading(true);
     try {
       const result = await authApi.register({ ...formData });
@@ -61,11 +68,13 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
         }
       } else {
         setErrors(result.validation || {});
-        setErrorModal({ open: true, message: result.message || 'Please correct the highlighted errors and try again.' });
+        const friendly = getOwnerSignupErrorFriendly(result.message);
+        setErrorModal({ open: true, message: friendly.message });
       }
     } catch (err) {
       setLoading(false);
-      setErrorModal({ open: true, message: (err as Error)?.message ?? 'Registration failed. Please try again.' });
+      const friendly = getOwnerSignupErrorFriendly((err as Error)?.message);
+      setErrorModal({ open: true, message: friendly.message });
     }
   };
 
@@ -224,6 +233,8 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
         open={errorModal.open}
         message={errorModal.message}
         onClose={() => setErrorModal((p) => ({ ...p, open: false }))}
+        actionLabel={errorModal.message.toLowerCase().includes("already registered") ? "Go to login" : undefined}
+        onAction={errorModal.message.toLowerCase().includes("already registered") ? () => navigate("login") : undefined}
       />
     </div>
   );

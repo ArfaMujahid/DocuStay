@@ -1,4 +1,7 @@
-"""Delete an owner user by email. Removes or unlinks all related data (stays, invitations, properties, POA link, audit refs, pending) then deletes the user."""
+"""Delete an owner user by email. Removes or unlinks all related data (stays, invitations, properties, POA link, audit refs, pending) then deletes the user.
+Usage: python scripts/delete_owner_by_email.py [email]
+  If email omitted, defaults to arfamujahid333@gmail.com
+"""
 import os
 import sys
 
@@ -13,16 +16,20 @@ from app.models.owner_poa_signature import OwnerPOASignature
 from app.models.audit_log import AuditLog
 from app.models.pending_registration import PendingRegistration
 
-EMAIL = "arfamujahid12@gmail.com"
+DEFAULT_EMAIL = "arfamujahid333@gmail.com"
 
 
 def run():
+    email = (sys.argv[1] if len(sys.argv) > 1 else DEFAULT_EMAIL).strip().lower()
+    if not email:
+        print("Usage: python scripts/delete_owner_by_email.py [email]")
+        return
+
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.email == EMAIL.strip().lower(), User.role == UserRole.owner).first()
+        user = db.query(User).filter(User.email == email, User.role == UserRole.owner).first()
         if not user:
-            print(f"No owner found with email: {EMAIL}")
-            return
+            print(f"No owner found with email: {email}")
 
         uid = user.id
         print(f"Found owner id={uid}, email={user.email}. Deleting related data then user...")
@@ -64,7 +71,7 @@ def run():
 
         # Pending registrations with this email (owner)
         pending = db.query(PendingRegistration).filter(
-            PendingRegistration.email == EMAIL.strip().lower(),
+            PendingRegistration.email == email,
             PendingRegistration.role == UserRole.owner,
         ).all()
         for p in pending:
@@ -74,7 +81,7 @@ def run():
 
         db.delete(user)
         db.commit()
-        print(f"Deleted owner user: {EMAIL}")
+        print(f"Deleted owner user: {email}")
     except Exception as e:
         db.rollback()
         print(f"Error: {e}")

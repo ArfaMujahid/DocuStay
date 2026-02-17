@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button, Input, Modal } from "./UI";
 import { ownerPoaApi, type OwnerPOADocResponse } from "../services/api";
+import { getOwnerSignupErrorFriendly } from "../utils/ownerSignupErrors";
 
 type AckKey = "read" | "temporary" | "vacate" | "electronic";
 
@@ -17,6 +18,8 @@ export default function OwnerPOASignModal(props: {
   const [doc, setDoc] = useState<OwnerPOADocResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [signing, setSigning] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [signError, setSignError] = useState<string | null>(null);
   const [typedSignature, setTypedSignature] = useState(ownerFullName || "");
   const [acks, setAcks] = useState<Record<AckKey, boolean>>({
     read: false,
@@ -31,20 +34,43 @@ export default function OwnerPOASignModal(props: {
     if (!open) return;
     setTypedSignature(ownerFullName || "");
     setAcks({ read: false, temporary: false, vacate: false, electronic: false });
+    setLoadError(null);
+    setSignError(null);
 
     setLoading(true);
     ownerPoaApi
       .getDocument(ownerEmail?.trim() || undefined)
-      .then((d) => setDoc(d))
-      .catch((e) => notify("error", (e as Error)?.message || "Could not load Master POA document."))
+      .then((d) => { setDoc(d); setLoadError(null); })
+      .catch((e) => {
+        const friendly = getOwnerSignupErrorFriendly((e as Error)?.message ?? "Could not load Master POA document.");
+        setLoadError(friendly.message);
+        notify("error", friendly.message);
+      })
       .finally(() => setLoading(false));
-  }, [open, ownerEmail, ownerFullName, notify, onSigned]);
+  }, [open, ownerEmail, ownerFullName, notify]);
 
   const handleSign = async () => {
-    if (!ownerEmail?.trim()) return notify("error", "Enter your email first.");
-    if (!typedSignature?.trim()) return notify("error", "Type your full legal name to sign.");
-    if (!doc) return notify("error", "Document is not loaded yet.");
-    if (!allAcks) return notify("error", "Please acknowledge all items to proceed.");
+    setSignError(null);
+    if (!ownerEmail?.trim()) {
+      const msg = "Enter your email first.";
+      notify("error", msg);
+      return;
+    }
+    if (!typedSignature?.trim()) {
+      const msg = "Type your full legal name to sign.";
+      notify("error", msg);
+      return;
+    }
+    if (!doc) {
+      const msg = "Document is not loaded yet. Please wait or try again.";
+      notify("error", msg);
+      return;
+    }
+    if (!allAcks) {
+      const msg = "Please acknowledge all items to proceed.";
+      notify("error", msg);
+      return;
+    }
 
     setSigning(true);
     try {
@@ -59,7 +85,9 @@ export default function OwnerPOASignModal(props: {
       onSigned(res.signature_id);
       onClose();
     } catch (e) {
-      notify("error", (e as Error)?.message || "Could not sign Master POA.");
+      const friendly = getOwnerSignupErrorFriendly((e as Error)?.message ?? "Could not sign Master POA.");
+      setSignError(friendly.message);
+      notify("error", friendly.message);
     } finally {
       setSigning(false);
     }
@@ -97,6 +125,16 @@ export default function OwnerPOASignModal(props: {
           </div>
         )}
 
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm" role="alert">
+            {loadError}
+          </div>
+        )}
+        {signError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm" role="alert">
+            {signError}
+          </div>
+        )}
         <div className="grid lg:grid-cols-5 gap-6">
           <div className="lg:col-span-3">
             <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
