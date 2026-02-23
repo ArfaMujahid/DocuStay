@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     notification_days_before_limit: int = 5
     notification_cron_enabled: bool = True
 
+    # Smarty US Street API (address standardization / ZIP-code utility bucket)
+    smarty_auth_id: str = ""
+    smarty_auth_token: str = ""
+    smarty_api_name: str = ""
+
+    @field_validator("smarty_auth_id", "smarty_auth_token", "smarty_api_name", mode="before")
+    @classmethod
+    def strip_smarty(cls, v: str) -> str:
+        return (v or "").strip()
+
     class Config:
         env_file = str(_env_path)
         extra = "ignore"

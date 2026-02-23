@@ -73,6 +73,15 @@ class PropertyResponse(BaseModel):
     ownership_proof_type: str | None = None
     ownership_proof_uploaded_at: datetime | None = None
 
+    # Smarty standardized address (ZIP-code utility bucket / authority letters)
+    smarty_delivery_line_1: str | None = None
+    smarty_city_name: str | None = None
+    smarty_state_abbreviation: str | None = None
+    smarty_zipcode: str | None = None
+    smarty_plus4_code: str | None = None
+    smarty_latitude: float | None = None
+    smarty_longitude: float | None = None
+
     @field_validator("shield_mode_enabled", mode="before")
     @classmethod
     def coerce_shield_mode(cls, v: bool | int | None) -> bool:

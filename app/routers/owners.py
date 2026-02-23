@@ -17,6 +17,7 @@ from app.dependencies import get_current_user, require_owner, require_owner_onbo
 from app.models.stay import Stay
 from app.models.guest import GuestProfile
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_SHIELD_MODE
+from app.services.smarty import verify_address
 
 router = APIRouter(prefix="/owners", tags=["owners"])
 
@@ -133,6 +134,8 @@ def add_property(
         prop.usat_token = _generate_usat_token() + "-" + str(prop.id)
         prop.usat_token_state = USAT_TOKEN_STAGED
 
+    _apply_smarty_address(prop, street, data.city, data.state, data.zip_code)
+
     property_display = (data.property_name or "").strip() or f"{street}, {data.city}, {data.state}".strip(", ")
     create_log(
         db,
@@ -149,6 +152,19 @@ def add_property(
     db.commit()
     db.refresh(prop)
     return PropertyResponse.model_validate(prop)
+
+
+def _apply_smarty_address(prop: Property, street: str, city: str, state: str, zip_code: str | None) -> None:
+    """Call Smarty US Street API and populate standardized address fields on the property."""
+    result = verify_address(street=street, city=city, state=state, zipcode=zip_code)
+    if result:
+        prop.smarty_delivery_line_1 = result.delivery_line_1
+        prop.smarty_city_name = result.city_name
+        prop.smarty_state_abbreviation = result.state_abbreviation
+        prop.smarty_zipcode = result.zipcode
+        prop.smarty_plus4_code = result.plus4_code
+        prop.smarty_latitude = result.latitude
+        prop.smarty_longitude = result.longitude
 
 
 def _normalize_addr(s: str | None) -> str:
@@ -299,6 +315,7 @@ def bulk_upload_properties(
             else:
                 prop.usat_token = "USAT-" + secrets.token_hex(8).upper() + "-" + str(prop.id)
                 prop.usat_token_state = USAT_TOKEN_STAGED
+            _apply_smarty_address(prop, street.strip(), city.strip(), state_upper, zip_code)
             created += 1
             property_display = (property_name or "").strip() or f"{street.strip()}, {city.strip()}, {state_upper}".strip(", ")
             create_log(

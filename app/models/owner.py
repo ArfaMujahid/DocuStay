@@ -1,5 +1,5 @@
 """Module B1: Owner onboarding."""
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Enum as SQLEnum, DateTime, Text, LargeBinary
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Enum as SQLEnum, DateTime, Text, LargeBinary, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -47,6 +47,15 @@ class Property(Base):
     state = Column(String(50), nullable=False)
     zip_code = Column(String(20), nullable=True)
     region_code = Column(String(20), nullable=False)  # NYC, FL, CA, TX
+
+    # Smarty US Street API – standardized address for ZIP-code utility bucket / authority letters
+    smarty_delivery_line_1 = Column(String(64), nullable=True)
+    smarty_city_name = Column(String(64), nullable=True)
+    smarty_state_abbreviation = Column(String(2), nullable=True)
+    smarty_zipcode = Column(String(5), nullable=True)
+    smarty_plus4_code = Column(String(4), nullable=True)
+    smarty_latitude = Column(Float, nullable=True)
+    smarty_longitude = Column(Float, nullable=True)
 
     owner_occupied = Column(Boolean, nullable=False)  # is_primary_residence
     property_type = Column(SQLEnum(PropertyType), nullable=True)
