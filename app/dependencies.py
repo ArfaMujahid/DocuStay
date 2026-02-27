@@ -2,7 +2,7 @@
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, OperationalError as SQLOperationalError
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.owner_poa_signature import OwnerPOASignature
@@ -35,10 +35,24 @@ def get_current_user(
         return user
     except HTTPException:
         raise
-    except SQLAlchemyError as e:
+    except (SQLAlchemyError, SQLOperationalError) as e:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable") from e
     except Exception as e:
+        if _is_connection_error(e):
+            raise HTTPException(status_code=503, detail="Service temporarily unavailable") from e
         raise HTTPException(status_code=401, detail="Authentication failed") from e
+
+
+def _is_connection_error(e: Exception) -> bool:
+    """True if the exception is a DB/network connection failure (e.g. DNS, unreachable host)."""
+    msg = (getattr(e, "message", "") or str(e)).lower()
+    return (
+        "could not translate host" in msg
+        or "name or service not known" in msg
+        or "connection refused" in msg
+        or "network is unreachable" in msg
+        or "operationalerror" in type(e).__name__.lower()
+    )
 
 
 def get_pending_owner(
@@ -63,9 +77,11 @@ def get_pending_owner(
         return pending
     except HTTPException:
         raise
-    except SQLAlchemyError as e:
+    except (SQLAlchemyError, SQLOperationalError) as e:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable") from e
     except Exception as e:
+        if _is_connection_error(e):
+            raise HTTPException(status_code=503, detail="Service temporarily unavailable") from e
         raise HTTPException(status_code=401, detail="Authentication failed") from e
 
 
@@ -103,9 +119,11 @@ def require_owner_onboarding_complete(
         return current_user
     except HTTPException:
         raise
-    except SQLAlchemyError as e:
+    except (SQLAlchemyError, SQLOperationalError) as e:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable") from e
     except Exception as e:
+        if _is_connection_error(e):
+            raise HTTPException(status_code=503, detail="Service temporarily unavailable") from e
         raise HTTPException(status_code=503, detail="Service temporarily unavailable") from e
 
 

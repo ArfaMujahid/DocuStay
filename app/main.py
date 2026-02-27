@@ -6,8 +6,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError as SQLOperationalError
 
 from app.config import get_settings
 from app.database import Base, engine
@@ -26,6 +28,17 @@ logger.info("[startup] Config loaded: app_name=%s debug=%s", settings.app_name, 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 logger.info("[startup] FastAPI app created")
+
+
+@app.exception_handler(SQLOperationalError)
+def db_operational_error_handler(_request: Request, exc: SQLOperationalError) -> JSONResponse:
+    """Return 503 when DB is unreachable (e.g. DNS failure, connection refused)."""
+    logger.warning("Database operational error: %s", exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Service temporarily unavailable. Please check your connection and try again."},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
