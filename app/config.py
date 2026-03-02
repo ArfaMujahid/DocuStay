@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     stripe_publishable_key: str = ""
     stripe_identity_flow_id: str = ""
     stripe_identity_return_url: str = ""
+    stripe_webhook_secret: str = ""  # Webhook signing secret (whsec_...) for billing events
+    # When True, do not self-heal onboarding_invoice_paid_at when listing billing (so you can re-test payment flow after running set_onboarding_invoice_unpaid.py)
+    stripe_skip_onboarding_self_heal: bool = False
 
     notification_days_before_limit: int = 5
     notification_cron_enabled: bool = True

@@ -155,7 +155,7 @@ const App: React.FC = () => {
 
   // Redirect owner to onboarding step if they try to open dashboard/property before completing onboarding
   useEffect(() => {
-    if (state.user?.user_type === UserType.PROPERTY_OWNER && (view === 'dashboard' || view === 'dashboard/properties' || view.startsWith('add-property') || view.startsWith('property/'))) {
+    if (state.user?.user_type === UserType.PROPERTY_OWNER && (view.startsWith('dashboard') || view.startsWith('add-property') || view.startsWith('property/'))) {
       if (!state.user.identity_verified) navigate('onboarding/identity');
       else if (!state.user.poa_linked) navigate('onboarding/poa');
     }
@@ -304,7 +304,7 @@ const App: React.FC = () => {
         )}
 
         {/* Owner Dashboard Views */}
-        {(view === 'dashboard' || view === 'dashboard/properties' || view === 'settings' || view === 'help') && state.user?.user_type === UserType.PROPERTY_OWNER && (
+        {(view === 'dashboard' || view.startsWith('dashboard/') || view === 'settings' || view === 'help') && state.user?.user_type === UserType.PROPERTY_OWNER && (
           <OwnerDashboard
             user={state.user}
             navigate={navigate}
@@ -312,6 +312,10 @@ const App: React.FC = () => {
             notify={showNotification}
             initialTab={
               view === 'dashboard/properties' ? 'properties'
+              : view === 'dashboard/billing' ? 'billing'
+              : view === 'dashboard/guests' ? 'guests'
+              : view === 'dashboard/invitations' ? 'invitations'
+              : view === 'dashboard/logs' ? 'logs'
               : view === 'settings' ? 'settings'
               : view === 'help' ? 'help'
               : undefined

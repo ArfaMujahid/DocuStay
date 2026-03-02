@@ -426,9 +426,45 @@ export interface OwnerAuditLogEntry {
   property_name: string | null;
 }
 
+export interface BillingInvoiceView {
+  id: string;
+  number: string | null;
+  description: string | null;
+  amount_due_cents: number;
+  amount_paid_cents: number;
+  currency: string;
+  status: string;
+  created: string;
+  hosted_invoice_url: string | null;
+}
+
+export interface BillingPaymentView {
+  invoice_id: string;
+  amount_cents: number;
+  currency: string;
+  paid_at: string;
+  description: string | null;
+}
+
+export interface BillingResponse {
+  invoices: BillingInvoiceView[];
+  payments: BillingPaymentView[];
+  /** False until onboarding invoice is paid; owner cannot invite guests until then. */
+  can_invite: boolean;
+  /** Active property count (subscription is based on this). */
+  current_unit_count?: number | null;
+  /** Properties with Shield on. */
+  current_shield_count?: number | null;
+}
+
 export const dashboardApi = {
   ownerStays: () => request<OwnerStayView[]>("/dashboard/owner/stays"),
   ownerInvitations: () => request<OwnerInvitationView[]>("/dashboard/owner/invitations"),
+  /** Invoices and payments for owner billing section. */
+  billing: () => request<BillingResponse>("/dashboard/owner/billing"),
+  /** Create Stripe Billing Portal session; redirect user to returned URL to pay. After payment (e.g. Klarna) they return to our app. */
+  billingPortalSession: () =>
+    request<{ url: string }>("/dashboard/owner/billing/portal-session", { method: "POST" }),
   /** Cancel a pending invitation (owner only). */
   cancelInvitation: (invitationId: number) =>
     request<{ status: string; message?: string }>(`/dashboard/owner/invitations/${invitationId}/cancel`, { method: "POST" }),

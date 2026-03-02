@@ -91,3 +91,39 @@ class OwnerAuditLogEntry(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BillingInvoiceView(BaseModel):
+    """Single Stripe invoice for billing tab."""
+    id: str
+    number: str | None
+    description: str | None
+    amount_due_cents: int
+    amount_paid_cents: int
+    currency: str
+    status: str  # draft, open, paid, uncollectible, void
+    created: datetime
+    hosted_invoice_url: str | None = None
+
+
+class BillingPaymentView(BaseModel):
+    """Single payment (paid invoice) for billing tab."""
+    invoice_id: str
+    amount_cents: int
+    currency: str
+    paid_at: datetime
+    description: str | None = None
+
+
+class BillingResponse(BaseModel):
+    """Invoices and payments for owner billing section."""
+    invoices: list[BillingInvoiceView] = []
+    payments: list[BillingPaymentView] = []
+    can_invite: bool = True  # False until onboarding invoice is paid (when onboarding was charged)
+    current_unit_count: int | None = None  # Active properties (for subscription); shown so user sees subscription reflects current count
+    current_shield_count: int | None = None  # Properties with Shield on
+
+
+class BillingPortalSessionResponse(BaseModel):
+    """URL for Stripe Customer Billing Portal; redirect here so after payment (e.g. Klarna) user returns to our app."""
+    url: str

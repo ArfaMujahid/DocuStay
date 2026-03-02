@@ -31,6 +31,15 @@ class OwnerProfile(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    # Billing (Stripe): one-time onboarding fee + monthly subscription (baseline + Shield)
+    stripe_customer_id = Column(String(255), nullable=True, index=True)
+    stripe_subscription_id = Column(String(255), nullable=True, index=True)
+    stripe_subscription_baseline_item_id = Column(String(255), nullable=True)  # subscription item for $1/unit
+    stripe_subscription_shield_item_id = Column(String(255), nullable=True)   # subscription item for $10/unit when Shield on
+    onboarding_billing_completed_at = Column(DateTime(timezone=True), nullable=True)
+    onboarding_billing_unit_count = Column(Integer, nullable=True)
+    onboarding_invoice_paid_at = Column(DateTime(timezone=True), nullable=True)  # Set when onboarding invoice is paid; required before inviting guests
+
     user = relationship("User", backref="owner_profile")
     properties = relationship("Property", back_populates="owner_profile")
 

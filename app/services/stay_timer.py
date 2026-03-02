@@ -6,7 +6,7 @@ from app.models.stay import Stay
 from app.models.user import User
 from app.models.region_rule import RegionRule
 from app.models.audit_log import AuditLog
-from app.models.owner import Property, USAT_TOKEN_STAGED, USAT_TOKEN_RELEASED, OccupancyStatus
+from app.models.owner import OwnerProfile, Property, USAT_TOKEN_STAGED, USAT_TOKEN_RELEASED, OccupancyStatus
 from app.services.notifications import (
     send_stay_legal_warning,
     send_overstay_alert,
@@ -16,6 +16,7 @@ from app.services.notifications import (
     send_shield_mode_activated_email,
 )
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_SHIELD_MODE, CATEGORY_DEAD_MANS_SWITCH
+from app.services.billing import sync_subscription_quantities
 from app.config import get_settings
 
 settings = get_settings()
@@ -259,6 +260,12 @@ def run_dead_mans_switch_job(db: Session) -> None:
             meta={"owner_id": stay_for_prop.owner_id},
         )
         db.commit()
+        try:
+            profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+            if profile:
+                sync_subscription_quantities(db, profile)
+        except Exception:
+            pass
         if owner:
             try:
                 send_shield_mode_activated_email(
@@ -364,6 +371,13 @@ def run_dead_mans_switch_job(db: Session) -> None:
             },
         )
         db.commit()
+        try:
+            if prop:
+                profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+                if profile:
+                    sync_subscription_quantities(db, profile)
+        except Exception:
+            pass
 
         if owner and alert_email(stay):
             try:

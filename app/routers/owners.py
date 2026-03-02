@@ -46,6 +46,7 @@ from app.utility_providers.sqlite_cache import add_pending_provider, get_pending
 from app.config import get_settings
 from app.services.authority_letter_email import send_authority_letter_to_provider
 from app.services.dropbox_sign import get_signed_pdf
+from app.services.billing import on_onboarding_properties_completed, ensure_subscription, sync_subscription_quantities
 
 router = APIRouter(prefix="/owners", tags=["owners"])
 
@@ -251,6 +252,23 @@ def add_property(
     )
     db.commit()
     db.refresh(prop)
+    # Billing: first property upload triggers one-time onboarding fee (idempotent); ensure subscription exists; sync quantities
+    if profile.onboarding_billing_completed_at is None:
+        total_units = db.query(Property).filter(Property.owner_profile_id == profile.id, Property.deleted_at.is_(None)).count()
+        if total_units >= 1:
+            try:
+                on_onboarding_properties_completed(db, profile, current_user, total_units)
+            except Exception as e:
+                print(f"[PropertyFlow] Onboarding billing failed (property still created): {e}", flush=True)
+    elif profile.stripe_customer_id and not profile.stripe_subscription_id:
+        try:
+            ensure_subscription(db, profile)
+        except Exception as e:
+            print(f"[PropertyFlow] Subscription ensure failed: {e}", flush=True)
+    try:
+        sync_subscription_quantities(db, profile)
+    except Exception as e:
+        print(f"[PropertyFlow] Subscription sync failed: {e}", flush=True)
     print(f"[PropertyFlow] add_property: created property_id={prop.id}")
     return PropertyResponse.model_validate(prop)
 
@@ -537,6 +555,28 @@ def bulk_upload_properties(
             if updates:
                 updated += 1
             db.commit()
+
+    # Billing: first property upload triggers one-time onboarding fee (idempotent); ensure subscription exists; sync quantities
+    if profile.onboarding_billing_completed_at is None:
+        total_units = (
+            db.query(Property)
+            .filter(Property.owner_profile_id == profile.id, Property.deleted_at.is_(None))
+            .count()
+        )
+        if total_units >= 1:
+            try:
+                on_onboarding_properties_completed(db, profile, current_user, total_units)
+            except Exception as e:
+                print(f"[Owners] Onboarding billing failed after bulk upload (properties still created): {e}", flush=True)
+    elif profile.stripe_customer_id and not profile.stripe_subscription_id:
+        try:
+            ensure_subscription(db, profile)
+        except Exception as e:
+            print(f"[Owners] Subscription ensure failed after bulk upload: {e}", flush=True)
+    try:
+        sync_subscription_quantities(db, profile)
+    except Exception as e:
+        print(f"[Owners] Subscription sync failed after bulk upload: {e}", flush=True)
 
     return BulkUploadResult(created=created, updated=updated, failed_from_row=failed_from_row, failure_reason=failure_reason)
 
@@ -1224,6 +1264,11 @@ def update_property(
             )
     db.commit()
     db.refresh(prop)
+    if "shield_mode_enabled" in (changes_meta or {}):
+        try:
+            sync_subscription_quantities(db, profile)
+        except Exception as e:
+            print(f"[Owners] Subscription sync failed after PATCH: {e}", flush=True)
     return PropertyResponse.model_validate(prop)
 
 
@@ -1280,6 +1325,10 @@ def delete_property(
     db.commit()
     prop.deleted_at = datetime.now(timezone.utc)
     db.commit()
+    try:
+        sync_subscription_quantities(db, profile)
+    except Exception as e:
+        print(f"[Owners] Subscription sync failed after delete: {e}", flush=True)
     return {"status": "success", "message": "Property removed from dashboard. It has been moved to Inactive properties and can be reactivated."}
 
 
@@ -1303,6 +1352,11 @@ def reactivate_property(
     property_name = (prop.name or "").strip() or f"{prop.city}, {prop.state}".strip(", ") or f"Property {property_id}"
     prop.deleted_at = None
     db.commit()
+    try:
+        ensure_subscription(db, profile)  # Recreate subscription if it was cancelled when units went to 0
+        sync_subscription_quantities(db, profile)
+    except Exception as e:
+        print(f"[Owners] Subscription ensure/sync failed after reactivate: {e}", flush=True)
     ip = request.client.host if request.client else None
     ua = (request.headers.get("user-agent") or "").strip() or None
     create_log(
@@ -1329,13 +1383,19 @@ def create_invitation(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_owner_onboarding_complete),
 ):
-    """Create a guest invitation; store it and return code for the link."""
+    """Create a guest invitation; store it and return code for the link. Requires onboarding invoice to be paid first."""
     prop_id = data.property_id
     if not prop_id:
         raise HTTPException(status_code=400, detail="property_id required")
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Owner profile not found")
+    # Require onboarding invoice paid before inviting guests (if onboarding was charged)
+    if profile.onboarding_billing_completed_at is not None and profile.onboarding_invoice_paid_at is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Pay your onboarding invoice before inviting guests. Go to Billing to view and pay your invoice.",
+        )
     prop = db.query(Property).filter(Property.id == prop_id, Property.owner_profile_id == profile.id).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")

@@ -20,7 +20,7 @@ from app.models import (  # noqa: F401
     AuditLog, OwnerPOASignature, PendingRegistration,
     PropertyUtilityProvider, PropertyAuthorityLetter,
 )
-from app.routers import auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements
+from app.routers import auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements, billing_webhook
 
 logger = logging.getLogger("app.startup")
 settings = get_settings()
@@ -59,7 +59,8 @@ app.include_router(jle.router)
 app.include_router(dashboard.router)
 app.include_router(notifications.router)
 app.include_router(agreements.router)
-logger.info("[startup] Routers registered (auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements)")
+app.include_router(billing_webhook.router)
+logger.info("[startup] Routers registered (auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements, billing_webhook)")
 
 
 @app.on_event("startup")

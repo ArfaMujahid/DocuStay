@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Input } from '../../components/UI';
 import { UserSession } from '../../types';
-import { ownerPoaApi, API_URL } from '../../services/api';
+import { ownerPoaApi, dashboardApi, API_URL } from '../../services/api';
 import type { OwnerPOASignatureResponse } from '../../services/api';
+import type { BillingResponse } from '../../services/api';
 
-const Settings: React.FC<{ user: UserSession | null; navigate: (v: string) => void; embedded?: boolean }> = ({ user, navigate, embedded }) => {
+const Settings: React.FC<{
+  user: UserSession | null;
+  navigate: (v: string) => void;
+  embedded?: boolean;
+  /** When embedded in owner dashboard, call to switch to Billing tab */
+  onOpenBilling?: () => void;
+}> = ({ user, navigate, embedded, onOpenBilling }) => {
   const [poaSignature, setPoaSignature] = useState<OwnerPOASignatureResponse | null | undefined>(undefined);
+  const [billing, setBilling] = useState<BillingResponse | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
   const [prefs, setPrefs] = useState({
     emailNotifs: true,
     smsNotifs: true,
@@ -20,6 +29,15 @@ const Settings: React.FC<{ user: UserSession | null; navigate: (v: string) => vo
     ownerPoaApi.getMySignature()
       .then((s) => setPoaSignature(s ?? null))
       .catch(() => setPoaSignature(null));
+  }, [isOwner]);
+
+  useEffect(() => {
+    if (!isOwner) return;
+    setBillingLoading(true);
+    dashboardApi.billing()
+      .then(setBilling)
+      .catch(() => setBilling(null))
+      .finally(() => setBillingLoading(false));
   }, [isOwner]);
 
   const openSignedPoaPdf = () => {
@@ -69,6 +87,58 @@ const Settings: React.FC<{ user: UserSession | null; navigate: (v: string) => vo
             </Button>
           </div>
         </Card>
+
+        {/* Subscription & Billing (owners only) */}
+        {isOwner && (
+          <Card className="p-8 md:p-10">
+            <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-6">Subscription & Billing</h2>
+            {billingLoading ? (
+              <p className="text-gray-500 text-sm">Loading…</p>
+            ) : billing === null ? (
+              <p className="text-gray-500 text-sm">Unable to load billing information. Try the Billing tab or refresh.</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Active units (properties)</p>
+                    <p className="text-2xl font-bold text-gray-900">{billing.current_unit_count ?? 0}</p>
+                    <p className="text-sm text-gray-600 mt-1">$1/unit/mo baseline</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Units with Shield</p>
+                    <p className="text-2xl font-bold text-gray-900">{billing.current_shield_count ?? 0}</p>
+                    <p className="text-sm text-gray-600 mt-1">$10/unit/mo when active</p>
+                  </div>
+                </div>
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                  <p className="text-sm font-medium text-gray-800 mb-1">Monthly subscription</p>
+                  <p className="text-sm text-gray-600">
+                    Baseline: ${(billing.current_unit_count ?? 0) * 1}/mo
+                    {(billing.current_shield_count ?? 0) > 0 && (
+                      <> · Shield: ${(billing.current_shield_count ?? 0) * 10}/mo</>
+                    )}
+                    {' '}
+                    (prorated when you add/remove properties or toggle Shield)
+                  </p>
+                </div>
+                {(billing.current_unit_count ?? 0) === 0 && (
+                  <p className="text-gray-500 text-sm">Add a property to start your subscription.</p>
+                )}
+                {billing.can_invite === false && (
+                  <div className="p-4 rounded-lg bg-amber-50 border border-amber-200">
+                    <p className="text-sm font-medium text-amber-800">Pay your onboarding invoice to invite guests.</p>
+                    <p className="text-xs text-amber-700 mt-1">Go to Billing to view and pay.</p>
+                  </div>
+                )}
+                {onOpenBilling && (
+                  <Button variant="outline" type="button" onClick={onOpenBilling}>
+                    View Billing & Invoices
+                  </Button>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Master POA (owners only) */}
         {isOwner && (

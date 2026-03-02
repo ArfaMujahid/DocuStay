@@ -13,9 +13,10 @@ from app.models.owner import Property, OwnerProfile, USAT_TOKEN_STAGED, USAT_TOK
 from app.models.guest_pending_invite import GuestPendingInvite
 from app.models.agreement_signature import AgreementSignature
 from app.models.region_rule import StayClassification, RiskLevel
-from app.schemas.dashboard import OwnerStayView, OwnerInvitationView, GuestStayView, GuestPendingInviteView, OwnerAuditLogEntry
+from app.schemas.dashboard import OwnerStayView, OwnerInvitationView, GuestStayView, GuestPendingInviteView, OwnerAuditLogEntry, BillingResponse, BillingInvoiceView, BillingPaymentView, BillingPortalSessionResponse
 from app.services.jle import resolve_jurisdiction
-from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_DEAD_MANS_SWITCH, CATEGORY_FAILED_ATTEMPT
+from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_DEAD_MANS_SWITCH, CATEGORY_FAILED_ATTEMPT, CATEGORY_BILLING
+from app.services.billing import sync_subscription_quantities
 from app.services.notifications import send_vacate_12h_notice, send_owner_guest_checkout_email, send_guest_checkout_confirmation_email, send_owner_guest_cancelled_stay_email, send_removal_notice_to_guest, send_removal_confirmation_to_owner
 from app.schemas.jle import JLEInput
 from app.dependencies import get_current_user, require_owner, require_owner_onboarding_complete, require_guest
@@ -483,6 +484,8 @@ def confirm_occupancy_status(
         stay.occupancy_confirmation_response = "vacated"
         stay.occupancy_confirmation_responded_at = now
         prop.occupancy_status = OccupancyStatus.vacant.value
+        if getattr(prop, "shield_mode_enabled", 0) == 1:
+            prop.shield_mode_enabled = 0  # Unit status update: vacated → Shield off; billing prorated
         if prop.usat_token_state == USAT_TOKEN_RELEASED:
             prop.usat_token_state = USAT_TOKEN_STAGED
             prop.usat_token_released_at = None
@@ -503,6 +506,12 @@ def confirm_occupancy_status(
             meta={"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.vacant.value, "action": "vacated"},
         )
         db.commit()
+        try:
+            profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+            if profile:
+                sync_subscription_quantities(db, profile)
+        except Exception:
+            pass
         return {"status": "success", "message": "Unit marked as vacated.", "occupancy_status": "vacant"}
 
     if action == "renewed":
@@ -845,6 +854,122 @@ def _parse_optional_utc(s: str | None) -> datetime | None:
         return None
 
 
+@router.get("/owner/billing", response_model=BillingResponse)
+def owner_billing(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner_onboarding_complete),
+):
+    """List Stripe invoices and payments for the current owner. Returns empty lists if Stripe is not configured or no customer yet.
+    can_invite is False until the onboarding invoice has been paid (when one was charged)."""
+    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+    if not profile:
+        return BillingResponse(invoices=[], payments=[], can_invite=True, current_unit_count=0, current_shield_count=0)
+    from app.services.billing import _count_units_and_shield
+    _units, _shield = _count_units_and_shield(db, profile)
+    if not profile.stripe_customer_id:
+        can_invite = profile.onboarding_billing_completed_at is None or profile.onboarding_invoice_paid_at is not None
+        return BillingResponse(invoices=[], payments=[], can_invite=can_invite, current_unit_count=_units, current_shield_count=_shield)
+
+    from app.config import get_settings
+    settings = get_settings()
+    if not (settings.stripe_secret_key or "").strip():
+        return BillingResponse(invoices=[], payments=[], current_unit_count=_units, current_shield_count=_shield)
+
+    import stripe
+    stripe.api_key = settings.stripe_secret_key
+    invoices: list[BillingInvoiceView] = []
+    payments: list[BillingPaymentView] = []
+    try:
+        for inv in stripe.Invoice.list(customer=profile.stripe_customer_id, limit=100).auto_paging_iter():
+            created_dt = datetime.fromtimestamp(inv.created, tz=timezone.utc) if inv.created else datetime.now(timezone.utc)
+            amount_due = getattr(inv, "amount_due", 0) or 0
+            amount_paid = getattr(inv, "amount_paid", 0) or 0
+            desc = getattr(inv, "description", None) or None
+            if not desc and getattr(inv, "lines", None) and getattr(inv.lines, "data", None) and len(inv.lines.data) > 0:
+                desc = getattr(inv.lines.data[0], "description", None)
+            invoices.append(
+                BillingInvoiceView(
+                    id=inv.id,
+                    number=getattr(inv, "number", None) or None,
+                    description=desc,
+                    amount_due_cents=amount_due,
+                    amount_paid_cents=amount_paid,
+                    currency=(inv.currency or "usd").upper(),
+                    status=inv.status or "open",
+                    created=created_dt,
+                    hosted_invoice_url=getattr(inv, "hosted_invoice_url", None) or None,
+                )
+            )
+            if inv.status == "paid" and amount_paid > 0:
+                paid_at = datetime.fromtimestamp(inv.status_transitions.paid_at, tz=timezone.utc) if getattr(inv, "status_transitions", None) and getattr(inv.status_transitions, "paid_at", None) else created_dt
+                payments.append(
+                    BillingPaymentView(
+                        invoice_id=inv.id,
+                        amount_cents=amount_paid,
+                        currency=(inv.currency or "usd").upper(),
+                        paid_at=paid_at,
+                        description=desc,
+                    )
+                )
+            # Self-heal: if webhook missed invoice.paid, set onboarding_invoice_paid_at and record in audit log so it shows in Logs (skip when stripe_skip_onboarding_self_heal for re-testing)
+            meta = getattr(inv, "metadata", None) or {}
+            if not settings.stripe_skip_onboarding_self_heal and inv.status == "paid" and meta.get("onboarding_units") and profile.onboarding_invoice_paid_at is None:
+                profile.onboarding_invoice_paid_at = datetime.now(timezone.utc)
+                user = db.query(User).filter(User.id == profile.user_id).first()
+                create_log(
+                    db,
+                    CATEGORY_BILLING,
+                    "Invoice paid",
+                    f"Invoice {getattr(inv, 'number', inv.id)} paid: ${amount_paid / 100:.2f} {(inv.currency or 'usd').upper()}.",
+                    property_id=None,
+                    actor_user_id=user.id if user else None,
+                    actor_email=user.email if user else None,
+                    meta={"stripe_invoice_id": inv.id, "amount_paid_cents": amount_paid, "currency": (inv.currency or "usd").upper(), "self_heal": True},
+                )
+                db.commit()
+    except stripe.StripeError:
+        can_invite = profile.onboarding_billing_completed_at is None or profile.onboarding_invoice_paid_at is not None
+        return BillingResponse(invoices=[], payments=[], can_invite=can_invite, current_unit_count=_units, current_shield_count=_shield)
+
+    # Sort invoices by created desc, payments by paid_at desc
+    invoices.sort(key=lambda x: x.created, reverse=True)
+    payments.sort(key=lambda x: x.paid_at, reverse=True)
+    # Recompute unit counts (may have changed) and can_invite (may have been set by self-heal above)
+    _units, _shield = _count_units_and_shield(db, profile)
+    can_invite = profile.onboarding_billing_completed_at is None or profile.onboarding_invoice_paid_at is not None
+    return BillingResponse(invoices=invoices, payments=payments, can_invite=can_invite, current_unit_count=_units, current_shield_count=_shield)
+
+
+@router.post("/owner/billing/portal-session", response_model=BillingPortalSessionResponse)
+def create_billing_portal_session(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner_onboarding_complete),
+):
+    """Create a Stripe Customer Billing Portal session. Redirect the user to the returned URL to pay invoices.
+    After payment (including Klarna or other redirect methods), Stripe redirects back to our app (return_url).
+    This avoids the issue where paying via Klarna leaves the user stuck on pay.test.klarna.com with no way back."""
+    from app.config import get_settings
+    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+    if not profile or not profile.stripe_customer_id:
+        raise HTTPException(status_code=404, detail="No billing customer. Add a property first.")
+    settings = get_settings()
+    if not (settings.stripe_secret_key or "").strip():
+        raise HTTPException(status_code=501, detail="Stripe is not configured")
+    base = (settings.stripe_identity_return_url or "").strip().split("#")[0].rstrip("/") or "http://localhost:5173"
+    # Land on Billing tab so we can refetch and show updated status (frontend detects payment return via query params)
+    return_url = f"{base}/#dashboard/billing"
+    import stripe
+    stripe.api_key = settings.stripe_secret_key
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=profile.stripe_customer_id,
+            return_url=return_url,
+        )
+        return BillingPortalSessionResponse(url=session.url)
+    except stripe.StripeError as e:
+        raise HTTPException(status_code=502, detail=f"Stripe error: {e}")
+
+
 @router.get("/owner/logs", response_model=list[OwnerAuditLogEntry])
 def owner_logs(
     db: Session = Depends(get_db),
@@ -865,7 +990,7 @@ def owner_logs(
     from_dt = _parse_optional_utc(from_ts)
     to_dt = _parse_optional_utc(to_ts)
 
-    # Logs for owner's current properties, OR "Property deleted" logs by this owner (property_id set to null after delete)
+    # Logs for owner's properties, "Property deleted" by this owner, or billing logs for this owner
     if property_ids:
         q = db.query(AuditLog).filter(
             or_(
@@ -875,12 +1000,15 @@ def owner_logs(
                     & (AuditLog.title == "Property deleted")
                     & (AuditLog.actor_user_id == current_user.id)
                 ),
+                (AuditLog.category == CATEGORY_BILLING) & (AuditLog.actor_user_id == current_user.id),
             )
         )
     else:
         q = db.query(AuditLog).filter(
-            AuditLog.title == "Property deleted",
-            AuditLog.actor_user_id == current_user.id,
+            or_(
+                (AuditLog.title == "Property deleted") & (AuditLog.actor_user_id == current_user.id),
+                (AuditLog.category == CATEGORY_BILLING) & (AuditLog.actor_user_id == current_user.id),
+            )
         )
     if from_dt is not None:
         q = q.filter(AuditLog.created_at >= from_dt)

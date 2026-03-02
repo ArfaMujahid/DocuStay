@@ -13,10 +13,11 @@ from app.models.invitation import Invitation
 from app.models.stay import Stay
 from app.models.agreement_signature import AgreementSignature
 from app.models.guest_pending_invite import GuestPendingInvite
-from app.models.owner import Property, OccupancyStatus
+from app.models.owner import OwnerProfile, Property, OccupancyStatus
 from app.models.owner_poa_signature import OwnerPOASignature
 from app.models.pending_registration import PendingRegistration
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_GUEST_SIGNATURE, CATEGORY_FAILED_ATTEMPT
+from app.services.billing import sync_subscription_quantities
 from app.schemas.auth import (
     UserCreate,
     UserLogin,
@@ -441,6 +442,13 @@ def _complete_pending_guest(
     db.delete(pending)
     db.commit()
     db.refresh(user)
+    if _prop:
+        try:
+            profile = db.query(OwnerProfile).filter(OwnerProfile.id == _prop.owner_profile_id).first()
+            if profile:
+                sync_subscription_quantities(db, profile)
+        except Exception:
+            pass
     return user
 
 
@@ -1002,6 +1010,13 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
             db.add(_prop)
         db.commit()
         db.refresh(stay)
+        if _prop:
+            try:
+                profile = db.query(OwnerProfile).filter(OwnerProfile.id == _prop.owner_profile_id).first()
+                if profile:
+                    sync_subscription_quantities(db, profile)
+            except Exception:
+                pass
         ip = request.client.host if request.client else None
         ua = (request.headers.get("user-agent") or "").strip() or None
         create_log(
@@ -1217,6 +1232,13 @@ def accept_invite(
         meta={"invitation_code": code, "signature_id": sig.id, "occupancy_status_previous": occ_prev or "unknown", "occupancy_status_new": "occupied"},
     )
     db.commit()
+    if _prop:
+        try:
+            profile = db.query(OwnerProfile).filter(OwnerProfile.id == _prop.owner_profile_id).first()
+            if profile:
+                sync_subscription_quantities(db, profile)
+        except Exception:
+            pass
     prop = db.query(Property).filter(Property.id == inv.property_id).first()
     property_name = (prop.name if prop else None) or (f"{prop.city}, {prop.state}".strip(", ") if prop and (prop.city or prop.state) else None) or "Property"
     send_guest_stay_added_email(

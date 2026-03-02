@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Modal, LoadingOverlay } from '../../components/UI';
 import { InviteGuestModal } from '../../components/InviteGuestModal';
 import { UserSession } from '../../types';
-import { dashboardApi, propertiesApi, type OwnerStayView, type OwnerInvitationView, type OwnerAuditLogEntry, type Property, type BulkUploadResult } from '../../services/api';
+import { dashboardApi, propertiesApi, type OwnerStayView, type OwnerInvitationView, type OwnerAuditLogEntry, type Property, type BulkUploadResult, type BillingResponse, type BillingInvoiceView, type BillingPaymentView } from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
 import Settings from '../Settings/Settings';
 import HelpCenter from '../Support/HelpCenter';
@@ -64,6 +64,9 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
   const [bulkUploadResult, setBulkUploadResult] = useState<BulkUploadResult | null>(null);
   const [bulkUploading, setBulkUploading] = useState(false);
   const bulkUploadFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [billing, setBilling] = useState<BillingResponse | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [paymentReturnMessage, setPaymentReturnMessage] = useState<string | null>(null);
 
   const setLoadingWrapper = (x: boolean) => { setLoadingState(x); setLoading(x); };
 
@@ -177,6 +180,53 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
     if (activeTab === 'logs') loadLogs();
   }, [activeTab]);
 
+  const loadBilling = () => {
+    setBillingLoading(true);
+    dashboardApi.billing()
+      .then(setBilling)
+      .catch(() => setBilling({ invoices: [], payments: [], can_invite: true }))
+      .finally(() => setBillingLoading(false));
+  };
+
+  useEffect(() => {
+    if (activeTab === 'billing') loadBilling();
+  }, [activeTab]);
+
+  // When returning from Stripe payment (portal or hosted invoice), refetch billing and show message so user sees paid status without reloading
+  useEffect(() => {
+    if (activeTab !== 'billing' || typeof window === 'undefined') return;
+    const search = window.location.search || '';
+    const hash = window.location.hash || '';
+    const hasPaymentReturn = /redirect_status=|payment_intent=|payment_intent_client_secret=/.test(search) || /[?&]redirect_status=|[?&]payment_intent=/.test(hash);
+    if (!hasPaymentReturn) return;
+    setBillingLoading(true);
+    dashboardApi.billing()
+      .then((data) => {
+        setBilling(data);
+        setPaymentReturnMessage("We've refreshed your payment status. If you just paid, your invoice and invite access are now updated.");
+        // Clear payment params from URL so we don't re-trigger; keep user on Billing tab
+        window.history.replaceState(null, '', window.location.pathname + '#dashboard/billing');
+      })
+      .catch(() => setBilling((prev) => prev ?? { invoices: [], payments: [], can_invite: true }))
+      .finally(() => setBillingLoading(false));
+  }, [activeTab]);
+
+  // Load billing once on mount so can_invite is available (required before inviting guests)
+  useEffect(() => {
+    loadBilling();
+  }, []);
+
+  const canInvite = billing?.can_invite !== false;
+
+  const openInviteModalOrNotify = () => {
+    if (!canInvite) {
+      notify('error', 'Pay your onboarding invoice before inviting guests. Go to Billing to view and pay.');
+      setActiveTab('billing');
+      return;
+    }
+    setShowInviteModal(true);
+  };
+
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
       {/* Sidebar Navigation (fixed width so it does not shrink) */}
@@ -187,6 +237,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             { id: 'properties', label: 'My Properties', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
             { id: 'guests', label: 'Guests', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
             { id: 'invitations', label: 'Invitations', icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+            { id: 'billing', label: 'Billing', icon: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v2H9v2h2v6a2 2 0 002 2h2a2 2 0 002-2v-6h2V9zm-6 0V7a2 2 0 00-2-2H5a2 2 0 00-2 2v2h4z' },
             { id: 'logs', label: 'Logs', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
             { id: 'settings', label: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
             { id: 'help', label: 'Help Center', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' }
@@ -239,20 +290,39 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
 
       {/* Main Content Area */}
       <main className="flex-grow overflow-y-auto no-scrollbar bg-transparent p-8">
+        {/* Mobile tab nav: when sidebar is hidden (below lg), show dropdown so Billing and all tabs are reachable */}
+        <div className="lg:hidden mb-6">
+          <label htmlFor="mobile-tab-select" className="sr-only">Navigate to</label>
+          <select
+            id="mobile-tab-select"
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value)}
+            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="dashboard">Dashboard</option>
+            <option value="properties">My Properties</option>
+            <option value="guests">Guests</option>
+            <option value="invitations">Invitations</option>
+            <option value="billing">Billing</option>
+            <option value="logs">Logs</option>
+            <option value="settings">Settings</option>
+            <option value="help">Help Center</option>
+          </select>
+        </div>
         {/* No duplicate header on Settings/Help – those pages render their own title and content */}
         {activeTab !== 'settings' && activeTab !== 'help' && (
           <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
             <div>
               <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight">
-                {activeTab === 'properties' ? 'My Properties' : activeTab === 'guests' ? 'Guests' : activeTab === 'invitations' ? 'Invitations' : activeTab === 'logs' ? 'Logs' : 'Overview'}
+                {activeTab === 'properties' ? 'My Properties' : activeTab === 'guests' ? 'Guests' : activeTab === 'invitations' ? 'Invitations' : activeTab === 'billing' ? 'Billing' : activeTab === 'logs' ? 'Logs' : 'Overview'}
               </h1>
               <p className="text-slate-600 mt-1">
-                {activeTab === 'properties' ? 'View, edit, or remove your registered properties.' : activeTab === 'guests' ? 'Guests currently staying at your properties and their stay details.' : activeTab === 'invitations' ? 'Pending invitations waiting for guests to accept.' : activeTab === 'logs' ? 'Immutable audit trail: status changes, guest signatures, and failed attempts. Filter by time, category, or search.' : 'Protecting your properties with AI Enforcement.'}
+                {activeTab === 'properties' ? 'View, edit, or remove your registered properties.' : activeTab === 'guests' ? 'Guests currently staying at your properties and their stay details.' : activeTab === 'invitations' ? 'Pending invitations waiting for guests to accept.' : activeTab === 'billing' ? 'Invoices and payment history. Onboarding and subscription charges appear here.' : activeTab === 'logs' ? 'Immutable audit trail: status changes, guest signatures, payment and billing activity, and failed attempts. Filter by time, category, or search.' : 'Protecting your properties with AI Enforcement.'}
               </p>
             </div>
             <div className="flex gap-4 flex-wrap items-center">
               {activeTab !== 'properties' && (
-                <Button variant="outline" onClick={() => setShowInviteModal(true)} className="px-6 flex items-center gap-2">
+                <Button variant="outline" onClick={openInviteModalOrNotify} className="px-6 flex items-center gap-2" disabled={!canInvite} title={!canInvite ? 'Pay your onboarding invoice in Billing first' : undefined}>
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
                   Invite Guest
                 </Button>
@@ -433,7 +503,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             {stays.length === 0 && invitations.filter((i) => i.status === 'pending').length === 0 && (
               <Card className="p-12 text-center">
                 <p className="text-slate-600 mb-6">No guests or pending invites yet. Invite someone to get started.</p>
-                <Button variant="primary" onClick={() => setShowInviteModal(true)}>Invite Guest</Button>
+                <Button variant="primary" onClick={openInviteModalOrNotify} disabled={!canInvite} title={!canInvite ? 'Pay your onboarding invoice in Billing first' : undefined}>Invite Guest</Button>
               </Card>
             )}
           </div>
@@ -444,7 +514,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
               Invitations you’ve sent. Pending invitations are labeled as expired after 12 hours if not accepted.
             </p>
             <div className="flex gap-4 flex-wrap">
-              <Button variant="primary" onClick={() => setShowInviteModal(true)}>Invite Guest</Button>
+              <Button variant="primary" onClick={openInviteModalOrNotify} disabled={!canInvite} title={!canInvite ? 'Pay your onboarding invoice in Billing first' : undefined}>Invite Guest</Button>
             </div>
 
             {/* Pending (within 12h window) */}
@@ -945,6 +1015,120 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
               </>
             )}
           </div>
+        ) : activeTab === 'billing' ? (
+          <div className="space-y-6">
+            {paymentReturnMessage && (
+              <div className="flex items-center justify-between gap-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
+                <span>{paymentReturnMessage}</span>
+                <button type="button" onClick={() => setPaymentReturnMessage(null)} className="text-emerald-600 hover:text-emerald-800 font-medium shrink-0" aria-label="Dismiss">Dismiss</button>
+              </div>
+            )}
+            <Card className="p-6">
+              <h3 className="text-lg font-bold text-slate-800 mb-2">Billing</h3>
+              <p className="text-slate-500 text-sm mb-4">Invoices and payment history. Onboarding and subscription charges appear here. Billing activity is also recorded in Logs.</p>
+              {billing && (billing.current_unit_count != null || billing.current_shield_count != null) && (
+                <p className="text-slate-600 text-sm mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <strong>Current subscription:</strong> {billing.current_unit_count ?? 0} unit{(billing.current_unit_count ?? 0) !== 1 ? 's' : ''} (${(billing.current_unit_count ?? 0) * 1}/mo baseline)
+                  {(billing.current_shield_count ?? 0) > 0 && (
+                    <>, {(billing.current_shield_count ?? 0)} with Shield (${(billing.current_shield_count ?? 0) * 10}/mo)</>
+                  )}
+                  . Your monthly subscription is based on your current property count. The onboarding invoice in the table shows the unit count at the time it was created and does not change when you add more properties.
+                </p>
+              )}
+              {billingLoading ? (
+                <p className="text-slate-500">Loading billing…</p>
+              ) : (
+                <>
+                  <div className="mb-6">
+                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Invoices</h4>
+                    {!billing || billing.invoices.length === 0 ? (
+                      <p className="text-slate-500 text-sm">No invoices yet. Invoices are created when you add your first properties (onboarding fee) and for monthly subscription.</p>
+                    ) : (
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-100 text-slate-600 uppercase text-xs tracking-wider">
+                            <tr>
+                              <th className="px-4 py-3">Date</th>
+                              <th className="px-4 py-3">Number</th>
+                              <th className="px-4 py-3">Description</th>
+                              <th className="px-4 py-3">Amount</th>
+                              <th className="px-4 py-3">Status</th>
+                              <th className="px-4 py-3">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {billing.invoices.map((inv: BillingInvoiceView) => (
+                              <tr key={inv.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 text-slate-600">{new Date(inv.created).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                                <td className="px-4 py-3 font-mono text-slate-700">{inv.number ?? inv.id.slice(0, 12)}</td>
+                                <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{inv.description ?? '—'}</td>
+                                <td className="px-4 py-3">${(inv.amount_due_cents / 100).toFixed(2)} {inv.currency.toUpperCase()}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                    inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
+                                    inv.status === 'open' ? 'bg-amber-100 text-amber-800' :
+                                    'bg-slate-100 text-slate-700'
+                                  }`}>{inv.status}</span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  {inv.status !== 'paid' ? (
+                                    inv.hosted_invoice_url ? (
+                                      <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Pay invoice</a>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          dashboardApi.billingPortalSession()
+                                            .then((data) => { window.location.href = data.url; })
+                                            .catch(() => notify('error', 'Could not open payment page. Try again.'));
+                                        }}
+                                        className="text-blue-600 hover:underline disabled:opacity-50"
+                                      >
+                                        Pay invoice
+                                      </button>
+                                    )
+                                  ) : inv.hosted_invoice_url ? (
+                                    <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:underline">View</a>
+                                  ) : null}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Payments</h4>
+                    {!billing || billing.payments.length === 0 ? (
+                      <p className="text-slate-500 text-sm">No payments yet.</p>
+                    ) : (
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-100 text-slate-600 uppercase text-xs tracking-wider">
+                            <tr>
+                              <th className="px-4 py-3">Paid at</th>
+                              <th className="px-4 py-3">Description</th>
+                              <th className="px-4 py-3">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {billing.payments.map((pay: BillingPaymentView) => (
+                              <tr key={pay.invoice_id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 text-slate-600">{new Date(pay.paid_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                                <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{pay.description ?? 'Payment'}</td>
+                                <td className="px-4 py-3 font-medium">${(pay.amount_cents / 100).toFixed(2)} {pay.currency.toUpperCase()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </Card>
+          </div>
         ) : activeTab === 'logs' ? (
           <div className="space-y-6">
             <Card className="p-6">
@@ -980,6 +1164,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                     <option value="dead_mans_switch">Dead Man&apos;s Switch</option>
                     <option value="guest_signature">Guest signature</option>
                     <option value="failed_attempt">Failed attempt</option>
+                    <option value="billing">Billing</option>
                   </select>
                 </div>
                 <div>
@@ -1000,7 +1185,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             <Card className="overflow-hidden">
               <div className="p-6 border-b border-slate-200 bg-slate-50">
                 <h3 className="text-lg font-bold text-slate-800">Audit log (append-only)</h3>
-                <p className="text-slate-500 text-sm mt-1">Status changes, Shield Mode and Dead Man&apos;s Switch on/off, guest signatures, and failed attempts are recorded. Use the category filter to view Shield Mode or Dead Man&apos;s Switch logs. Records cannot be edited or deleted.</p>
+                <p className="text-slate-500 text-sm mt-1">Status changes, Shield Mode and Dead Man&apos;s Switch on/off, guest signatures, payment and billing activity (invoices created, paid), and failed attempts are recorded. Use the category filter to view Shield Mode, Dead Man&apos;s Switch, or Billing logs. Records cannot be edited or deleted.</p>
               </div>
               <div className="overflow-x-auto">
                 {logsLoading && logs.length === 0 ? (
@@ -1031,9 +1216,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                               entry.category === 'guest_signature' ? 'bg-emerald-100 text-emerald-800' :
                               entry.category === 'shield_mode' ? 'bg-violet-100 text-violet-800' :
                               entry.category === 'dead_mans_switch' ? 'bg-amber-100 text-amber-800' :
+                              entry.category === 'billing' ? 'bg-slate-200 text-slate-800' :
                               'bg-sky-100 text-sky-800'
                             }`}>
-                              {entry.category === 'shield_mode' ? 'Shield Mode' : entry.category === 'dead_mans_switch' ? "Dead Man's Switch" : entry.category.replace('_', ' ')}
+                              {entry.category === 'shield_mode' ? 'Shield Mode' : entry.category === 'dead_mans_switch' ? "Dead Man's Switch" : entry.category === 'billing' ? 'Billing' : entry.category.replace('_', ' ')}
                             </span>
                           </td>
                           <td className="px-6 py-3 font-medium text-slate-800">{entry.title}</td>
@@ -1059,7 +1245,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
           </div>
         ) : activeTab === 'settings' ? (
           <div className="w-full">
-            <Settings user={user} navigate={navigate} embedded />
+            <Settings user={user} navigate={navigate} embedded onOpenBilling={() => setActiveTab('billing')} />
           </div>
         ) : activeTab === 'help' ? (
           <div className="w-full">
