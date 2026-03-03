@@ -77,7 +77,7 @@ const Settings: React.FC<{
         <Card className="p-8 md:p-10">
           <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-8">Personal Information</h2>
           <div className="grid md:grid-cols-2 gap-6">
-            <Input label="Full Legal Name" name="name" value={user?.user_name || ''} onChange={() => {}} disabled />
+            <Input label="Full name" name="name" value={user?.user_name || ''} onChange={() => {}} disabled />
             <Input label="Verified Email" name="email" value={user?.email || ''} onChange={() => {}} disabled />
             <Input label="Phone Number" name="phone" value="+1 (555) 000-0000" onChange={() => {}} />
           </div>
@@ -143,7 +143,7 @@ const Settings: React.FC<{
         {/* Master POA (owners only) */}
         {isOwner && (
           <Card className="p-8 md:p-10">
-            <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-6">Master Power of Attorney (POA)</h2>
+            <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-6">Authorization (POA)</h2>
             <p className="text-gray-600 text-sm mb-4">
               The Master POA is the one-time document you signed during registration that designates DocuStay as your Authorized Agent for utility authorization and audit trails for all your properties.
             </p>

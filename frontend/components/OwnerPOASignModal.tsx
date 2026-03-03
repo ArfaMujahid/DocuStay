@@ -57,7 +57,7 @@ export default function OwnerPOASignModal(props: {
       return;
     }
     if (!typedSignature?.trim()) {
-      const msg = "Type your full legal name to sign.";
+      const msg = "Type your full name to sign.";
       notify("error", msg);
       return;
     }
@@ -93,7 +93,7 @@ export default function OwnerPOASignModal(props: {
     }
   };
 
-  const shortTitle = doc?.title ?? "Master Power of Attorney (POA)";
+  const shortTitle = doc?.title ?? "Authorization document";
 
   return (
     <Modal open={open} onClose={onClose} title={shortTitle} className="max-w-5xl">
@@ -103,7 +103,7 @@ export default function OwnerPOASignModal(props: {
             <p className="text-sm text-slate-600">
               This one-time document designates DocuStay as your Authorized Agent for all properties you add.
             </p>
-            <p className="text-xs text-slate-500 italic">DocuStay is a legal technology platform, not a law firm.</p>
+            <p className="text-xs text-slate-500 italic">DocuStay is a documentation platform, not a law firm.</p>
           </div>
           {doc?.document_id ? (
             <span className="text-xs text-slate-500 font-mono">{doc.document_id}</span>
@@ -139,7 +139,7 @@ export default function OwnerPOASignModal(props: {
           <div className="lg:col-span-3">
             <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
               <div className="px-4 py-3 border-b border-slate-200">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Master POA</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Authorization document</p>
               </div>
               <div className="p-4 max-h-[50vh] overflow-y-auto whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
                 {loading ? "Loading document…" : (doc?.content ?? "Document unavailable.")}
@@ -152,7 +152,7 @@ export default function OwnerPOASignModal(props: {
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Acknowledgments</p>
               {(
                 [
-                  ["read", "I have read the entire Master POA"],
+                  ["read", "I have read the entire document"],
                   ["temporary", "I acknowledge this is a one-time account-level authorization"],
                   ["vacate", "I understand this covers all properties I add now and in the future"],
                   ["electronic", "I consent to electronic signature"],
@@ -177,7 +177,7 @@ export default function OwnerPOASignModal(props: {
               ) : (
                 <>
                   <Input
-                    label="Type full legal name *"
+                    label="Type full name *"
                     name="typed_signature"
                     value={typedSignature}
                     onChange={(e) => setTypedSignature(e.target.value)}
@@ -185,7 +185,7 @@ export default function OwnerPOASignModal(props: {
                     required
                   />
                   <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold">
-                    By signing, you agree this is legally binding.
+                    By signing, you agree to the terms of this document.
                   </p>
                   <div className="flex flex-col gap-3 pt-1">
                     <div className="flex gap-3">

@@ -63,7 +63,7 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
           navigate('verify');
         } else if (result.data && 'token' in result.data && onLogin) {
           // Continue onboarding (existing incomplete owner).
-          notify('success', 'Welcome back. Next: verify your identity.');
+          notify('success', 'Welcome back. Complete verification to continue.');
           onLogin(result.data);
           navigate('onboarding/identity');
         }
@@ -112,13 +112,12 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
           <div className="max-w-2xl mx-auto w-full">
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-xl font-semibold text-gray-900">Create Owner Account</h1>
-              <span className="text-xs text-gray-500 uppercase tracking-wide">Step 1 of 3 · Identity & POA next</span>
             </div>
             
             <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-x-6 gap-y-4">
               <div className="md:col-span-2">
                 <Input 
-                  label="Full Legal Name" 
+                  label="Full name" 
                   name="full_name" 
                   value={formData.full_name} 
                   onChange={e => setFormData({ ...formData, full_name: e.target.value })} 
@@ -214,7 +213,7 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
               </div>
 
               <div className="md:col-span-2 mt-6 flex flex-col items-center">
-                <p className="text-sm text-slate-500 mb-2">After signup you will verify your identity, then sign the Master POA.</p>
+                <p className="text-sm text-slate-500 mb-2">After signup you’ll complete verification and authorization.</p>
                 <Button type="submit" className="w-full md:min-w-[200px] py-3">
                   Create Secure Account
                 </Button>

@@ -1,8 +1,12 @@
 /**
  * DocuStay backend API client.
  * Replaces Gemini service for auth, properties, and invitations.
+ * All URLs from .env; no hardcoded localhost (set VITE_API_URL and VITE_APP_ORIGIN in .env for deployment).
  */
-export const API_URL = (import.meta as any).env?.VITE_API_URL || (typeof window !== "undefined" ? "/api" : "http://127.0.0.1:8000");
+export const API_URL = (import.meta as any).env?.VITE_API_URL ?? (typeof window !== "undefined" ? "/api" : "");
+/** Frontend app origin for Stripe return_url, invite links, etc. From .env VITE_APP_ORIGIN, or window.location.origin in browser. */
+export const APP_ORIGIN =
+  (import.meta as any).env?.VITE_APP_ORIGIN ?? (typeof window !== "undefined" ? window.location.origin : "");
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -29,7 +33,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   } catch (e) {
     const msg = (e as Error)?.message ?? "";
     if (msg === "Failed to fetch" || msg.includes("fetch") || msg.includes("NetworkError")) {
-      throw new Error(`Cannot reach the server at ${API_URL}. Make sure the backend is running (e.g. uvicorn app.main:app --reload).`);
+      throw new Error(`Cannot reach the server${API_URL ? ` at ${API_URL}` : ""}. Set VITE_API_URL in .env and ensure the backend is running.`);
     }
     throw e;
   }
@@ -71,27 +75,37 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         throw new Error("Your signup session expired. Please start over from registration or try logging in if you already completed signup.");
       }
       if (d.includes("not authenticated")) {
-        throw new Error("Your session was lost after returning from identity verification. Ensure STRIPE_IDENTITY_RETURN_URL matches your app URL (e.g. http://localhost:5173 for Vite). Please start over from registration.");
+        throw new Error("Your session was lost. Please start over from registration.");
       }
-      throw new Error(detail || "Identity verification failed. Please start over from registration.");
+      throw new Error(detail || "Something went wrong. Please start over from registration.");
     }
     throw new Error(detail || "Session expired. Please log in again.");
   }
   if (!res.ok) {
     const text = await res.text();
-    let detail = text;
+    let detail: string | object = text;
     try {
       const j = JSON.parse(text);
-      detail = Array.isArray(j.detail) ? j.detail.map((d: any) => d.msg || d).join(", ") : (j.detail || text);
+      detail = Array.isArray(j.detail) ? j.detail.map((d: any) => d.msg || d).join(", ") : (j.detail ?? text);
     } catch {
       // use text as-is
     }
+    const detailStr = typeof detail === "object" && detail !== null && "detail" in (detail as object)
+      ? String((detail as { detail?: string }).detail ?? text)
+      : String(detail);
     if (res.status === 403 && typeof window !== "undefined") {
-      const d = (detail || "").toLowerCase();
+      const d = detailStr.toLowerCase();
       if (d.includes("identity verification")) window.location.hash = "onboarding/identity";
       else if (d.includes("master poa") || d.includes("poa")) window.location.hash = "onboarding/poa";
     }
-    throw new Error(detail);
+    const err = new Error(detailStr) as Error & { errorCode?: string; sessionId?: string };
+    if (typeof detail === "object" && detail !== null && "error_code" in (detail as object)) {
+      err.errorCode = (detail as { error_code?: string }).error_code;
+    }
+    if (typeof detail === "object" && detail !== null && "session_id" in (detail as object)) {
+      err.sessionId = (detail as { session_id?: string }).session_id;
+    }
+    throw err;
   }
   if (res.status === 204 || res.headers.get("content-length") === "0") return undefined as T;
   return res.json() as Promise<T>;
@@ -344,6 +358,13 @@ export const pendingOwnerApi = {
   /** Get the verification_session_id we stored when creating the session. Use when Stripe redirect omits session_id in URL. */
   async getLatestIdentitySession(): Promise<{ verification_session_id: string }> {
     return request<{ verification_session_id: string }>("/auth/pending-owner/latest-identity-session");
+  },
+  /** Get a fresh Stripe Identity URL to retry verification (same session). Returns url for requires_input; already_verified if done. */
+  async getIdentityRetryUrl(verificationSessionId: string): Promise<{ url?: string | null; already_verified?: boolean; message?: string }> {
+    return request<{ url?: string | null; already_verified?: boolean; message?: string }>("/auth/pending-owner/identity-retry", {
+      method: "POST",
+      body: JSON.stringify({ verification_session_id: verificationSessionId }),
+    });
   },
   /** Get email/full_name for POA modal. */
   async me(): Promise<{ email: string; full_name: string | null }> {

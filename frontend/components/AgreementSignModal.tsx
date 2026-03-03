@@ -49,7 +49,7 @@ export default function AgreementSignModal(props: {
   const handleSign = async () => {
     if (!normalizedCode) return notify("error", "Invitation code is missing.");
     if (!guestEmail?.trim()) return notify("error", "Enter your email first.");
-    if (!typedSignature?.trim()) return notify("error", "Type your full legal name to sign.");
+    if (!typedSignature?.trim()) return notify("error", "Type your full name to sign.");
     if (!doc) return notify("error", "Agreement is not loaded yet.");
     if (!allAcks) return notify("error", "Please acknowledge all items to proceed.");
 
@@ -174,7 +174,7 @@ export default function AgreementSignModal(props: {
               ) : (
                 <>
                   <Input
-                    label="Type full legal name *"
+                    label="Type full name *"
                     name="typed_signature"
                     value={typedSignature}
                     onChange={(e) => setTypedSignature(e.target.value)}

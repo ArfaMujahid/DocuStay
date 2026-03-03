@@ -5,6 +5,24 @@
 
 export type RedirectTarget = "register" | "verify" | "login" | "onboarding/identity" | "onboarding/poa" | null;
 
+/** Stripe Identity last_error.code values we may get from the backend on confirm-identity 400. */
+const STRIPE_IDENTITY_ERROR_CODES: Record<string, string> = {
+  document_expired: "Your document has expired. Please use a valid, current ID and try again.",
+  selfie_face_mismatch: "The selfie didn't match your document. Please try again and ensure your face is clearly visible.",
+  document_unverified_other: "We couldn't verify your document. Please use a valid government-issued ID and try again.",
+  abandoned: "Verification wasn't completed. You can try again.",
+};
+
+/**
+ * Returns a short user-friendly message for a Stripe Identity error code (from confirm-identity 400 body).
+ * Returns null if no mapping exists (caller can fall back to API detail message).
+ */
+export function getStripeIdentityErrorCodeMessage(code: string | undefined | null): string | null {
+  if (!code || typeof code !== "string") return null;
+  const key = code.trim().toLowerCase();
+  return STRIPE_IDENTITY_ERROR_CODES[key] ?? null;
+}
+
 export interface OwnerSignupErrorResult {
   /** Message to show in UI (toast, inline, or modal). */
   message: string;

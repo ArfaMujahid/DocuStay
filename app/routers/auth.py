@@ -37,6 +37,8 @@ from app.schemas.auth import (
     PendingOwnerConfirmIdentityRequest,
     PendingOwnerMeResponse,
     PendingOwnerLatestIdentitySessionResponse,
+    PendingOwnerIdentityRetryRequest,
+    PendingOwnerIdentityRetryResponse,
     CompleteOwnerSignupRequest,
 )
 from app.services.auth import (
@@ -743,16 +745,18 @@ def pending_owner_create_identity_session(
     import stripe
     settings = get_settings()
     stripe.api_key = settings.stripe_secret_key
-    # Prefer frontend-provided return_url so Stripe redirects to same origin (localhost vs 127.0.0.1) - otherwise token is lost.
-    base_url = (settings.stripe_identity_return_url or "").split("#")[0].rstrip("/") or "http://localhost:3000"
+    # Use STRIPE_IDENTITY_RETURN_URL or FRONTEND_BASE_URL from .env; no hardcoded localhost.
+    base_url = (settings.stripe_identity_return_url or settings.frontend_base_url or "").strip().split("#")[0].rstrip("/")
     candidate = (data.return_url or "").strip().split("#")[0].rstrip("/") if data and data.return_url else ""
-    if candidate and (
-        candidate.startswith("http://localhost") or candidate.startswith("https://localhost") or
-        candidate.startswith("http://127.0.0.1") or candidate.startswith("https://127.0.0.1")
-    ):
+    if candidate and (candidate.startswith("http://") or candidate.startswith("https://")):
         return_url = f"{candidate.rstrip('/')}/onboarding/identity-complete"
-    else:
+    elif base_url:
         return_url = f"{base_url}/onboarding/identity-complete"
+    else:
+        raise HTTPException(
+            status_code=503,
+            detail="Identity verification is not configured. Set STRIPE_IDENTITY_RETURN_URL or FRONTEND_BASE_URL in .env.",
+        )
     try:
         flow_id = (settings.stripe_identity_flow_id or "").strip()
         if flow_id:
@@ -764,7 +768,12 @@ def pending_owner_create_identity_session(
                 "metadata": {"pending_id": str(pending.id)},
                 "options": {"document": {"allowed_types": ["driving_license", "passport", "id_card"], "require_matching_selfie": True}},
             }
-        session = stripe.identity.VerificationSession.create(**create_params, idempotency_key=f"identity_pending_{pending.id}")
+        idempotency_key = (
+            f"identity_pending_{pending.id}_new_{int(datetime.now(timezone.utc).timestamp())}"
+            if (data and getattr(data, "force_new_session", False))
+            else f"identity_pending_{pending.id}"
+        )
+        session = stripe.identity.VerificationSession.create(**create_params, idempotency_key=idempotency_key)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Stripe error: {getattr(e, 'message', str(e))}")
     _url = getattr(session, "url", None) or (session.get("url") if hasattr(session, "get") and callable(session.get) else None)
@@ -809,12 +818,20 @@ def pending_owner_confirm_identity(
     # Success = Stripe status "verified"; any other status (requires_input, processing, canceled, etc.) = failure.
     if session.status != "verified":
         print(f"[Stripe Identity] VERIFICATION NOT COMPLETED status={session.status} session_id={session_id} (use status/last_error above to decide)")
-        # Remove this pending owner so the email can start signup again as if they never existed.
-        pending_email = pending.email
-        db.delete(pending)
-        db.commit()
-        print(f"[Stripe Identity] Deleted pending owner for {pending_email} so they can re-register", flush=True)
-        raise HTTPException(status_code=400, detail=_stripe_session_failure_detail(session))
+        # Do NOT delete pending; user can retry via identity-retry endpoint.
+        detail_msg = _stripe_session_failure_detail(session)
+        last_error = getattr(session, "last_error", None) or (session.get("last_error") if hasattr(session, "get") and callable(session.get) else None)
+        err_code = None
+        if last_error:
+            err_code = getattr(last_error, "code", None) if not isinstance(last_error, dict) else last_error.get("code")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "detail": detail_msg,
+                "error_code": err_code,
+                "session_id": session_id,
+            },
+        )
     print(f"[Stripe Identity] SUCCESS confirm-identity: marking pending_id={pending.id} as identity-verified")
     pending.extra_data = {
         **(pending.extra_data or {}),
@@ -839,6 +856,53 @@ def pending_owner_latest_identity_session(pending: PendingRegistration = Depends
     if not sid:
         raise HTTPException(status_code=404, detail="No identity session found for this signup. Start verification from the identity step.")
     return PendingOwnerLatestIdentitySessionResponse(verification_session_id=sid)
+
+
+@router.post("/pending-owner/identity-retry", response_model=PendingOwnerIdentityRetryResponse)
+def pending_owner_identity_retry(
+    data: PendingOwnerIdentityRetryRequest,
+    pending: PendingRegistration = Depends(get_pending_owner),
+):
+    """Return a fresh Stripe Identity URL for the same session so the user can retry verification (e.g. after requires_input)."""
+    if not _stripe_identity_configured():
+        raise HTTPException(status_code=503, detail="Identity verification is not configured.")
+    import stripe
+    settings = get_settings()
+    stripe.api_key = settings.stripe_secret_key
+    session_id = (data.verification_session_id or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="verification_session_id is required.")
+    try:
+        session = stripe.identity.VerificationSession.retrieve(session_id)
+    except Exception as e:
+        print(f"[Stripe Identity] RETRIEVE (retry) FAILED session_id={session_id} error={type(e).__name__}: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid or expired verification session: {getattr(e, 'message', str(e))}")
+    _log_stripe_session(session, "RETRIEVE_RETRY")
+    meta = getattr(session, "metadata", None) or (session.get("metadata") if hasattr(session, "get") and callable(session.get) else {})
+    if meta.get("pending_id") != str(pending.id):
+        raise HTTPException(status_code=403, detail="This verification session does not match your signup.")
+    status = getattr(session, "status", None) or (session.get("status") if hasattr(session, "get") and callable(session.get) else None)
+    if status == "canceled":
+        raise HTTPException(
+            status_code=400,
+            detail="This verification link is no longer valid. Please start verification again.",
+        )
+    if status == "verified":
+        return PendingOwnerIdentityRetryResponse(
+            url=None,
+            already_verified=True,
+            message="Identity is already verified. You can continue to sign the Master POA.",
+        )
+    if status == "requires_input":
+        _url = getattr(session, "url", None) or (session.get("url") if hasattr(session, "get") and callable(session.get) else None)
+        url = str(_url).strip() if _url else None
+        if not url or not url.startswith("http"):
+            raise HTTPException(status_code=502, detail="Stripe did not return a retry URL. Please start verification again.")
+        return PendingOwnerIdentityRetryResponse(url=url, already_verified=False)
+    raise HTTPException(
+        status_code=400,
+        detail=f"Verification session is not ready for retry (status: {status}). Please complete the flow or start verification again.",
+    )
 
 
 @router.post("/pending-owner/complete-signup", response_model=Token)

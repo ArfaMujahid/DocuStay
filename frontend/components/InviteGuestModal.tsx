@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Input, Button } from './UI';
-import { invitationsApi, propertiesApi } from '../services/api';
+import { invitationsApi, propertiesApi, APP_ORIGIN } from '../services/api';
 import { copyToClipboard } from '../utils/clipboard';
 import type { UserSession } from '../types';
 
@@ -120,7 +120,8 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
         checkout_date: formData.checkout_date,
       });
       if (result.status === 'success' && result.data?.invitation_code) {
-        const link = `${window.location.origin}${window.location.pathname}#invite/${result.data.invitation_code}`;
+        const base = APP_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "");
+        const link = `${base}${window.location.pathname}#invite/${result.data.invitation_code}`;
         linkGeneratedRef.current = true;
         setInviteLink(link);
         setShowLinkResult(true);

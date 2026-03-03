@@ -955,7 +955,9 @@ def create_billing_portal_session(
     settings = get_settings()
     if not (settings.stripe_secret_key or "").strip():
         raise HTTPException(status_code=501, detail="Stripe is not configured")
-    base = (settings.stripe_identity_return_url or "").strip().split("#")[0].rstrip("/") or "http://localhost:5173"
+    base = (settings.stripe_identity_return_url or settings.frontend_base_url or "").strip().split("#")[0].rstrip("/")
+    if not base:
+        raise HTTPException(status_code=501, detail="Billing return URL not configured. Set STRIPE_IDENTITY_RETURN_URL or FRONTEND_BASE_URL in .env.")
     # Land on Billing tab so we can refetch and show updated status (frontend detects payment return via query params)
     return_url = f"{base}/#dashboard/billing"
     import stripe

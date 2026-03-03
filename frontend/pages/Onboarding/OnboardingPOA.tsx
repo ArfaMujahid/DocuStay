@@ -45,7 +45,7 @@ export default function OnboardingPOA({ user, onCompleteSignup, navigate, setLoa
         const msg = (pendingErr as Error)?.message ?? "";
         if (user && (msg.toLowerCase().includes("session expired") || msg.toLowerCase().includes("unauthorized"))) {
           await authApi.linkOwnerPoa(signatureId);
-          notify("success", "Master POA linked. Completing onboarding…");
+          notify("success", "Authorization linked. Completing setup…");
           navigate("dashboard");
           return;
         }
@@ -90,9 +90,9 @@ export default function OnboardingPOA({ user, onCompleteSignup, navigate, setLoa
   return (
     <div className="flex-grow flex flex-col items-center justify-center p-6">
       <Card className="max-w-lg w-full p-8 text-center">
-        <h1 className="text-xl font-semibold text-gray-900 mb-2">Sign Master POA</h1>
+        <h1 className="text-xl font-semibold text-gray-900 mb-2">Complete authorization</h1>
         <p className="text-gray-600 mb-6">
-          Your identity is verified. Sign the Master Power of Attorney to complete your account and authorize DocuStay for your properties.
+          Your identity is verified. Sign the one-time authorization document to complete your account and authorize DocuStay for your properties.
         </p>
         {poaError && (
           <div className="mb-4 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm text-left" role="alert">
@@ -100,10 +100,10 @@ export default function OnboardingPOA({ user, onCompleteSignup, navigate, setLoa
           </div>
         )}
         <Button onClick={() => { setPoaError(null); setPoaModalOpen(true); }} disabled={linking} className="w-full">
-          {linking ? "Completing…" : "Sign Master POA"}
+          {linking ? "Completing…" : "Sign authorization document"}
         </Button>
         <button type="button" onClick={() => navigate("onboarding/identity")} className="mt-3 text-sm text-slate-600 hover:text-slate-900 underline">
-          Back to identity verification
+          Back to identity
         </button>
       </Card>
 

@@ -141,7 +141,7 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialInviteCode, setPending
                   Guest Profile
                 </h3>
                 <div className="space-y-4">
-                  <Input label="Full Legal Name" name="full_name" value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} required />
+                  <Input label="Full name" name="full_name" value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} required />
                   <Input label="Email Address" name="email" type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required />
                   <Input label="Phone Number" name="phone" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="+1 555-000-0000" required />
                   <div className="grid grid-cols-2 gap-4">

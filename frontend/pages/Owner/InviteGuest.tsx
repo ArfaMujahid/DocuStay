@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, Input, Button } from '../../components/UI';
-import { invitationsApi, propertiesApi } from '../../services/api';
+import { invitationsApi, propertiesApi, APP_ORIGIN } from '../../services/api';
 import { UserSession } from '../../types';
 import { copyToClipboard } from '../../utils/clipboard';
 
@@ -49,7 +49,8 @@ const InviteGuest: React.FC<{ user: UserSession | null, navigate: (v: string) =>
       if (result.status === 'success' && result.data?.invitation_code) {
         notify('success', 'Invitation generated and sent!');
         const inviteCode = result.data.invitation_code;
-        const link = `${window.location.origin}${window.location.pathname}#invite/${inviteCode}`;
+        const base = APP_ORIGIN || window.location.origin;
+        const link = `${base}${window.location.pathname}#invite/${inviteCode}`;
         setInviteLink(link);
         setShowInviteModal(true);
       } else {

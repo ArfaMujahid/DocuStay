@@ -75,7 +75,7 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
       // Only treat as success when API returned success and we have valid session data (token + user).
       const hasValidSession = result.status === 'success' && result.data && result.data.token && result.data.user_id;
       if (hasValidSession) {
-        notify('success', 'Verification successful! Next: verify your identity.');
+        notify('success', 'Verification successful! You’ll complete the next step shortly.');
         onVerified(result.data);
       } else {
         setAttempts(prev => prev + 1);

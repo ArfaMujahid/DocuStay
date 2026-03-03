@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Card, Button } from "../../components/UI";
+import { API_URL, APP_ORIGIN } from "../../services/api";
 import { getOwnerSignupErrorFriendly } from "../../utils/ownerSignupErrors";
 
-const API_URL = (import.meta as any).env?.VITE_API_URL || (typeof window !== "undefined" ? "/api" : "http://127.0.0.1:8000");
 const getToken = () => (typeof window !== "undefined" ? localStorage.getItem("docustay_token") : null);
 
 interface Props {
@@ -39,8 +39,16 @@ export default function OnboardingIdentity({ isPendingOwner, navigate, setLoadin
     const headers: HeadersInit = { "Content-Type": "application/json", Accept: "application/json" };
     if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
 
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const searchParams = new URLSearchParams(search + (hash.includes("?") ? hash.slice(hash.indexOf("?")) : ""));
+    const forceNewSession = searchParams.get("new") === "1";
+
     const body = isPendingOwner
-      ? JSON.stringify({ return_url: `${window.location.origin}/onboarding/identity-complete` })
+      ? JSON.stringify({
+          return_url: `${APP_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "")}/onboarding/identity-complete`,
+          force_new_session: forceNewSession,
+        })
       : undefined;
 
     const promise = fetch(`${API_URL}${path}`, { method: "POST", headers, body }).then(async (r) => {
@@ -117,7 +125,7 @@ export default function OnboardingIdentity({ isPendingOwner, navigate, setLoadin
   return (
     <div className="flex-grow flex flex-col items-center justify-center p-6">
       <Card className="max-w-lg w-full p-8 text-center">
-        <h1 className="text-xl font-semibold text-gray-900 mb-2">Identity Verification</h1>
+        <h1 className="text-xl font-semibold text-gray-900 mb-2">Verify your identity</h1>
         <p className="text-gray-600 mb-6">
           You will be redirected to our secure partner to verify your identity with a government-issued ID and selfie.
         </p>

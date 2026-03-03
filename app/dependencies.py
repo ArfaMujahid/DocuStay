@@ -1,13 +1,17 @@
 """Shared dependencies: DB session, current user."""
+import logging
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError, OperationalError as SQLOperationalError
+from app.config import get_settings
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.owner_poa_signature import OwnerPOASignature
 from app.models.pending_registration import PendingRegistration
 from app.services.auth import decode_token_with_error
+
+logger = logging.getLogger(__name__)
 
 security = HTTPBearer(auto_error=False)
 
@@ -62,6 +66,13 @@ def get_pending_owner(
     """Requires a pending-owner JWT (from verify-email for owner). Returns the PendingRegistration."""
     try:
         if not credentials:
+            return_url = (get_settings().stripe_identity_return_url or "").strip() or "(not set)"
+            logger.warning(
+                "Pending-owner auth failed: no credentials. Session may have been lost after Stripe redirect. "
+                "Ensure STRIPE_IDENTITY_RETURN_URL (or FRONTEND_BASE_URL) matches your app URL in .env. "
+                "Current STRIPE_IDENTITY_RETURN_URL=%s",
+                return_url,
+            )
             raise HTTPException(status_code=401, detail="Not authenticated")
         token_str = (credentials.credentials or "").strip()
         payload, _ = decode_token_with_error(token_str)

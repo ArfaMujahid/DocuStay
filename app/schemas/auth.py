@@ -170,6 +170,7 @@ class LinkPOARequest(BaseModel):
 class PendingOwnerIdentitySessionRequest(BaseModel):
     """Optional: frontend sends return_url so Stripe redirects to same origin (preserves localStorage token)."""
     return_url: str | None = None
+    force_new_session: bool = False  # when True, use a new idempotency key so Stripe creates a new session (e.g. after canceled)
 
 
 class PendingOwnerIdentitySessionResponse(BaseModel):
@@ -189,6 +190,18 @@ class PendingOwnerMeResponse(BaseModel):
 class PendingOwnerLatestIdentitySessionResponse(BaseModel):
     """Session id we stored when creating the identity session; use when Stripe redirect omits session_id in URL."""
     verification_session_id: str
+
+
+class PendingOwnerIdentityRetryRequest(BaseModel):
+    """Request a fresh URL to retry identity verification (same Stripe session)."""
+    verification_session_id: str
+
+
+class PendingOwnerIdentityRetryResponse(BaseModel):
+    """Fresh Stripe Identity URL for retry, or already_verified flag."""
+    url: str | None = None
+    already_verified: bool = False
+    message: str | None = None
 
 
 class CompleteOwnerSignupRequest(BaseModel):
