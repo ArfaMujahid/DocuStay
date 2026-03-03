@@ -1,5 +1,6 @@
 """Module A: Authentication & role selection."""
 import random
+import secrets
 import string
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -27,6 +28,8 @@ from app.schemas.auth import (
     AcceptInvite,
     VerifyEmailRequest,
     ResendVerificationRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
     RegisterPendingResponse,
     LinkPOARequest,
     PendingOwnerIdentitySessionRequest,
@@ -36,9 +39,17 @@ from app.schemas.auth import (
     PendingOwnerLatestIdentitySessionResponse,
     CompleteOwnerSignupRequest,
 )
-from app.services.auth import get_password_hash, verify_password, create_access_token, create_pending_owner_token
+from app.services.auth import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    create_pending_owner_token,
+    create_password_reset_token,
+    decode_token_with_error,
+)
 from app.services.notifications import (
     send_verification_email,
+    send_password_reset_email,
     send_owner_welcome_email,
     send_guest_welcome_email,
     send_guest_signup_welcome_email,
@@ -603,6 +614,73 @@ def resend_verification(data: ResendVerificationRequest, db: Session = Depends(g
             detail="We could not send the verification email. Check MAILGUN_DOMAIN and MAILGUN_FROM_EMAIL in .env and restart the server, then try again.",
         )
     return {"status": "ok", "message": "Verification code sent. Check your email."}
+
+
+@router.post("/forgot-password")
+def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Request a password reset email. Role (owner or guest) is required so we target the correct
+    account when the same email is registered as both owner and guest. Frontend passes role based
+    on which sign-in page the user came from.
+    """
+    user = db.query(User).filter(User.email == data.email, User.role == data.role).first()
+    if not user:
+        role_label = "owner" if data.role == UserRole.owner else "guest"
+        raise HTTPException(
+            status_code=404,
+            detail=f"No account found for this email as an {role_label}. Use Owner Login or Guest Login depending on which account you have, or register first.",
+        )
+    base_url = (get_settings().frontend_base_url or "").strip().rstrip("/")
+    if not base_url:
+        # No frontend URL configured; cannot build reset link. Return same message (no email enumeration).
+        return {"status": "ok", "message": "If an account exists for this email, you will receive a password reset link shortly."}
+    reset_secret = secrets.token_urlsafe(32)
+    user.password_reset_token = reset_secret
+    user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    db.commit()
+    token = create_password_reset_token(user.id, user.email, user.role, reset_secret)
+    reset_link = f"{base_url}/#reset-password?token={token}&role={user.role.value}"
+    sent = send_password_reset_email(user.email, reset_link, user.role.value)
+    if not sent:
+        print(f"[Auth] Password reset email not sent to {user.email}", flush=True)
+        raise HTTPException(
+            status_code=503,
+            detail="We could not send the password reset email. Please try again later or contact support.",
+        )
+    return {"status": "ok", "message": "If an account exists for this email, you will receive a password reset link shortly."}
+
+
+@router.post("/reset-password")
+def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Set new password using the token from the reset email. Token is one-time use; invalid after first use."""
+    payload, err = decode_token_with_error(data.token)
+    if err or not payload:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link. Please request a new password reset.")
+    if payload.get("type") != "password_reset":
+        raise HTTPException(status_code=400, detail="Invalid reset link. Please use the link from your email.")
+    reset_secret = payload.get("reset_secret")
+    if not reset_secret:
+        raise HTTPException(status_code=400, detail="Invalid reset link. Please request a new password reset.")
+    try:
+        user_id = int(payload.get("sub") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid reset link.")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid reset link. Please request a new password reset.")
+    now = datetime.now(timezone.utc)
+    if not user.password_reset_token or user.password_reset_token != reset_secret:
+        raise HTTPException(status_code=400, detail="This reset link has already been used. Request a new password reset if needed.")
+    if user.password_reset_expires_at and user.password_reset_expires_at < now:
+        user.password_reset_token = None
+        user.password_reset_expires_at = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="This reset link has expired. Please request a new password reset.")
+    user.hashed_password = get_password_hash(data.new_password)
+    user.password_reset_token = None
+    user.password_reset_expires_at = None
+    db.commit()
+    return {"status": "ok", "message": "Password updated. You can sign in now."}
 
 
 @router.get("/me", response_model=UserResponse)

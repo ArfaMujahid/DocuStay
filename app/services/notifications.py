@@ -169,6 +169,22 @@ def send_verification_email(to_email: str, code: str) -> bool:
     return ok
 
 
+def send_password_reset_email(to_email: str, reset_link: str, role: str) -> bool:
+    """Send password reset link. role is 'owner' or 'guest' for copy."""
+    account_type = "owner" if role == "owner" else "guest"
+    subject = "[DocuStay] Reset your password"
+    text_content = f"Use this link to reset your DocuStay {account_type} account password. The link expires in 1 hour.\n\n{reset_link}\n\nIf you did not request this, you can ignore this email.\n— DocuStay"
+    html_content = f"""
+    <p>Hello,</p>
+    <p>You requested a password reset for your DocuStay <strong>{account_type}</strong> account.</p>
+    <p><a href="{reset_link}" style="background:#2563eb;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block;">Reset password</a></p>
+    <p>Or copy this link: <br/><a href="{reset_link}">{reset_link}</a></p>
+    <p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>
+    <p>— DocuStay</p>
+    """
+    return send_email(to_email, subject, html_content, text_content=text_content)
+
+
 def send_owner_welcome_email(to_email: str, full_name: str | None = None) -> bool:
     """Send welcome email when owner successfully signs up (after email verification)."""
     name = (full_name or "").strip() or "there"

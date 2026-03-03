@@ -45,5 +45,9 @@ class User(Base):
     owner_type = Column(SQLEnum(OwnerType), nullable=True)  # only for role=owner
     authorized_agent_certified_at = Column(DateTime(timezone=True), nullable=True)  # when Agent certified authority
 
+    # One-time password reset: set when forgot-password email is sent, cleared after successful reset
+    password_reset_token = Column(String(255), nullable=True, index=True)
+    password_reset_expires_at = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

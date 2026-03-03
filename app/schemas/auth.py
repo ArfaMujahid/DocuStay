@@ -136,6 +136,25 @@ class ResendVerificationRequest(BaseModel):
     user_id: int
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Request password reset email. Role identifies owner vs guest when same email has both."""
+    email: EmailStr
+    role: UserRole
+
+
+class ResetPasswordRequest(BaseModel):
+    """Set new password using token from reset email."""
+    token: str
+    new_password: str
+    confirm_password: str = ""
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.confirm_password != self.new_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
 class RegisterPendingResponse(BaseModel):
     """Response from register when email verification is required (no token yet)."""
     user_id: int

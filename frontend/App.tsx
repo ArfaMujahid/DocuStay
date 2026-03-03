@@ -7,6 +7,8 @@ import { authApi, setToken, toUserSession, type TokenResponse } from './services
 import Login from './pages/Auth/Login';
 import RegisterOwner from './pages/Auth/RegisterOwner';
 import VerifyContact from './pages/Auth/VerifyContact';
+import ForgotPassword from './pages/Auth/ForgotPassword';
+import ResetPassword from './pages/Auth/ResetPassword';
 import OwnerDashboard from './pages/Owner/OwnerDashboard';
 import AddProperty from './pages/Owner/AddProperty';
 import RegisterFromInvite from './pages/Guest/RegisterFromInvite';
@@ -245,6 +247,17 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main className="flex-grow flex flex-col">
         {view === 'login' && <Login onLogin={handleLogin} setLoading={setLoading} notify={showNotification} navigate={navigate} />}
+        {(view === 'forgot-password/owner' || view === 'forgot-password/guest') && (
+          <ForgotPassword
+            role={view === 'forgot-password/owner' ? 'owner' : 'guest'}
+            setLoading={setLoading}
+            notify={showNotification}
+            navigate={navigate}
+          />
+        )}
+        {view === 'reset-password' && (
+          <ResetPassword setLoading={setLoading} notify={showNotification} navigate={navigate} />
+        )}
         {(view === 'guest-login' || view.startsWith('guest-login/') || view.startsWith('invite/')) && (
           <GuestLogin
             inviteCode={view.startsWith('guest-login/') ? view.split('/')[1] : view.startsWith('invite/') ? view.split('/')[1] : undefined}

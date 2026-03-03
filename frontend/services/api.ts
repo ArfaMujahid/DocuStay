@@ -224,6 +224,22 @@ export const authApi = {
     setToken(null);
   },
   getToken,
+  /** Request password reset email. Role identifies owner vs guest when same email has both accounts. */
+  async forgotPassword(email: string, role: "owner" | "guest"): Promise<{ status: string; message?: string }> {
+    const res = await request<{ status?: string; message?: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email: email.trim().toLowerCase(), role }),
+    });
+    return { status: (res as any)?.status || "ok", message: (res as any)?.message };
+  },
+  /** Set new password using token from reset email. */
+  async resetPassword(token: string, new_password: string, confirm_password: string): Promise<{ status: string; message?: string }> {
+    const res = await request<{ status?: string; message?: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password, confirm_password }),
+    });
+    return { status: (res as any)?.status || "ok", message: (res as any)?.message };
+  },
   /** Accept an invitation as an existing guest (requires guest token). */
   async acceptInvite(invitationCode: string, agreementSignatureId: number): Promise<{ status: string; message?: string }> {
     const res = await request<{ status?: string; message?: string }>("/auth/accept-invite", {

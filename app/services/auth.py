@@ -53,6 +53,26 @@ def decode_token(token: str) -> dict | None:
     return payload
 
 
+def create_password_reset_token(user_id: int, email: str, role: UserRole, reset_secret: str) -> str:
+    """JWT for one-time password reset. Expires in 1 hour. reset_secret must match user.password_reset_token in DB; cleared after use."""
+    expire_minutes = 60
+    expire = datetime.utcnow() + timedelta(minutes=expire_minutes)
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "role": role.value,
+        "type": "password_reset",
+        "reset_secret": reset_secret,
+        "exp": expire,
+    }
+    raw = jwt.encode(
+        payload,
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+    return raw if isinstance(raw, str) else raw.decode("utf-8")
+
+
 def decode_token_with_error(token: str) -> tuple[dict | None, str | None]:
     """Decode JWT; returns (payload, error_message)."""
     if not token or not isinstance(token, str):

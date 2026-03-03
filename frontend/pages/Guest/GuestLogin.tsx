@@ -137,6 +137,10 @@ const GuestLogin: React.FC<GuestLoginProps> = ({ inviteCode: inviteCodeFromUrl, 
                 </button>
               </div>
 
+              <div className="flex justify-end text-sm">
+                <button type="button" onClick={() => navigate('forgot-password/guest')} className="text-blue-700 hover:text-blue-800 font-medium">Forgot password?</button>
+              </div>
+
               <Button type="submit" className="w-full py-2.5">Sign in</Button>
             </form>
 

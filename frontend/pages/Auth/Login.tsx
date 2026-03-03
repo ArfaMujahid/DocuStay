@@ -99,7 +99,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate }) 
                   <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-400" />
                   Remember me
                 </label>
-                <a href="#" className="text-blue-700 hover:text-blue-800 font-medium">Forgot password?</a>
+                <button type="button" onClick={() => navigate('forgot-password/owner')} className="text-blue-700 hover:text-blue-800 font-medium">Forgot password?</button>
               </div>
               
               <Button type="submit" className="w-full py-2.5">Sign in</Button>
