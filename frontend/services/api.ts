@@ -386,6 +386,10 @@ export type StayClassification = "guest" | "lodger" | "tenant_risk";
 export interface OwnerStayView {
   stay_id: number;
   property_id: number;
+  /** Invite ID (invitation code) for this stay. */
+  invite_id?: string | null;
+  /** Token state: STAGED | BURNED | EXPIRED | REVOKED */
+  token_state?: string | null;
   guest_name: string;
   property_name: string;
   stay_start_date: string;
@@ -396,6 +400,8 @@ export interface OwnerStayView {
   risk_indicator: RiskLevel;
   applicable_laws: string[];
   revoked_at?: string | null;
+  /** When set, stay counts as active for occupancy and DMS. */
+  checked_in_at?: string | null;
   checked_out_at?: string | null;
   cancelled_at?: string | null;
   usat_token_released_at?: string | null;
@@ -417,12 +423,20 @@ export interface OwnerInvitationView {
   stay_end_date: string;
   region_code: string;
   status: string;
+  /** Token state: STAGED | BURNED | EXPIRED | REVOKED */
+  token_state?: string;
   created_at: string | null;
   is_expired?: boolean;
 }
 
 export interface GuestStayView {
   stay_id: number;
+  /** Invite ID (invitation code) for this stay. */
+  invite_id?: string | null;
+  /** Token state: STAGED | BURNED | EXPIRED | REVOKED */
+  token_state?: string | null;
+  /** Slug for live property page URL (#live/<slug>). */
+  property_live_slug?: string | null;
   property_name: string;
   approved_stay_start_date: string;
   approved_stay_end_date: string;
@@ -435,6 +449,8 @@ export interface GuestStayView {
   usat_token?: string | null;
   revoked_at?: string | null;
   vacate_by?: string | null;
+  /** When set, stay is active (occupancy/DMS). Guest can Check in on or after start date. */
+  checked_in_at?: string | null;
   checked_out_at?: string | null;
   cancelled_at?: string | null;
 }
@@ -483,6 +499,86 @@ export interface BillingPaymentView {
   description: string | null;
 }
 
+// --- Public live property page (no auth) ---
+export interface LivePropertyInfo {
+  name: string | null;
+  street: string;
+  city: string;
+  state: string;
+  zip_code: string | null;
+  region_code: string;
+  occupancy_status: string;
+  shield_mode_enabled: boolean;
+  /** staged | released – for Quick Decision layer */
+  token_state?: string;
+}
+
+export interface LiveOwnerInfo {
+  full_name: string | null;
+  email: string;
+  phone: string | null;
+}
+
+export interface LiveCurrentGuestInfo {
+  guest_name: string;
+  stay_start_date: string;
+  stay_end_date: string;
+  checked_out_at: string | null;
+  dead_mans_switch_enabled: boolean;
+}
+
+export interface LiveStaySummary {
+  guest_name: string;
+  stay_start_date: string;
+  stay_end_date: string;
+  checked_out_at?: string | null;
+}
+
+export interface LiveLogEntry {
+  category: string;
+  title: string;
+  message: string;
+  created_at: string;
+}
+
+export interface LivePropertyPagePayload {
+  has_current_guest: boolean;
+  property: LivePropertyInfo;
+  owner: LiveOwnerInfo;
+  current_guest: LiveCurrentGuestInfo | null;
+  last_stay: LiveStaySummary | null;
+  upcoming_stays: LiveStaySummary[];
+  logs: LiveLogEntry[];
+  authorization_state: string; // ACTIVE | NONE | EXPIRED | REVOKED
+  record_id: string;
+  generated_at: string;
+  poa_signed_at: string | null;
+  poa_signature_id: number | null;
+}
+
+/** Public portfolio page (owner): basic info + properties list. */
+export interface PortfolioPropertyItem {
+  id: number;
+  name: string | null;
+  city: string;
+  state: string;
+  region_code: string;
+  property_type_label?: string | null;
+  bedrooms?: string | null;
+}
+
+export interface PortfolioOwnerInfo {
+  full_name: string | null;
+  email: string;
+  phone?: string | null;
+  state?: string | null;
+}
+
+export interface PortfolioPagePayload {
+  owner: PortfolioOwnerInfo;
+  properties: PortfolioPropertyItem[];
+}
+
 export interface BillingResponse {
   invoices: BillingInvoiceView[];
   payments: BillingPaymentView[];
@@ -502,6 +598,9 @@ export const dashboardApi = {
   /** Create Stripe Billing Portal session; redirect user to returned URL to pay. After payment (e.g. Klarna) they return to our app. */
   billingPortalSession: () =>
     request<{ url: string }>("/dashboard/owner/billing/portal-session", { method: "POST" }),
+  /** Get or create owner portfolio slug and URL for sharing. Owner only. */
+  ownerPortfolioLink: () =>
+    request<{ portfolio_slug: string; portfolio_url: string }>("/dashboard/owner/portfolio-link"),
   /** Cancel a pending invitation (owner only). */
   cancelInvitation: (invitationId: number) =>
     request<{ status: string; message?: string }>(`/dashboard/owner/invitations/${invitationId}/cancel`, { method: "POST" }),
@@ -534,6 +633,9 @@ export const dashboardApi = {
   /** End an ongoing stay (sets end date to today). Guest only. */
   guestEndStay: (stayId: number) =>
     request<{ status: string; message?: string }>(`/dashboard/guest/stays/${stayId}/end`, { method: "POST" }),
+  /** Record check-in: sets checked_in_at and property occupancy to OCCUPIED. Guest only; available on or after stay start date. */
+  guestCheckIn: (stayId: number) =>
+    request<{ status: string; message?: string }>(`/dashboard/guest/stays/${stayId}/check-in`, { method: "POST" }),
   /** Cancel a future stay. Guest only. */
   guestCancelStay: (stayId: number) =>
     request<{ status: string; message?: string }>(`/dashboard/guest/stays/${stayId}/cancel`, { method: "POST" }),
@@ -556,9 +658,35 @@ export const dashboardApi = {
     ),
 };
 
+/** Public API (no auth). Live property page by slug – evidence view. */
+export const publicApi = {
+  getLivePage: async (slug: string): Promise<LivePropertyPagePayload> => {
+    const res = await fetch(`${API_URL}/public/live/${encodeURIComponent(slug)}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (res.status === 404) throw new Error("Property not found.");
+    if (!res.ok) throw new Error(await res.text().catch(() => "Failed to load."));
+    return res.json();
+  },
+  /** URL to open signed Master POA PDF for this live slug (no auth). */
+  getLivePoaPdfUrl: (slug: string): string =>
+    `${API_URL}/public/live/${encodeURIComponent(slug)}/poa`,
+  /** Public portfolio page by owner slug (no auth). */
+  getPortfolio: async (slug: string): Promise<PortfolioPagePayload> => {
+    const res = await fetch(`${API_URL}/public/portfolio/${encodeURIComponent(slug)}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (res.status === 404) throw new Error("Portfolio not found.");
+    if (!res.ok) throw new Error(await res.text().catch(() => "Failed to load."));
+    return res.json();
+  },
+};
+
 // --- Properties ---
 export interface Property {
   id: number;
+  /** Unique public slug for live link page (#live/<slug>). */
+  live_slug?: string | null;
   name: string | null;
   street: string;
   city: string;
@@ -786,13 +914,6 @@ export const propertiesApi = {
     }
     return text ? JSON.parse(text) : { created: 0, updated: 0, failed_from_row: null, failure_reason: null };
   },
-  /** Release USAT token to the selected guest stay(s). Only those guests will see the token. */
-  releaseUsatToken: (propertyId: number, stayIds: number[]) =>
-    request<Property>(`/owners/properties/${propertyId}/release-usat-token`, {
-      method: "POST",
-      body: JSON.stringify({ stay_ids: stayIds }),
-      headers: { "Content-Type": "application/json" },
-    }),
 };
 
 // --- Invitations ---

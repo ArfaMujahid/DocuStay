@@ -33,6 +33,26 @@ function formatStayDuration(startStr: string, endStr: string): string {
   return `${fmt(start)} – ${fmt(end)} (${days} day${days !== 1 ? 's' : ''})`;
 }
 
+/** Invite ID token state badge: STAGED | BURNED | EXPIRED | REVOKED */
+function TokenStateBadge({ tokenState }: { tokenState?: string | null }) {
+  const state = (tokenState || 'STAGED').toUpperCase();
+  const classes =
+    state === 'BURNED'
+      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+      : state === 'STAGED'
+        ? 'bg-sky-100 text-sky-700 border-sky-200'
+        : state === 'EXPIRED'
+          ? 'bg-slate-100 text-slate-600 border-slate-200'
+          : state === 'REVOKED'
+            ? 'bg-amber-100 text-amber-700 border-amber-200'
+            : 'bg-slate-100 text-slate-600 border-slate-200';
+  return (
+    <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${classes}`}>
+      {state}
+    </span>
+  );
+}
+
 const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => void; setLoading?: (l: boolean) => void; notify?: (t: 'success' | 'error', m: string) => void; initialTab?: string }> = ({ user, navigate, setLoading = (_l: boolean) => {}, notify = (_t: 'success' | 'error', _m: string) => {}, initialTab }) => {
   const [activeTab, setActiveTab] = useState(initialTab ?? 'dashboard');
   const [stays, setStays] = useState<OwnerStayView[]>([]);
@@ -48,9 +68,6 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
   const [deleteConfirmProperty, setDeleteConfirmProperty] = useState<Property | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [visibleTokenId, setVisibleTokenId] = useState<number | null>(null);
-  const [releasingTokenPropertyId, setReleasingTokenPropertyId] = useState<number | null>(null);
-  const [releaseTokenModal, setReleaseTokenModal] = useState<{ propertyId: number; propertyName: string } | null>(null);
-  const [releaseTokenSelectedStayIds, setReleaseTokenSelectedStayIds] = useState<number[]>([]);
   const [shieldTogglePropertyId, setShieldTogglePropertyId] = useState<number | null>(null);
   const [logs, setLogs] = useState<OwnerAuditLogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -101,22 +118,8 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab]);
 
-  const releaseTokenToSelected = async () => {
-    if (!releaseTokenModal || releaseTokenSelectedStayIds.length === 0) return;
-    setReleasingTokenPropertyId(releaseTokenModal.propertyId);
-    try {
-      await propertiesApi.releaseUsatToken(releaseTokenModal.propertyId, releaseTokenSelectedStayIds);
-      notify('success', `USAT token released to ${releaseTokenSelectedStayIds.length} guest(s). Only they can see it.`);
-      setReleaseTokenModal(null);
-      loadData();
-    } catch (e) {
-      notify('error', (e as Error)?.message ?? 'Failed to release token.');
-    } finally {
-      setReleasingTokenPropertyId(null);
-    }
-  };
-
-  const activeStays = stays.filter((s) => !s.checked_out_at && !s.cancelled_at);
+  // Only checked-in stays count as active for occupancy, current guest, and DMS
+  const activeStays = stays.filter((s) => s.checked_in_at && !s.checked_out_at && !s.cancelled_at);
   const activeCount = activeStays.length;
   // Overstay = still active (not checked out, not cancelled) but end date has passed
   const overstays = activeStays.filter((s) => isOverstayed(s.stay_end_date));
@@ -535,6 +538,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4">Planned stay</th>
                         <th className="px-6 py-4">Region</th>
                         <th className="px-6 py-4">Invitation code</th>
+                        <th className="px-6 py-4">Invite ID status</th>
                         <th className="px-6 py-4">Status</th>
                         <th className="px-6 py-4">Actions</th>
                       </tr>
@@ -554,6 +558,9 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                           </td>
                           <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
                           <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
+                          <td className="px-6 py-5">
+                            <TokenStateBadge tokenState={inv.token_state} />
+                          </td>
                           <td className="px-6 py-5">
                             <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-700 border border-amber-200">Pending</span>
                           </td>
@@ -586,6 +593,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4">Planned stay</th>
                         <th className="px-6 py-4">Region</th>
                         <th className="px-6 py-4">Invitation code</th>
+                        <th className="px-6 py-4">Invite ID status</th>
                         <th className="px-6 py-4">Status</th>
                         <th className="px-6 py-4">Actions</th>
                       </tr>
@@ -606,6 +614,9 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                           <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
                           <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
                           <td className="px-6 py-5">
+                            <TokenStateBadge tokenState={inv.token_state} />
+                          </td>
+                          <td className="px-6 py-5">
                             <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">Expired</span>
                           </td>
                           <td className="px-6 py-5">
@@ -619,11 +630,11 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
               </div>
             </Card>
 
-            {/* Accepted */}
+            {/* Accepted: show stay status (Active / Completed) and Invite ID status */}
             <Card className="overflow-hidden">
               <div className="p-6 border-b border-slate-200 bg-emerald-50">
                 <h3 className="text-xl font-bold text-slate-800">Accepted</h3>
-                <p className="text-xs text-slate-500 mt-1">Invites accepted by the guest (stay created)</p>
+                <p className="text-xs text-slate-500 mt-1">Invites accepted by the guest (stay created). Stay status reflects whether the stay is active or completed.</p>
               </div>
               <div className="overflow-x-auto">
                 {invitations.filter((i) => i.status === 'accepted').length === 0 ? (
@@ -637,29 +648,40 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4">Planned stay</th>
                         <th className="px-6 py-4">Region</th>
                         <th className="px-6 py-4">Invitation code</th>
-                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">Invite ID status</th>
+                        <th className="px-6 py-4">Stay status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {invitations.filter((i) => i.status === 'accepted').map((inv) => (
-                        <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-5">
-                            <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
-                          </td>
-                          <td className="px-6 py-5">
-                            <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                            <p className="text-xs text-slate-500">{inv.region_code}</p>
-                          </td>
-                          <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
-                            {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
-                          </td>
-                          <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                          <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
-                          <td className="px-6 py-5">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-emerald-100 text-emerald-700 border border-emerald-200">Accepted</span>
-                          </td>
-                        </tr>
-                      ))}
+                      {invitations.filter((i) => i.status === 'accepted').map((inv) => {
+                        const tokenState = (inv.token_state || 'BURNED').toUpperCase();
+                        const stayStatusLabel = tokenState === 'EXPIRED' ? 'Completed' : tokenState === 'REVOKED' ? 'Revoked' : 'Active stay';
+                        const stayStatusClass = tokenState === 'EXPIRED' ? 'bg-slate-100 text-slate-600 border-slate-200' : tokenState === 'REVOKED' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200';
+                        return (
+                          <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-5">
+                              <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
+                            </td>
+                            <td className="px-6 py-5">
+                              <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
+                              <p className="text-xs text-slate-500">{inv.region_code}</p>
+                            </td>
+                            <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
+                              {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
+                            </td>
+                            <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
+                            <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
+                            <td className="px-6 py-5">
+                              <TokenStateBadge tokenState={inv.token_state} />
+                            </td>
+                            <td className="px-6 py-5">
+                              <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${stayStatusClass}`}>
+                                {stayStatusLabel}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -689,6 +711,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                             <th className="px-6 py-4">Planned stay</th>
                             <th className="px-6 py-4">Region</th>
                             <th className="px-6 py-4">Invitation code</th>
+                            <th className="px-6 py-4">Invite ID status</th>
                             <th className="px-6 py-4">Status</th>
                           </tr>
                         </thead>
@@ -707,6 +730,9 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                               </td>
                               <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
                               <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
+                              <td className="px-6 py-5">
+                                <TokenStateBadge tokenState={inv.token_state} />
+                              </td>
                               <td className="px-6 py-5">
                                 <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-200 text-slate-600 border border-slate-300">Cancelled by you</span>
                               </td>
@@ -789,24 +815,12 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                   const shieldOn = !!prop.shield_mode_enabled;
                   const shieldStatus = shieldOn ? (isOccupied ? 'PASSIVE GUARD' : 'ACTIVE MONITORING') : null;
                   const tokenVisible = visibleTokenId === prop.id;
-                  const tokenReleased = (prop.usat_token_state || 'staged') === 'released';
-                  const releaseInProgress = releasingTokenPropertyId === prop.id;
                   const copyToken = async () => {
                     if (prop.usat_token) {
                       const ok = await copyToClipboard(prop.usat_token);
                       if (ok) notify('success', 'Token copied to clipboard.');
                       else notify('error', 'Copy failed.');
                     }
-                  };
-                  const activeGuestsForProp = activeStays.filter((s) => s.property_id === prop.id);
-                  const openReleaseModal = () => {
-                    if (!hasResident) return;
-                    setReleaseTokenModal({
-                      propertyId: prop.id,
-                      propertyName: displayName,
-                    });
-                    const alreadyHaveToken = activeGuestsForProp.filter((s) => s.usat_token_released_at).map((s) => s.stay_id);
-                    setReleaseTokenSelectedStayIds(alreadyHaveToken.length > 0 ? alreadyHaveToken : activeGuestsForProp.map((s) => s.stay_id));
                   };
                   return (
                     <Card key={prop.id} className="p-6 border border-slate-200">
@@ -923,10 +937,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         </div>
                       </div>
 
-                      {/* USAT Token row: copyable, Release opens modal to choose which guests */}
+                      {/* USAT Token: owner only; not shared with guests */}
                       {prop.usat_token && (
                         <div className="mt-6 pt-6 border-t border-slate-200">
-                          <p className="text-xs text-slate-500 mb-2">Release opens a list of current guests for this property; choose who can see the token.</p>
+                          <p className="text-xs text-slate-500 mb-2">Your property token. Guests cannot view owner tokens.</p>
                           <div className="flex flex-wrap items-center gap-3">
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">USAT Token</span>
                             <code className={`px-3 py-1.5 rounded-lg font-mono text-sm ${tokenVisible ? 'bg-slate-100 text-slate-800' : 'bg-slate-100 text-slate-400'}`}>
@@ -942,20 +956,6 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                             <Button variant="outline" onClick={copyToken} className="text-xs py-1.5 px-3">
                               Copy
                             </Button>
-                            <span className="text-slate-400">|</span>
-                            <span
-                              title={!hasResident ? 'No guest is resident on the property.' : tokenReleased ? 'Add or change which guests can see the token.' : undefined}
-                              className="inline-flex"
-                            >
-                              <Button
-                                variant="outline"
-                                disabled={!hasResident || releaseInProgress}
-                                onClick={openReleaseModal}
-                                className="text-xs py-1.5 px-3"
-                              >
-                                {tokenReleased ? 'Manage' : releaseInProgress ? 'Releasing…' : 'Release'}
-                              </Button>
-                            </span>
                           </div>
                         </div>
                       )}
@@ -1381,18 +1381,19 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       >
         <div className="px-6 py-4 space-y-4">
           <p className="text-slate-600 text-sm">
-            Use a CSV file with the following columns. <strong>Required:</strong> <code className="bg-slate-100 px-1 rounded">street_address</code> (or <code className="bg-slate-100 px-1 rounded">street</code>), <code className="bg-slate-100 px-1 rounded">city</code>, <code className="bg-slate-100 px-1 rounded">state</code>. <strong>Optional:</strong> <code className="bg-slate-100 px-1 rounded">property_name</code>, <code className="bg-slate-100 px-1 rounded">zip_code</code>, <code className="bg-slate-100 px-1 rounded">region_code</code>, <code className="bg-slate-100 px-1 rounded">property_type</code>, <code className="bg-slate-100 px-1 rounded">bedrooms</code>, <code className="bg-slate-100 px-1 rounded">is_primary_residence</code> (true/false).
+            Use a CSV with: <strong>Required:</strong> <code className="bg-slate-100 px-1 rounded">Address</code>, <code className="bg-slate-100 px-1 rounded">City</code>, <code className="bg-slate-100 px-1 rounded">State</code>, <code className="bg-slate-100 px-1 rounded">Zip</code>, <code className="bg-slate-100 px-1 rounded">Occupied</code> (YES/NO). <strong>If Occupied=YES:</strong> <code className="bg-slate-100 px-1 rounded">Tenant Name</code>, <code className="bg-slate-100 px-1 rounded">Lease Start</code>, <code className="bg-slate-100 px-1 rounded">Lease End</code>. <strong>Optional:</strong> <code className="bg-slate-100 px-1 rounded">Unit No</code>, <code className="bg-slate-100 px-1 rounded">Shield Mode</code> (YES/NO, default NO).
           </p>
           <p className="text-xs text-slate-500">
-            Existing properties (same street, city, state) are updated only when values change. Empty optional cells keep existing values. If the upload fails partway, rows before the failure are saved.
+            Occupied=YES: property token is burned, tenant is recorded, an invite link is created (BURNED) with Dead-Man Switch from lease end. Occupied=NO: token stays STAGED, status VACANT. Shield Mode YES adds $10/month. Existing properties (same address, city, state) are updated when values change.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button
               variant="outline"
               onClick={() => {
-                const header = 'property_name,street_address,city,state,zip_code,region_code,property_type,bedrooms,is_primary_residence';
-                const example = 'Beach House,123 Ocean Ave,Miami,FL,33139,FL,entire_home,2,false';
-                const blob = new Blob([header + '\n' + example], { type: 'text/csv' });
+                const header = 'Address,Unit No,City,State,Zip,Occupied,Tenant Name,Lease Start,Lease End,Shield Mode';
+                const exampleOccupied = '123 Ocean Ave,,Miami,FL,33139,YES,Jane Doe,2025-01-01,2025-12-31,NO';
+                const exampleVacant = '456 Oak St,,Austin,TX,78701,NO,,,NO';
+                const blob = new Blob([header + '\n' + exampleOccupied + '\n' + exampleVacant], { type: 'text/csv' });
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
                 a.download = 'properties_template.csv';
@@ -1615,66 +1616,6 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             </Card>
           </div>
         </>
-      )}
-
-      {releaseTokenModal && (
-        <Modal
-          open={!!releaseTokenModal}
-          title="Release USAT token"
-          onClose={() => setReleaseTokenModal(null)}
-          className="max-w-md"
-        >
-          <div className="p-6" onClick={(e) => e.stopPropagation()}>
-            <p className="text-slate-600 text-sm mb-4">
-              Choose which guest(s) at <span className="font-medium text-slate-800">{releaseTokenModal.propertyName}</span> can see the USAT token. Only selected guests will see it on their dashboard.
-            </p>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Select guest(s) to release the token to</p>
-            <div className="space-y-2 mb-6 min-h-[80px]">
-              {(activeStays ?? [])
-                .filter((s) => s.property_id === releaseTokenModal.propertyId)
-                .map((stay) => (
-                  <label key={stay.stay_id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={releaseTokenSelectedStayIds.includes(stay.stay_id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setReleaseTokenSelectedStayIds((ids) => [...ids, stay.stay_id]);
-                        } else {
-                          setReleaseTokenSelectedStayIds((ids) => ids.filter((id) => id !== stay.stay_id));
-                        }
-                      }}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="font-medium text-slate-800">{stay.guest_name}</span>
-                    <span className="text-xs text-slate-500">
-                      {stay.stay_start_date} – {stay.stay_end_date}
-                    </span>
-                  </label>
-                ))}
-              {(activeStays ?? []).filter((s) => s.property_id === releaseTokenModal.propertyId).length === 0 && (
-                <p className="text-slate-500 text-sm py-4">No current guests for this property. The guest list comes from active stays; invite and have a guest accept to see them here.</p>
-              )}
-            </div>
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setReleaseTokenModal(null)}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                onClick={releaseTokenToSelected}
-                disabled={releaseTokenSelectedStayIds.length === 0 || releasingTokenPropertyId === releaseTokenModal.propertyId}
-                className="flex-1"
-              >
-                {releasingTokenPropertyId === releaseTokenModal.propertyId ? 'Releasing…' : 'Release to selected'}
-              </Button>
-            </div>
-          </div>
-        </Modal>
       )}
 
       <InviteGuestModal

@@ -1,5 +1,9 @@
 """Module F: Legal restrictions & law display (Owner and Guest views)."""
+import logging
+import secrets
 from datetime import date, datetime, timezone, timedelta, time as dt_time
+
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -13,7 +17,7 @@ from app.models.owner import Property, OwnerProfile, USAT_TOKEN_STAGED, USAT_TOK
 from app.models.guest_pending_invite import GuestPendingInvite
 from app.models.agreement_signature import AgreementSignature
 from app.models.region_rule import StayClassification, RiskLevel
-from app.schemas.dashboard import OwnerStayView, OwnerInvitationView, GuestStayView, GuestPendingInviteView, OwnerAuditLogEntry, BillingResponse, BillingInvoiceView, BillingPaymentView, BillingPortalSessionResponse
+from app.schemas.dashboard import OwnerStayView, OwnerInvitationView, GuestStayView, GuestPendingInviteView, OwnerAuditLogEntry, BillingResponse, BillingInvoiceView, BillingPaymentView, BillingPortalSessionResponse, PortfolioLinkResponse
 from app.services.jle import resolve_jurisdiction
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_DEAD_MANS_SWITCH, CATEGORY_FAILED_ATTEMPT, CATEGORY_BILLING
 from app.services.billing import sync_subscription_quantities
@@ -164,9 +168,12 @@ def owner_invitations(
         prop = db.query(Property).filter(Property.id == inv.property_id).first()
         property_name = (prop.name if prop else None) or (f"{prop.city}, {prop.state}" if prop else None) or "Property"
         is_expired = (
-            inv.status == "pending"
-            and inv.created_at is not None
-            and inv.created_at < threshold
+            inv.status == "expired"
+            or (
+                inv.status == "pending"
+                and inv.created_at is not None
+                and inv.created_at < threshold
+            )
         )
         out.append(
             OwnerInvitationView(
@@ -180,6 +187,7 @@ def owner_invitations(
                 stay_end_date=inv.stay_end_date,
                 region_code=inv.region_code,
                 status=inv.status,
+                token_state=getattr(inv, "token_state", None) or "STAGED",
                 created_at=inv.created_at,
                 is_expired=is_expired,
             )
@@ -204,6 +212,8 @@ def owner_cancel_invitation(
     if inv.status != "pending":
         raise HTTPException(status_code=400, detail="Only pending invitations can be cancelled.")
     inv.status = "cancelled"
+    prev_token = getattr(inv, "token_state", None) or "STAGED"
+    inv.token_state = "REVOKED"
     db.commit()
     prop = db.query(Property).filter(Property.id == inv.property_id).first()
     property_name = (prop.name if prop else None) or (f"{prop.city}, {prop.state}" if prop else None) or "Property"
@@ -213,14 +223,14 @@ def owner_cancel_invitation(
         db,
         CATEGORY_STATUS_CHANGE,
         "Invitation cancelled",
-        f"Owner cancelled invitation {inv.invitation_code} for property {property_name}, guest {inv.guest_name or inv.guest_email or '—'}.",
+        f"Invite ID {inv.invitation_code} token_state {prev_token} -> REVOKED (owner cancelled). Property {property_name}, guest {inv.guest_name or inv.guest_email or '—'}.",
         property_id=inv.property_id,
         invitation_id=inv.id,
         actor_user_id=current_user.id,
         actor_email=current_user.email,
         ip_address=ip,
         user_agent=ua,
-        meta={"invitation_code": inv.invitation_code},
+        meta={"invitation_code": inv.invitation_code, "token_state_previous": prev_token, "token_state_new": "REVOKED"},
     )
     db.commit()
     return {"status": "success", "message": "Invitation cancelled."}
@@ -285,10 +295,19 @@ def owner_stays(
             and s.stay_end_date < date.today()  # stay ended
         )
 
+        invite_id_val = None
+        token_state_val = None
+        if getattr(s, "invitation_id", None):
+            inv = db.query(Invitation).filter(Invitation.id == s.invitation_id).first()
+            if inv:
+                invite_id_val = inv.invitation_code
+                token_state_val = getattr(inv, "token_state", None) or "BURNED"
         out.append(
             OwnerStayView(
                 stay_id=s.id,
                 property_id=s.property_id,
+                invite_id=invite_id_val,
+                token_state=token_state_val,
                 guest_name=guest_name,
                 property_name=property_name,
                 stay_start_date=s.stay_start_date,
@@ -299,6 +318,7 @@ def owner_stays(
                 risk_indicator=risk,
                 applicable_laws=statutes,
                 revoked_at=getattr(s, "revoked_at", None),
+                checked_in_at=getattr(s, "checked_in_at", None),
                 checked_out_at=getattr(s, "checked_out_at", None),
                 cancelled_at=getattr(s, "cancelled_at", None),
                 usat_token_released_at=getattr(s, "usat_token_released_at", None),
@@ -319,7 +339,7 @@ def revoke_stay(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_owner_onboarding_complete),
 ):
-    """Revoke a stay (Kill Switch): set revoked_at, guest must vacate in 12 hours. Sends email to guest."""
+    """Revoke a stay (Kill Switch): set revoked_at, guest must vacate in 12 hours. Invite token -> REVOKED. Sends email to guest."""
     stay = db.query(Stay).filter(Stay.id == stay_id, Stay.owner_id == current_user.id).first()
     if not stay:
         raise HTTPException(status_code=404, detail="Stay not found")
@@ -329,21 +349,36 @@ def revoke_stay(
     stay.revoked_at = now
     vacate_by = now + timedelta(hours=12)
     vacate_by_iso = vacate_by.strftime("%Y-%m-%d %H:%M UTC")
+    invite_code = None
+    prev_token = None
+    if getattr(stay, "invitation_id", None):
+        inv = db.query(Invitation).filter(Invitation.id == stay.invitation_id).first()
+        if inv:
+            prev_token = getattr(inv, "token_state", None) or "BURNED"
+            inv.token_state = "REVOKED"
+            invite_code = inv.invitation_code
+            db.add(inv)
     db.commit()
     ip = request.client.host if request.client else None
     ua = (request.headers.get("user-agent") or "").strip() or None
+    log_meta = {"vacate_by": vacate_by_iso}
+    if invite_code and prev_token is not None:
+        log_meta["invitation_code"] = invite_code
+        log_meta["token_state_previous"] = prev_token
+        log_meta["token_state_new"] = "REVOKED"
     create_log(
         db,
         CATEGORY_STATUS_CHANGE,
         "Stay revoked",
-        f"Stay {stay.id} revoked by owner. Guest must vacate by {vacate_by_iso}.",
+        f"Stay {stay.id} revoked by owner. Guest must vacate by {vacate_by_iso}." + (f" Invite ID {invite_code} token_state -> REVOKED." if invite_code else ""),
         property_id=stay.property_id,
         stay_id=stay.id,
+        invitation_id=getattr(stay, "invitation_id", None),
         actor_user_id=current_user.id,
         actor_email=current_user.email,
         ip_address=ip,
         user_agent=ua,
-        meta={"vacate_by": vacate_by_iso},
+        meta=log_meta,
     )
     db.commit()
     guest = db.query(User).filter(User.id == stay.guest_id).first()
@@ -489,21 +524,35 @@ def confirm_occupancy_status(
         if prop.usat_token_state == USAT_TOKEN_RELEASED:
             prop.usat_token_state = USAT_TOKEN_STAGED
             prop.usat_token_released_at = None
+        invite_code = None
+        if getattr(stay, "invitation_id", None):
+            inv = db.query(Invitation).filter(Invitation.id == stay.invitation_id).first()
+            if inv:
+                prev_token = getattr(inv, "token_state", None) or "BURNED"
+                inv.token_state = "EXPIRED"
+                invite_code = inv.invitation_code
+                db.add(inv)
         db.add(stay)
         db.add(prop)
         db.commit()
+        vacated_meta = {"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.vacant.value, "action": "vacated"}
+        if invite_code:
+            vacated_meta["invitation_code"] = invite_code
+            vacated_meta["token_state_previous"] = prev_token
+            vacated_meta["token_state_new"] = "EXPIRED"
         create_log(
             db,
             CATEGORY_STATUS_CHANGE,
             "Owner confirmed: Unit Vacated",
-            f"Stay {stay.id}: Owner confirmed unit vacated. Previous status: {prev_status}.",
+            f"Stay {stay.id}: Owner confirmed unit vacated. Previous status: {prev_status}." + (f" Invite ID {invite_code} token_state -> EXPIRED." if invite_code else ""),
             property_id=stay.property_id,
             stay_id=stay.id,
+            invitation_id=getattr(stay, "invitation_id", None),
             actor_user_id=current_user.id,
             actor_email=current_user.email,
             ip_address=ip,
             user_agent=ua,
-            meta={"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.vacant.value, "action": "vacated"},
+            meta=vacated_meta,
         )
         db.commit()
         try:
@@ -524,22 +573,60 @@ def confirm_occupancy_status(
         stay.stay_end_date = new_end
         stay.occupancy_confirmation_response = "renewed"
         stay.occupancy_confirmation_responded_at = now
+        # Update intended duration to match extended stay
+        new_duration_days = (new_end - stay.stay_start_date).days
+        stay.intended_stay_duration_days = new_duration_days
+        # Renewal: ensure invite token is BURNED (e.g. if stay had expired and token was EXPIRED, renewal brings it back to active)
+        invite_code = None
+        prev_token = None
+        if getattr(stay, "invitation_id", None):
+            inv = db.query(Invitation).filter(Invitation.id == stay.invitation_id).first()
+            if inv:
+                prev_token = getattr(inv, "token_state", None) or "BURNED"
+                inv.token_state = "BURNED"
+                invite_code = inv.invitation_code
+                db.add(inv)
+        # If new lease end is > 48h away, turn off DMS (owner renewed out of the 48h window)
+        today = date.today()
+        cutoff = today + timedelta(days=2)
+        if new_end > cutoff and getattr(stay, "dead_mans_switch_enabled", 0) == 1:
+            stay.dead_mans_switch_enabled = 0
+            stay.dead_mans_switch_triggered_at = None
+            create_log(
+                db,
+                CATEGORY_DEAD_MANS_SWITCH,
+                "Dead Man's Switch turned off (lease extended beyond 48h)",
+                f"Stay {stay.id}: Owner extended lease to {new_end.isoformat()} (>48h away). DMS disabled for this stay.",
+                property_id=stay.property_id,
+                stay_id=stay.id,
+                actor_user_id=current_user.id,
+                actor_email=current_user.email,
+                ip_address=ip,
+                user_agent=ua,
+                meta={"new_lease_end_date": new_end.isoformat(), "new_duration_days": new_duration_days},
+            )
         prop.occupancy_status = OccupancyStatus.occupied.value
         db.add(stay)
         db.add(prop)
         db.commit()
+        renewed_meta = {"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.occupied.value, "action": "renewed", "new_lease_end_date": new_end.isoformat()}
+        if invite_code:
+            renewed_meta["invitation_code"] = invite_code
+            renewed_meta["token_state_previous"] = prev_token
+            renewed_meta["token_state_new"] = "BURNED"
         create_log(
             db,
             CATEGORY_STATUS_CHANGE,
             "Owner confirmed: Lease Renewed",
-            f"Stay {stay.id}: Owner renewed lease to {new_end.isoformat()}. Previous status: {prev_status}.",
+            f"Stay {stay.id}: Owner renewed lease to {new_end.isoformat()}. Previous status: {prev_status}." + (f" Invite ID {invite_code} token_state {prev_token} -> BURNED." if invite_code else ""),
             property_id=stay.property_id,
             stay_id=stay.id,
+            invitation_id=getattr(stay, "invitation_id", None),
             actor_user_id=current_user.id,
             actor_email=current_user.email,
             ip_address=ip,
             user_agent=ua,
-            meta={"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.occupied.value, "action": "renewed", "new_lease_end_date": new_end.isoformat()},
+            meta=renewed_meta,
         )
         db.commit()
         return {"status": "success", "message": "Lease renewed.", "occupancy_status": "occupied", "new_lease_end_date": new_end.isoformat()}
@@ -562,7 +649,7 @@ def confirm_occupancy_status(
         actor_email=current_user.email,
         ip_address=ip,
         user_agent=ua,
-            meta={"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.occupied.value, "action": "holdover"},
+        meta={"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.occupied.value, "action": "holdover"},
     )
     db.commit()
     return {"status": "success", "message": "Holdover confirmed.", "occupancy_status": "occupied"}
@@ -584,18 +671,25 @@ def guest_stays(
         statute = rule.statute_reference if rule else None
         explanation = rule.plain_english_explanation if rule else None
         laws = [rule.statute_reference] if rule and rule.statute_reference else []
-        # Only show USAT token to this guest if the owner explicitly released it to this stay (per-guest release).
+        # Owner tokens are not shared with guests; guest never sees USAT token.
         usat_token = None
-        released_at = getattr(s, "usat_token_released_at", None)
-        if prop and prop.usat_token and released_at is not None:
-            usat_token = prop.usat_token
         revoked_at = getattr(s, "revoked_at", None)
         vacate_by = (revoked_at + timedelta(hours=12)).isoformat() if revoked_at else None
         checked_out_at = getattr(s, "checked_out_at", None)
         cancelled_at = getattr(s, "cancelled_at", None)
+        invite_id_val = None
+        token_state_val = None
+        if getattr(s, "invitation_id", None):
+            inv = db.query(Invitation).filter(Invitation.id == s.invitation_id).first()
+            if inv:
+                invite_id_val = inv.invitation_code
+                token_state_val = getattr(inv, "token_state", None) or "BURNED"
         out.append(
             GuestStayView(
                 stay_id=s.id,
+                invite_id=invite_id_val,
+                token_state=token_state_val,
+                property_live_slug=prop.live_slug if prop else None,
                 property_name=property_name,
                 approved_stay_start_date=s.stay_start_date,
                 approved_stay_end_date=s.stay_end_date,
@@ -608,11 +702,142 @@ def guest_stays(
                 usat_token=usat_token,
                 revoked_at=revoked_at,
                 vacate_by=vacate_by,
+                checked_in_at=getattr(s, "checked_in_at", None),
                 checked_out_at=checked_out_at,
                 cancelled_at=cancelled_at,
             )
         )
     return out
+
+
+@router.post("/guest/stays/{stay_id}/check-in")
+def guest_check_in(
+    request: Request,
+    stay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_guest),
+):
+    """Guest records check-in: sets checked_in_at and property occupancy to OCCUPIED. Stay must be on or after start date, not already checked in/out/cancelled."""
+    stay = db.query(Stay).filter(Stay.id == stay_id, Stay.guest_id == current_user.id).first()
+    if not stay:
+        raise HTTPException(status_code=404, detail="Stay not found")
+    if getattr(stay, "checked_in_at", None):
+        return {"status": "success", "message": "Already checked in."}
+    if getattr(stay, "checked_out_at", None):
+        raise HTTPException(status_code=400, detail="Cannot check in to a stay you have already checked out of.")
+    if getattr(stay, "cancelled_at", None):
+        raise HTTPException(status_code=400, detail="Cannot check in to a cancelled stay.")
+    today = date.today()
+    if stay.stay_start_date > today:
+        raise HTTPException(status_code=400, detail="Check-in is only available on or after your stay start date.")
+    now = datetime.now(timezone.utc)
+    stay.checked_in_at = now
+    db.add(stay)
+    prop = db.query(Property).filter(Property.id == stay.property_id).first()
+    if prop:
+        prop.occupancy_status = OccupancyStatus.occupied.value
+        if getattr(prop, "shield_mode_enabled", 0) == 1:
+            prop.shield_mode_enabled = 0
+        db.add(prop)
+    db.commit()
+    ip = request.client.host if request.client else None
+    ua = (request.headers.get("user-agent") or "").strip() or None
+    guest_user = db.query(User).filter(User.id == stay.guest_id).first()
+    guest_profile = db.query(GuestProfile).filter(GuestProfile.user_id == stay.guest_id).first()
+    guest_name = (guest_profile.full_legal_name if guest_profile else None) or (guest_user.full_name if guest_user else None) or (guest_user.email if guest_user else None) or "Guest"
+    property_name = (prop.name if prop else None) or (f"{prop.city}, {prop.state}".strip(", ") if prop and (prop.city or prop.state) else None) or f"property {stay.property_id}"
+    create_log(
+        db,
+        CATEGORY_STATUS_CHANGE,
+        "Guest checked in",
+        f"{guest_name} checked in at {property_name}. Occupancy set to occupied.",
+        property_id=stay.property_id,
+        stay_id=stay.id,
+        actor_user_id=current_user.id,
+        actor_email=current_user.email,
+        ip_address=ip,
+        user_agent=ua,
+        meta={"occupancy_status_new": "occupied", "guest_name": guest_name, "guest_id": stay.guest_id},
+    )
+    db.commit()
+
+    # Dev/test only: turn DMS on 2 min after check-in (from invitation preference). In prod, DMS turns on 48h before lease end (stay_timer).
+    try:
+        from app.config import get_settings
+        from app.database import SessionLocal
+        from app.services.stay_timer import run_dead_mans_switch_job
+        _settings = get_settings()
+        scheduler = getattr(request.app.state, "scheduler", None)
+        dms_test = getattr(_settings, "dms_test_mode", False)
+        if scheduler and dms_test:
+            stay_id = stay.id
+            run_at = now + timedelta(minutes=2)
+
+            def _turn_dms_on_2min_after_checkin(sid: int):
+                _db = SessionLocal()
+                logger.info("DMS 2min-after-checkin job started for stay_id=%s", sid)
+                try:
+                    _stay = _db.query(Stay).filter(Stay.id == sid).first()
+                    if not _stay:
+                        logger.info("DMS 2min-after-checkin job: stay_id=%s not found, skipped", sid)
+                        return
+                    if getattr(_stay, "dead_mans_switch_enabled", 0) == 1:
+                        logger.info(
+                            "DMS 2min-after-checkin job: stay_id=%s already has DMS on, skipped",
+                            sid,
+                        )
+                    elif getattr(_stay, "dead_mans_switch_enabled", 0) == 0:
+                        inv = None
+                        if getattr(_stay, "invitation_id", None):
+                            inv = _db.query(Invitation).filter(Invitation.id == _stay.invitation_id).first()
+                        if not inv:
+                            logger.info(
+                                "DMS 2min-after-checkin job: stay_id=%s has no invitation, skipped (DMS not turned on)",
+                                sid,
+                            )
+                        elif not getattr(inv, "dead_mans_switch_enabled", 0):
+                            logger.info(
+                                "DMS 2min-after-checkin job: stay_id=%s invitation has DMS off, skipped",
+                                sid,
+                            )
+                        else:
+                            _stay.dead_mans_switch_enabled = 1
+                            _db.add(_stay)
+                            _db.commit()
+                            logger.info(
+                                "DMS 2min-after-checkin job: turned DMS on for stay_id=%s (invitation had DMS enabled)",
+                                sid,
+                            )
+                    if getattr(_settings, "dms_test_mode", False):
+                        logger.info("DMS 2min-after-checkin job: running run_dead_mans_switch_job (test mode)")
+                        run_dead_mans_switch_job(_db)
+                except Exception as e:
+                    logger.exception(
+                        "DMS 2min-after-checkin job: stay_id=%s failed: %s",
+                        sid,
+                        e,
+                    )
+                finally:
+                    _db.close()
+                    logger.info("DMS 2min-after-checkin job finished for stay_id=%s", sid)
+
+            logger.info(
+                "DMS 2min-after-checkin: scheduling job for stay_id=%s, run_at=%s",
+                stay_id,
+                run_at.isoformat(),
+            )
+            scheduler.add_job(_turn_dms_on_2min_after_checkin, "date", run_date=run_at, args=[stay_id])
+        else:
+            logger.info(
+                "DMS 2min-after-checkin: not scheduling for stay_id=%s (dms_test_mode=%s, scheduler=%s)",
+                stay.id,
+                dms_test,
+                scheduler is not None,
+            )
+    except Exception as e:
+        logger.warning("DMS 2min-after-checkin: failed to schedule job for stay_id=%s: %s", stay.id, e)
+
+    return {"status": "success", "message": "You are checked in. Your stay is now active."}
 
 
 @router.get("/guest/stays/{stay_id}/signed-agreement-pdf")
@@ -696,14 +921,23 @@ def guest_end_stay(
         raise HTTPException(status_code=400, detail="You have already checked out of this stay.")
     stay.stay_end_date = today
     stay.checked_out_at = datetime.now(timezone.utc)
+    invite_code = None
+    if getattr(stay, "invitation_id", None):
+        inv = db.query(Invitation).filter(Invitation.id == stay.invitation_id).first()
+        if inv:
+            prev_token = getattr(inv, "token_state", None) or "BURNED"
+            inv.token_state = "EXPIRED"
+            invite_code = inv.invitation_code
+            db.add(inv)
     db.add(stay)
     db.flush()
-    # If no other active stay at this property, revoke USAT (utility lock) so occupancy is effectively vacant
+    # If no other checked-in active stay at this property, set occupancy to vacant
     other_active = (
         db.query(Stay)
         .filter(
             Stay.property_id == stay.property_id,
             Stay.id != stay.id,
+            Stay.checked_in_at.isnot(None),
             Stay.checked_out_at.is_(None),
             Stay.cancelled_at.is_(None),
         )
@@ -724,14 +958,20 @@ def guest_end_stay(
     ua = (request.headers.get("user-agent") or "").strip() or None
     log_meta = {}
     if occ_prev is not None:
-        log_meta = {"occupancy_status_previous": occ_prev, "occupancy_status_new": "vacant"}
+        log_meta["occupancy_status_previous"] = occ_prev
+        log_meta["occupancy_status_new"] = "vacant"
+    if invite_code:
+        log_meta["invitation_code"] = invite_code
+        log_meta["token_state_previous"] = prev_token
+        log_meta["token_state_new"] = "EXPIRED"
     create_log(
         db,
         CATEGORY_STATUS_CHANGE,
         "Guest checked out",
-        f"Guest checked out of stay {stay.id} (property {stay.property_id}). End date set to {today.isoformat()}." + (f" Occupancy status: {occ_prev} -> vacant." if occ_prev is not None else ""),
+        f"Guest checked out of stay {stay.id} (property {stay.property_id}). End date set to {today.isoformat()}." + (f" Invite ID {invite_code} token_state -> EXPIRED." if invite_code else "") + (f" Occupancy status: {occ_prev} -> vacant." if occ_prev is not None else ""),
         property_id=stay.property_id,
         stay_id=stay.id,
+        invitation_id=getattr(stay, "invitation_id", None),
         actor_user_id=current_user.id,
         actor_email=current_user.email,
         ip_address=ip,
@@ -783,6 +1023,14 @@ def guest_cancel_stay(
     # Set end date to day before start so the stay is effectively cancelled and shows as past
     stay.stay_end_date = original_start - timedelta(days=1)
     stay.cancelled_at = datetime.now(timezone.utc)
+    invite_code = None
+    if getattr(stay, "invitation_id", None):
+        inv = db.query(Invitation).filter(Invitation.id == stay.invitation_id).first()
+        if inv:
+            prev_token = getattr(inv, "token_state", None) or "BURNED"
+            inv.token_state = "REVOKED"
+            invite_code = inv.invitation_code
+            db.add(inv)
     db.add(stay)
     db.flush()
     # If no other active stay at this property, revoke USAT and set status to VACANT
@@ -813,13 +1061,18 @@ def guest_cancel_stay(
     if occ_prev is not None:
         log_meta["occupancy_status_previous"] = occ_prev
         log_meta["occupancy_status_new"] = "vacant"
+    if invite_code:
+        log_meta["invitation_code"] = invite_code
+        log_meta["token_state_previous"] = prev_token
+        log_meta["token_state_new"] = "REVOKED"
     create_log(
         db,
         CATEGORY_STATUS_CHANGE,
         "Stay cancelled by guest",
-        f"Guest cancelled stay {stay.id} (property {stay.property_id}). Original start was {original_start.isoformat()}." + (f" Occupancy status: {occ_prev} -> vacant." if occ_prev else ""),
+        f"Guest cancelled stay {stay.id} (property {stay.property_id}). Original start was {original_start.isoformat()}." + (f" Invite ID {invite_code} token_state -> REVOKED." if invite_code else "") + (f" Occupancy status: {occ_prev} -> vacant." if occ_prev else ""),
         property_id=stay.property_id,
         stay_id=stay.id,
+        invitation_id=getattr(stay, "invitation_id", None),
         actor_user_id=current_user.id,
         actor_email=current_user.email,
         ip_address=ip,
@@ -970,6 +1223,32 @@ def create_billing_portal_session(
         return BillingPortalSessionResponse(url=session.url)
     except stripe.StripeError as e:
         raise HTTPException(status_code=502, detail=f"Stripe error: {e}")
+
+
+@router.get("/owner/portfolio-link", response_model=PortfolioLinkResponse)
+def owner_portfolio_link(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner_onboarding_complete),
+):
+    """Get or create the current owner's portfolio slug and URL. Used in Settings to view/copy portfolio link."""
+    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Owner profile not found")
+    slug = getattr(profile, "portfolio_slug", None)
+    if not slug:
+        for _ in range(20):
+            slug = secrets.token_urlsafe(8).replace("+", "-").replace("/", "_")[:16]
+            if db.query(OwnerProfile).filter(OwnerProfile.portfolio_slug == slug).first() is None:
+                profile.portfolio_slug = slug
+                db.add(profile)
+                db.commit()
+                break
+        else:
+            slug = f"p-{profile.id}-{secrets.token_hex(4)}"
+            profile.portfolio_slug = slug
+            db.add(profile)
+            db.commit()
+    return PortfolioLinkResponse(portfolio_slug=slug, portfolio_url=f"portfolio/{slug}")
 
 
 @router.get("/owner/logs", response_model=list[OwnerAuditLogEntry])

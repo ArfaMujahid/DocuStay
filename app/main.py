@@ -20,7 +20,7 @@ from app.models import (  # noqa: F401
     AuditLog, OwnerPOASignature, PendingRegistration,
     PropertyUtilityProvider, PropertyAuthorityLetter,
 )
-from app.routers import auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements, billing_webhook
+from app.routers import auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements, billing_webhook, public
 
 logger = logging.getLogger("app.startup")
 settings = get_settings()
@@ -60,7 +60,8 @@ app.include_router(dashboard.router)
 app.include_router(notifications.router)
 app.include_router(agreements.router)
 app.include_router(billing_webhook.router)
-logger.info("[startup] Routers registered (auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements, billing_webhook)")
+app.include_router(public.router)
+logger.info("[startup] Routers registered (auth, identity, owners, guests, stays, region_rules, jle, dashboard, notifications, agreements, billing_webhook, public)")
 
 
 @app.on_event("startup")
@@ -99,37 +100,22 @@ def startup():
     except Exception as e:
         logger.warning("[startup] Database startup failed (tables/seed skipped). Check DATABASE_URL and network. Error: %s", e)
 
-    # Scheduler (disabled to fix startup – cache/utility background jobs were causing startup to hang)
-    # logger.info("[startup] Step 3: Background scheduler (notifications, FCC cache)")
-    # try:
-    #     from apscheduler.schedulers.background import BackgroundScheduler
-    #     scheduler = BackgroundScheduler()
-    #     if settings.notification_cron_enabled:
-    #         from app.services.stay_timer import run_stay_notification_job
-    #         scheduler.add_job(run_stay_notification_job, "cron", hour=9, minute=0)
-    #         logger.info("[startup] Scheduler: stay notification job added (cron 09:00)")
-    #     # FCC internet county cache: run monthly (1st of month at 3:00) and once at startup in background
-    #     # try:
-    #     #     from app.utility_providers.fcc_internet_job import run_fcc_internet_cache_job
-    #     #     scheduler.add_job(run_fcc_internet_cache_job, "cron", day=1, hour=3, minute=0)
-    #     #     logger.info("[startup] Scheduler: FCC internet cache job added (cron 1st of month 03:00)")
-    #     #     import threading
-    #     #     def run_fcc_job_once():
-    #     #         try:
-    #     #             logger.info("[startup] FCC internet cache job (background): starting...")
-    #     #             run_fcc_internet_cache_job()
-    #     #             logger.info("[startup] FCC internet cache job (background): finished")
-    #     #         except Exception as e:
-    #     #             logger.warning("[startup] FCC internet cache job (background) failed: %s", e)
-    #     #     threading.Thread(target=run_fcc_job_once, daemon=True).start()
-    #     #     logger.info("[startup] FCC internet cache job started in background thread")
-    #     # except Exception as e:
-    #     #     logger.debug("[startup] FCC job not scheduled: %s", e)
-    #     scheduler.start()
-    #     logger.info("[startup] Step 3 done: scheduler started")
-    # except Exception as e:
-    #     logger.warning("[startup] Scheduler failed to start: %s", e)
-    logger.info("[startup] Step 3 skipped: background scheduler disabled (cache/utility jobs)")
+    # Scheduler: only (1) invite-expire job every hour, (2) DMS 2-min-after-accept when DMS_TEST_MODE=true (scheduled from accept_invite)
+    logger.info("[startup] Step 3: Background scheduler (invitation expire only; DMS 2-min from accept_invite when test mode)")
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from app.services.invitation_cleanup import run_invitation_cleanup_job
+
+        scheduler = BackgroundScheduler()
+        # Pending invites unaccepted after 12h -> status=expired, token_state=EXPIRED
+        scheduler.add_job(run_invitation_cleanup_job, "cron", minute=0)  # every hour at :00
+        logger.info("[startup] Scheduler: invitation expire job added (cron every hour at :00)")
+        scheduler.start()
+        app.state.scheduler = scheduler
+        logger.info("[startup] Step 3 done: scheduler started")
+    except Exception as e:
+        logger.warning("[startup] Scheduler failed to start: %s", e)
+        app.state.scheduler = None
 
     logger.info("[startup] ---------- Startup complete ----------")
 

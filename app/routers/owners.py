@@ -2,14 +2,14 @@
 import csv
 import io
 import secrets
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
-from app.models.owner import OwnerProfile, Property, PropertyType, USAT_TOKEN_STAGED, USAT_TOKEN_RELEASED
+from app.models.owner import OwnerProfile, Property, PropertyType, USAT_TOKEN_STAGED, USAT_TOKEN_RELEASED, OccupancyStatus
 from app.models.invitation import Invitation
 from app.models.guest import PurposeOfStay, RelationshipToOwner
 from app.schemas.owner import (
@@ -22,7 +22,6 @@ from app.schemas.owner import (
     PropertyResponse,
     PropertyUpdate,
     PropertyUtilityProvidersResponse,
-    ReleaseUsatTokenRequest,
     SetPropertyUtilitiesRequest,
     StandardizedAddressResponse,
     UtilityOptionItem,
@@ -224,6 +223,14 @@ def add_property(
     )
     db.add(prop)
     db.flush()
+    # Unique live_slug for public property page URL (#live/<slug>), no DB id in URL
+    for _ in range(15):
+        slug = secrets.token_urlsafe(12).replace("+", "-").replace("/", "_")[:24]
+        if db.query(Property).filter(Property.live_slug == slug).first() is None:
+            prop.live_slug = slug
+            break
+    else:
+        prop.live_slug = secrets.token_urlsafe(12).replace("+", "-").replace("/", "_")[:20] + "-" + str(prop.id)
     for _ in range(10):
         token = _generate_usat_token()
         if db.query(Property).filter(Property.usat_token == token).first() is None:
@@ -352,6 +359,19 @@ def _parse_bool_cell(val: str | None) -> bool:
     return v in ("1", "true", "yes", "y")
 
 
+def _parse_date_cell(val: str | None) -> date | None:
+    """Parse a date from CSV (YYYY-MM-DD or M/D/YYYY). Returns None if empty or invalid."""
+    if val is None or (isinstance(val, str) and not val.strip()):
+        return None
+    s = str(val).strip()
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 @router.post("/properties/bulk-upload", response_model=BulkUploadResult)
 def bulk_upload_properties(
     request: Request,
@@ -359,7 +379,7 @@ def bulk_upload_properties(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_owner_onboarding_complete),
 ):
-    """Upload properties via CSV. Required columns: street_address (or street), city, state. Optional: property_name, zip_code, region_code, property_type, bedrooms, is_primary_residence. Existing properties matched by (street, city, state) are updated only when values change; empty optional cells keep existing values."""
+    """Upload properties via CSV. Required: Address, City, State, Zip, Occupied (YES/NO). If Occupied=YES: Tenant Name, Lease Start, Lease End required. Optional: Unit No, Shield Mode (YES/NO, default NO). Each property gets a Property Lifecycle Anchor Token. Occupied=YES: burn token, set occupancy, create invite (BURNED) with DMS from lease end. Occupied=NO: token STAGED, status VACANT."""
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="No owner profile")
@@ -411,21 +431,39 @@ def bulk_upload_properties(
 
     for idx, row in enumerate(rows, start=1):
         row_num = idx
-        street = _get_cell(row, "street_address", "street")
+        address = _get_cell(row, "address", "street_address", "street")
+        unit_no = _get_cell(row, "unit_no", "unit")
         city = _get_cell(row, "city")
         state = _get_cell(row, "state")
+        zip_code = _get_cell(row, "zip", "zip_code")
+        occupied_raw = _get_cell(row, "occupied")
+        tenant_name = _get_cell(row, "tenant_name", "tenant_name")
+        lease_start_str = _get_cell(row, "lease_start", "lease_start")
+        lease_end_str = _get_cell(row, "lease_end", "lease_end")
+        shield_mode_raw = _get_cell(row, "shield_mode", "shield_mode")
 
+        street = (address or "").strip()
+        if unit_no:
+            street = f"{street}, {unit_no.strip()}".strip(", ")
         if not street:
             failed_from_row = row_num
-            failure_reason = "Missing required column: street_address or street."
+            failure_reason = "Missing required column: Address (or street_address/street)."
             break
         if not city:
             failed_from_row = row_num
-            failure_reason = "Missing required column: city."
+            failure_reason = "Missing required column: City."
             break
         if not state:
             failed_from_row = row_num
-            failure_reason = "Missing required column: state."
+            failure_reason = "Missing required column: State."
+            break
+        if not zip_code:
+            failed_from_row = row_num
+            failure_reason = "Missing required column: Zip (or zip_code)."
+            break
+        if occupied_raw is None or not str(occupied_raw).strip():
+            failed_from_row = row_num
+            failure_reason = "Missing required column: Occupied (YES/NO)."
             break
 
         state_upper = state.upper()[:50]
@@ -433,26 +471,33 @@ def bulk_upload_properties(
         street_norm = _normalize_addr(street)
         if not city_norm or not street_norm:
             failed_from_row = row_num
-            failure_reason = "street, city, and state cannot be blank after trimming."
+            failure_reason = "Address, city, and state cannot be blank after trimming."
             break
 
-        zip_code = _get_cell(row, "zip_code")
-        region_raw = _get_cell(row, "region_code")
-        region_code = (region_raw or state_upper).upper()[:20]
-        property_type_label = _get_cell(row, "property_type")
-        bedrooms = _get_cell(row, "bedrooms")
-        if bedrooms is not None:
-            bedrooms = bedrooms[:10]
-        is_primary = _parse_bool_cell(_get_cell(row, "is_primary_residence"))
+        occupied = _parse_bool_cell(occupied_raw)
+        shield_mode = _parse_bool_cell(shield_mode_raw)
+        region_code = (state_upper).upper()[:20]
         property_name = _get_cell(row, "property_name")
 
-        property_type_enum = None
-        if property_type_label:
-            pl = property_type_label.lower().strip()
-            if pl in ("entire_home", "entire home"):
-                property_type_enum = PropertyType.entire_home
-            elif pl in ("private_room", "private room"):
-                property_type_enum = PropertyType.private_room
+        if occupied:
+            if not (tenant_name or "").strip():
+                failed_from_row = row_num
+                failure_reason = "When Occupied=YES, Tenant Name is required."
+                break
+            lease_start = _parse_date_cell(lease_start_str)
+            lease_end = _parse_date_cell(lease_end_str)
+            if not lease_start:
+                failed_from_row = row_num
+                failure_reason = "When Occupied=YES, Lease Start is required (e.g. YYYY-MM-DD)."
+                break
+            if not lease_end:
+                failed_from_row = row_num
+                failure_reason = "When Occupied=YES, Lease End is required (e.g. YYYY-MM-DD)."
+                break
+            if lease_end <= lease_start:
+                failed_from_row = row_num
+                failure_reason = "Lease End must be after Lease Start."
+                break
 
         state_norm = _normalize_addr(state)
         existing_match = None
@@ -468,12 +513,14 @@ def bulk_upload_properties(
                 street=street.strip(),
                 city=city.strip(),
                 state=state_upper,
-                zip_code=zip_code,
+                zip_code=zip_code.strip() if zip_code else None,
                 region_code=region_code,
-                owner_occupied=is_primary,
-                property_type=property_type_enum,
-                property_type_label=property_type_label,
-                bedrooms=bedrooms,
+                owner_occupied=False,
+                property_type=None,
+                property_type_label=None,
+                bedrooms=None,
+                occupancy_status=OccupancyStatus.vacant.value if not occupied else OccupancyStatus.occupied.value,
+                shield_mode_enabled=1 if shield_mode else 0,
             )
             db.add(prop)
             db.flush()
@@ -481,11 +528,10 @@ def bulk_upload_properties(
                 token = "USAT-" + secrets.token_hex(12).upper()
                 if db.query(Property).filter(Property.usat_token == token).first() is None:
                     prop.usat_token = token
-                    prop.usat_token_state = USAT_TOKEN_STAGED
                     break
             else:
                 prop.usat_token = "USAT-" + secrets.token_hex(8).upper() + "-" + str(prop.id)
-                prop.usat_token_state = USAT_TOKEN_STAGED
+            prop.usat_token_state = USAT_TOKEN_RELEASED if occupied else USAT_TOKEN_STAGED
             _apply_smarty_address(prop, street.strip(), city.strip(), state_upper, zip_code)
             try:
                 _run_utility_bucket_for_property(prop, db)
@@ -505,12 +551,47 @@ def bulk_upload_properties(
                 user_agent=(request.headers.get("user-agent") or "").strip() or None,
                 meta={"property_id": prop.id, "bulk_upload_row": row_num, "street": street.strip(), "city": city.strip(), "state": state_upper},
             )
+            if occupied and (tenant_name or "").strip():
+                inv_code = "INV-" + secrets.token_hex(4).upper()
+                inv = Invitation(
+                    invitation_code=inv_code,
+                    owner_id=current_user.id,
+                    property_id=prop.id,
+                    guest_name=(tenant_name or "").strip(),
+                    guest_email=None,
+                    stay_start_date=lease_start,
+                    stay_end_date=lease_end,
+                    purpose_of_stay=PurposeOfStay.other,
+                    relationship_to_owner=RelationshipToOwner.other,
+                    region_code=prop.region_code,
+                    status="pending",
+                    token_state="BURNED",
+                    dead_mans_switch_enabled=1,
+                    dead_mans_switch_alert_email=1,
+                    dead_mans_switch_alert_sms=0,
+                    dead_mans_switch_alert_dashboard=1,
+                    dead_mans_switch_alert_phone=0,
+                )
+                db.add(inv)
+                create_log(
+                    db,
+                    CATEGORY_STATUS_CHANGE,
+                    "Invitation created (CSV occupied)",
+                    f"Invite ID {inv_code} created (token_state=BURNED) for property {prop.id}, tenant {tenant_name}, lease {lease_start}–{lease_end}. Tenant can use invite link to sign up.",
+                    property_id=prop.id,
+                    invitation_id=inv.id,
+                    actor_user_id=current_user.id,
+                    actor_email=current_user.email,
+                    ip_address=request.client.host if request.client else None,
+                    user_agent=(request.headers.get("user-agent") or "").strip() or None,
+                    meta={"invitation_code": inv_code, "token_state": "BURNED", "guest_name": (tenant_name or "").strip(), "lease_start": str(lease_start), "lease_end": str(lease_end)},
+                )
             db.commit()
             db.refresh(prop)
             existing_props.append(prop)
         else:
-            updates = {}
-            if property_name is not None and (existing_match.name or "").strip() != property_name:
+            updates: dict[str, object] = {}
+            if property_name is not None and (existing_match.name or "").strip() != (property_name or "").strip():
                 updates["name"] = property_name
             if street.strip() != (existing_match.street or "").strip():
                 updates["street"] = street.strip()
@@ -518,18 +599,16 @@ def bulk_upload_properties(
                 updates["city"] = city.strip()
             if state_upper != (existing_match.state or "").strip():
                 updates["state"] = state_upper
-            if zip_code is not None and (existing_match.zip_code or "").strip() != (zip_code or "").strip():
-                updates["zip_code"] = zip_code or None
-            if region_raw is not None and (existing_match.region_code or "").strip() != (region_code or "").strip():
-                updates["region_code"] = region_code
-            if is_primary != existing_match.owner_occupied:
-                updates["owner_occupied"] = is_primary
-            if property_type_enum is not None and existing_match.property_type != property_type_enum:
-                updates["property_type"] = property_type_enum
-            if property_type_label is not None and (existing_match.property_type_label or "").strip() != (property_type_label or "").strip():
-                updates["property_type_label"] = property_type_label or None
-            if bedrooms is not None and (existing_match.bedrooms or "").strip() != (bedrooms or "").strip():
-                updates["bedrooms"] = bedrooms
+            if zip_code and (existing_match.zip_code or "").strip() != zip_code.strip():
+                updates["zip_code"] = zip_code.strip()
+            if existing_match.occupancy_status != (OccupancyStatus.occupied.value if occupied else OccupancyStatus.vacant.value):
+                updates["occupancy_status"] = OccupancyStatus.occupied.value if occupied else OccupancyStatus.vacant.value
+            if (1 if shield_mode else 0) != (existing_match.shield_mode_enabled or 0):
+                updates["shield_mode_enabled"] = 1 if shield_mode else 0
+            new_token_state = USAT_TOKEN_RELEASED if occupied else USAT_TOKEN_STAGED
+            if (existing_match.usat_token_state or USAT_TOKEN_STAGED) != new_token_state:
+                existing_match.usat_token_state = new_token_state
+                updates["usat_token_state"] = new_token_state
 
             for key, val in updates.items():
                 if key == "name":
@@ -542,18 +621,60 @@ def bulk_upload_properties(
                     existing_match.state = val
                 elif key == "zip_code":
                     existing_match.zip_code = val
-                elif key == "region_code":
-                    existing_match.region_code = val.upper()[:20]
-                elif key == "owner_occupied":
-                    existing_match.owner_occupied = val
-                elif key == "property_type":
-                    existing_match.property_type = val
-                elif key == "property_type_label":
-                    existing_match.property_type_label = val
-                elif key == "bedrooms":
-                    existing_match.bedrooms = val
+                elif key == "occupancy_status":
+                    existing_match.occupancy_status = val
+                elif key == "shield_mode_enabled":
+                    existing_match.shield_mode_enabled = val
             if updates:
                 updated += 1
+            # When updating to occupied with tenant info, create invite (BURNED) if none exists for this property+tenant+dates
+            if occupied and (tenant_name or "").strip() and lease_start and lease_end:
+                existing_inv = (
+                    db.query(Invitation)
+                    .filter(
+                        Invitation.property_id == existing_match.id,
+                        Invitation.guest_name == (tenant_name or "").strip(),
+                        Invitation.stay_start_date == lease_start,
+                        Invitation.stay_end_date == lease_end,
+                        Invitation.status == "pending",
+                    )
+                    .first()
+                )
+                if not existing_inv:
+                    inv_code = "INV-" + secrets.token_hex(4).upper()
+                    inv = Invitation(
+                        invitation_code=inv_code,
+                        owner_id=current_user.id,
+                        property_id=existing_match.id,
+                        guest_name=(tenant_name or "").strip(),
+                        guest_email=None,
+                        stay_start_date=lease_start,
+                        stay_end_date=lease_end,
+                        purpose_of_stay=PurposeOfStay.other,
+                        relationship_to_owner=RelationshipToOwner.other,
+                        region_code=existing_match.region_code,
+                        status="pending",
+                        token_state="BURNED",
+                        dead_mans_switch_enabled=1,
+                        dead_mans_switch_alert_email=1,
+                        dead_mans_switch_alert_sms=0,
+                        dead_mans_switch_alert_dashboard=1,
+                        dead_mans_switch_alert_phone=0,
+                    )
+                    db.add(inv)
+                    create_log(
+                        db,
+                        CATEGORY_STATUS_CHANGE,
+                        "Invitation created (CSV occupied, update)",
+                        f"Invite ID {inv_code} created (token_state=BURNED) for property {existing_match.id}, tenant {tenant_name}, lease {lease_start}–{lease_end}.",
+                        property_id=existing_match.id,
+                        invitation_id=inv.id,
+                        actor_user_id=current_user.id,
+                        actor_email=current_user.email,
+                        ip_address=request.client.host if request.client else None,
+                        user_agent=(request.headers.get("user-agent") or "").strip() or None,
+                        meta={"invitation_code": inv_code, "token_state": "BURNED", "guest_name": (tenant_name or "").strip(), "lease_start": str(lease_start), "lease_end": str(lease_end)},
+                    )
             db.commit()
 
     # Billing: first property upload triggers one-time onboarding fee (idempotent); ensure subscription exists; sync quantities
@@ -1073,86 +1194,6 @@ def get_ownership_proof(
     )
 
 
-@router.post("/properties/{property_id}/release-usat-token", response_model=PropertyResponse)
-def release_usat_token(
-    request: Request,
-    property_id: int,
-    data: ReleaseUsatTokenRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner_onboarding_complete),
-):
-    """Release the property's USAT token to the selected guest stay(s). Only those guests will see the token. Owner must choose at least one active stay for this property."""
-    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
-    if not profile:
-        raise HTTPException(status_code=404, detail="No owner profile")
-    prop = _get_owner_property(property_id, profile, db)
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
-    if not prop.usat_token:
-        raise HTTPException(status_code=400, detail="This property has no USAT token.")
-    if not data.stay_ids:
-        raise HTTPException(status_code=400, detail="Select at least one guest to release the token to.")
-    now = datetime.now(timezone.utc)
-    released_to_stays = []
-    for stay_id in data.stay_ids:
-        stay = db.query(Stay).filter(
-            Stay.id == stay_id,
-            Stay.property_id == property_id,
-            Stay.owner_id == current_user.id,
-            Stay.checked_out_at.is_(None),
-            Stay.cancelled_at.is_(None),
-        ).first()
-        if not stay:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Stay {stay_id} is not an active stay for this property. Only current guests can receive the token.",
-            )
-        stay.usat_token_released_at = now
-        db.add(stay)
-        released_to_stays.append(stay)
-    # Clear token from active stays at this property that were not selected (so Manage can revoke)
-    other_active = (
-        db.query(Stay)
-        .filter(
-            Stay.property_id == property_id,
-            Stay.owner_id == current_user.id,
-            Stay.checked_out_at.is_(None),
-            Stay.cancelled_at.is_(None),
-            Stay.id.notin_(data.stay_ids),
-        )
-        .all()
-    )
-    for stay in other_active:
-        stay.usat_token_released_at = None
-        db.add(stay)
-    prop.usat_token_state = USAT_TOKEN_RELEASED
-    prop.usat_token_released_at = now
-
-    property_name = (prop.name or f"{prop.city}, {prop.state}" if prop else None) or "Property"
-    guest_names = []
-    for s in released_to_stays:
-        guest = db.query(User).filter(User.id == s.guest_id).first()
-        gp = db.query(GuestProfile).filter(GuestProfile.user_id == s.guest_id).first()
-        name = (gp.full_legal_name if gp else None) or (guest.full_name if guest else None) or (guest.email if guest else "Unknown")
-        guest_names.append(name)
-    guest_list = ", ".join(guest_names)
-    create_log(
-        db,
-        CATEGORY_STATUS_CHANGE,
-        "USAT token released",
-        f"USAT token released for property {property_name} to guest(s): {guest_list}. Stay IDs: {data.stay_ids}.",
-        property_id=property_id,
-        actor_user_id=current_user.id,
-        actor_email=current_user.email,
-        ip_address=request.client.host if request.client else None,
-        user_agent=(request.headers.get("user-agent") or "").strip() or None,
-        meta={"stay_ids": data.stay_ids, "guest_names": guest_names, "property_name": property_name},
-    )
-    db.commit()
-    db.refresh(prop)
-    return PropertyResponse.model_validate(prop)
-
-
 def _get_owner_property(property_id: int, profile: OwnerProfile, db: Session) -> Property | None:
     return db.query(Property).filter(
         Property.id == property_id,
@@ -1430,6 +1471,7 @@ def create_invitation(
         relationship_to_owner=rel,
         region_code=prop.region_code,
         status="pending",
+        token_state="STAGED",
         dead_mans_switch_enabled=dms,
         dead_mans_switch_alert_email=dms_email,
         dead_mans_switch_alert_sms=dms_sms,
@@ -1445,14 +1487,14 @@ def create_invitation(
         db,
         CATEGORY_STATUS_CHANGE,
         "Invitation created",
-        f"Owner created invitation {code} for property {prop.id}, guest {data.guest_name or data.guest_email or '—'}, {start}–{end}.",
+        f"Invite ID {code} created (token_state=STAGED) for property {prop.id}, guest {data.guest_name or data.guest_email or '—'}, {start}–{end}.",
         property_id=prop.id,
         invitation_id=inv.id,
         actor_user_id=current_user.id,
         actor_email=current_user.email,
         ip_address=ip,
         user_agent=ua,
-        meta={"invitation_code": code, "guest_name": (data.guest_name or "").strip(), "guest_email": (data.guest_email or "").strip()},
+        meta={"invitation_code": code, "token_state": "STAGED", "guest_name": (data.guest_name or "").strip(), "guest_email": (data.guest_email or "").strip()},
     )
     db.commit()
     return {"invitation_code": code}

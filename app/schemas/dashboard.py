@@ -7,7 +7,7 @@ from app.models.region_rule import StayClassification, RiskLevel
 class OwnerInvitationView(BaseModel):
     """Owner view: invitation for dashboard guests list (pending and accepted)."""
     id: int
-    invitation_code: str
+    invitation_code: str  # Invite ID (used as Stay ID for display)
     property_id: int
     property_name: str
     guest_name: str | None = None
@@ -16,6 +16,7 @@ class OwnerInvitationView(BaseModel):
     stay_end_date: date
     region_code: str
     status: str  # pending, accepted, cancelled
+    token_state: str = "STAGED"  # STAGED | BURNED | EXPIRED | REVOKED
     created_at: datetime | None
     is_expired: bool = False  # True when pending and created_at older than 12 hours
 
@@ -34,6 +35,8 @@ class OwnerStayView(BaseModel):
     """Owner view: guest name, dates, region, classification, max stay, risk, applicable laws."""
     stay_id: int
     property_id: int
+    invite_id: str | None = None  # Invitation code (Invite ID) for this stay
+    token_state: str | None = None  # STAGED | BURNED | EXPIRED | REVOKED (from linked invitation)
     guest_name: str
     property_name: str
     stay_start_date: date
@@ -44,6 +47,7 @@ class OwnerStayView(BaseModel):
     risk_indicator: RiskLevel
     applicable_laws: list[str]
     revoked_at: datetime | None = None
+    checked_in_at: datetime | None = None  # when set, stay counts as "active" for occupancy and DMS
     checked_out_at: datetime | None = None
     cancelled_at: datetime | None = None
     usat_token_released_at: datetime | None = None  # when set, this guest can see the USAT token
@@ -58,6 +62,9 @@ class OwnerStayView(BaseModel):
 class GuestStayView(BaseModel):
     """Guest view: property, approved dates, region classification, legal notice and laws. usat_token when released; vacate_by when revoked."""
     stay_id: int
+    invite_id: str | None = None  # Invite ID (invitation code) for this stay
+    token_state: str | None = None  # STAGED | BURNED | EXPIRED | REVOKED
+    property_live_slug: str | None = None  # for building live link URL (#live/<slug>)
     property_name: str
     approved_stay_start_date: date
     approved_stay_end_date: date
@@ -70,6 +77,7 @@ class GuestStayView(BaseModel):
     usat_token: str | None = None
     revoked_at: datetime | None = None
     vacate_by: str | None = None  # ISO datetime: revoked_at + 12 hours
+    checked_in_at: datetime | None = None  # when set, stay is "active" (occupancy/DMS); guest can Check in on or after start date
     checked_out_at: datetime | None = None  # when set, stay is view-only (no Checkout button)
     cancelled_at: datetime | None = None  # when set, stay is view-only (no Cancel stay button)
 
@@ -127,3 +135,9 @@ class BillingResponse(BaseModel):
 class BillingPortalSessionResponse(BaseModel):
     """URL for Stripe Customer Billing Portal; redirect here so after payment (e.g. Klarna) user returns to our app."""
     url: str
+
+
+class PortfolioLinkResponse(BaseModel):
+    """Owner portfolio public page: slug and hash path for building full URL."""
+    portfolio_slug: str
+    portfolio_url: str  # e.g. "portfolio/abc123" (hash part without #); frontend builds full URL

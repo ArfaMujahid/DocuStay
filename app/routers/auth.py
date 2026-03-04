@@ -417,15 +417,7 @@ def _complete_pending_guest(
         inv.status = "accepted"
         sig.used_by_user_id = user.id
         sig.used_at = datetime.now(timezone.utc)
-        # New occupancy: set OCCUPIED, clear Shield Mode if it was left on by a previous stay's Dead Man's Switch
-        _prop = db.query(Property).filter(Property.id == inv.property_id).first()
-        occ_prev = None
-        if _prop:
-            occ_prev = getattr(_prop, "occupancy_status", None) or "unknown"
-            _prop.occupancy_status = OccupancyStatus.occupied.value
-            if getattr(_prop, "shield_mode_enabled", 0) == 1:
-                _prop.shield_mode_enabled = 0
-            db.add(_prop)
+        # Occupancy is set to OCCUPIED only when guest checks in (guest_check_in endpoint).
         db.flush()
         ip = request.client.host if request.client else None
         ua = (request.headers.get("user-agent") or "").strip() or None
@@ -433,7 +425,7 @@ def _complete_pending_guest(
             db,
             CATEGORY_STATUS_CHANGE,
             "Invitation accepted (stay created)",
-            f"Guest registered and accepted invitation {code}; stay {stay.id} created for property {inv.property_id}. Occupancy status: {occ_prev or 'unknown'} -> occupied.",
+            f"Guest registered and accepted invitation {code}; stay {stay.id} created for property {inv.property_id}. Occupancy will be set when guest checks in.",
             property_id=inv.property_id,
             stay_id=stay.id,
             invitation_id=inv.id,
@@ -441,7 +433,7 @@ def _complete_pending_guest(
             actor_email=user.email,
             ip_address=ip,
             user_agent=ua,
-            meta={"invitation_code": code, "signature_id": sig.id, "occupancy_status_previous": occ_prev or "unknown", "occupancy_status_new": "occupied"},
+            meta={"invitation_code": code, "signature_id": sig.id},
         )
         prop = db.query(Property).filter(Property.id == inv.property_id).first()
         property_name = (prop.name if prop else None) or (f"{prop.city}, {prop.state}".strip(", ") if prop and (prop.city or prop.state) else None) or "the property"
@@ -1121,7 +1113,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
     db.add(profile)
     db.commit()
 
-    # Full accept path: code + valid signature -> create stay, mark inv accepted
+    # Full accept path: code + valid signature -> create stay, mark inv accepted, token BURNED
     if code and inv and sig:
         duration = (inv.stay_end_date - inv.stay_start_date).days
         if duration <= 0:
@@ -1130,42 +1122,35 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
             guest_id=user.id,
             owner_id=inv.owner_id,
             property_id=inv.property_id,
+            invitation_id=inv.id,
             stay_start_date=inv.stay_start_date,
             stay_end_date=inv.stay_end_date,
             intended_stay_duration_days=duration,
             purpose_of_stay=inv.purpose_of_stay,
             relationship_to_owner=inv.relationship_to_owner,
             region_code=inv.region_code,
+            dead_mans_switch_enabled=0,  # DMS turns on 2 min after guest checks in (see guest_check_in)
+            dead_mans_switch_alert_email=getattr(inv, "dead_mans_switch_alert_email", 1) or 1,
+            dead_mans_switch_alert_sms=getattr(inv, "dead_mans_switch_alert_sms", 0) or 0,
+            dead_mans_switch_alert_dashboard=getattr(inv, "dead_mans_switch_alert_dashboard", 1) or 1,
+            dead_mans_switch_alert_phone=getattr(inv, "dead_mans_switch_alert_phone", 0) or 0,
         )
         db.add(stay)
         inv.status = "accepted"
+        prev_token_state = getattr(inv, "token_state", None) or "STAGED"
+        inv.token_state = "BURNED"
         sig.used_by_user_id = user.id
         sig.used_at = datetime.now(timezone.utc)
-        # New occupancy: set OCCUPIED, clear Shield Mode if it was left on by a previous stay's Dead Man's Switch
-        _prop = db.query(Property).filter(Property.id == inv.property_id).first()
-        occ_prev = None
-        if _prop:
-            occ_prev = getattr(_prop, "occupancy_status", None) or "unknown"
-            _prop.occupancy_status = OccupancyStatus.occupied.value
-            if getattr(_prop, "shield_mode_enabled", 0) == 1:
-                _prop.shield_mode_enabled = 0
-            db.add(_prop)
+        # Occupancy is set to OCCUPIED only when guest checks in (guest_check_in endpoint).
         db.commit()
         db.refresh(stay)
-        if _prop:
-            try:
-                profile = db.query(OwnerProfile).filter(OwnerProfile.id == _prop.owner_profile_id).first()
-                if profile:
-                    sync_subscription_quantities(db, profile)
-            except Exception:
-                pass
         ip = request.client.host if request.client else None
         ua = (request.headers.get("user-agent") or "").strip() or None
         create_log(
             db,
             CATEGORY_STATUS_CHANGE,
             "Invitation accepted (stay created)",
-            f"Guest registered and accepted invitation {code}; stay {stay.id} created for property {inv.property_id}. Occupancy status: {occ_prev or 'unknown'} -> occupied.",
+            f"Invite ID {code} token_state {prev_token_state} -> BURNED; guest registered, stay {stay.id} created for property {inv.property_id}. Occupancy will be set when guest checks in.",
             property_id=inv.property_id,
             stay_id=stay.id,
             invitation_id=inv.id,
@@ -1173,7 +1158,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
             actor_email=user.email,
             ip_address=ip,
             user_agent=ua,
-            meta={"invitation_code": code, "signature_id": sig.id, "occupancy_status_previous": occ_prev or "unknown", "occupancy_status_new": "occupied"},
+            meta={"invitation_code": code, "token_state_previous": prev_token_state, "token_state_new": "BURNED", "signature_id": sig.id},
         )
         db.commit()
         prop = db.query(Property).filter(Property.id == inv.property_id).first()
@@ -1321,17 +1306,20 @@ def accept_invite(
     duration = (inv.stay_end_date - inv.stay_start_date).days
     if duration <= 0:
         duration = 1
+    inv_dms = getattr(inv, "dead_mans_switch_enabled", 0) or 0
+    # DMS is always off at stay creation; it turns on 2 min after guest checks in (see guest_check_in)
     stay = Stay(
         guest_id=current_user.id,
         owner_id=inv.owner_id,
         property_id=inv.property_id,
+        invitation_id=inv.id,
         stay_start_date=inv.stay_start_date,
         stay_end_date=inv.stay_end_date,
         intended_stay_duration_days=duration,
         purpose_of_stay=inv.purpose_of_stay,
         relationship_to_owner=inv.relationship_to_owner,
         region_code=inv.region_code,
-        dead_mans_switch_enabled=getattr(inv, "dead_mans_switch_enabled", 0) or 0,
+        dead_mans_switch_enabled=0,
         dead_mans_switch_alert_email=getattr(inv, "dead_mans_switch_alert_email", 1) or 1,
         dead_mans_switch_alert_sms=getattr(inv, "dead_mans_switch_alert_sms", 0) or 0,
         dead_mans_switch_alert_dashboard=getattr(inv, "dead_mans_switch_alert_dashboard", 1) or 1,
@@ -1339,15 +1327,9 @@ def accept_invite(
     )
     db.add(stay)
     inv.status = "accepted"
-    # New occupancy: set OCCUPIED, clear Shield Mode if it was left on by a previous stay's Dead Man's Switch
-    _prop = db.query(Property).filter(Property.id == inv.property_id).first()
-    occ_prev = None
-    if _prop:
-        occ_prev = getattr(_prop, "occupancy_status", None) or "unknown"
-        _prop.occupancy_status = OccupancyStatus.occupied.value
-        if getattr(_prop, "shield_mode_enabled", 0) == 1:
-            _prop.shield_mode_enabled = 0
-        db.add(_prop)
+    prev_token_state = getattr(inv, "token_state", None) or "STAGED"
+    inv.token_state = "BURNED"
+    # Occupancy is set to OCCUPIED only when guest checks in (guest_check_in endpoint).
     if sig.used_by_user_id is None:
         sig.used_by_user_id = current_user.id
         sig.used_at = datetime.now(timezone.utc)
@@ -1363,7 +1345,7 @@ def accept_invite(
         db,
         CATEGORY_STATUS_CHANGE,
         "Invitation accepted",
-        f"Existing guest accepted invitation {code}; stay {stay.id} created for property {inv.property_id}. Occupancy status: {occ_prev or 'unknown'} -> occupied.",
+        f"Invite ID {code} token_state {prev_token_state} -> BURNED; stay {stay.id} created for property {inv.property_id}. Occupancy will be set when guest checks in.",
         property_id=inv.property_id,
         stay_id=stay.id,
         invitation_id=inv.id,
@@ -1371,9 +1353,10 @@ def accept_invite(
         actor_email=current_user.email,
         ip_address=ip,
         user_agent=ua,
-        meta={"invitation_code": code, "signature_id": sig.id, "occupancy_status_previous": occ_prev or "unknown", "occupancy_status_new": "occupied"},
+        meta={"invitation_code": code, "token_state_previous": prev_token_state, "token_state_new": "BURNED", "signature_id": sig.id},
     )
     db.commit()
+    _prop = db.query(Property).filter(Property.id == inv.property_id).first()
     if _prop:
         try:
             profile = db.query(OwnerProfile).filter(OwnerProfile.id == _prop.owner_profile_id).first()
@@ -1389,4 +1372,5 @@ def accept_invite(
         property_name=property_name,
         stay_end_date=str(inv.stay_end_date),
     )
+    # DMS is turned on 2 min after guest checks in (see guest_check_in), not at accept
     return {"status": "success", "message": "Invitation accepted"}

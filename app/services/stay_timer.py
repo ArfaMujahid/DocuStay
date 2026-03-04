@@ -26,12 +26,15 @@ DMS_TITLE_48H_BEFORE = "Dead Man's Switch: 48h before lease end"
 DMS_TITLE_URGENT_TODAY = "Dead Man's Switch: urgent – lease ends today"
 DMS_TITLE_AUTO_EXECUTED = "Dead Man's Switch: auto-executed"
 SHIELD_ACTIVATED_LAST_DAY = "Shield Mode activated (last day of stay)"
+# Test mode: effective "lease end" = stay created_at + this duration (invite acceptance = stay creation)
+DMS_TEST_MODE_MINUTES_AFTER_CREATE = 2
 
 
 def get_overstays(db: Session) -> list[Stay]:
-    """Stays whose end date has passed and guest has not checked out or cancelled (overstay)."""
+    """Stays whose end date has passed and guest has not checked out or cancelled (overstay). Only includes stays that have been checked into."""
     today = date.today()
     return db.query(Stay).filter(
+        Stay.checked_in_at.isnot(None),
         Stay.stay_end_date < today,
         Stay.checked_out_at.is_(None),
         Stay.cancelled_at.is_(None),
@@ -178,8 +181,182 @@ def _get_property_name(db: Session, prop: Property | None) -> str:
     return (prop.name or "").strip() or (f"{prop.city}, {prop.state}".strip(", ") if (prop.city or prop.state) else "Property")
 
 
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    """Return datetime with UTC tzinfo; if naive, assume UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _run_dead_mans_switch_job_test_mode(db: Session) -> None:
+    """DMS test mode: effective lease end = checked_in_at + 2 min (if set), else created_at + 2 min. 48h before / urgent / auto-execute use that window."""
+    now = datetime.now(timezone.utc)
+    effective_end_delta = timedelta(minutes=DMS_TEST_MODE_MINUTES_AFTER_CREATE)
+    urgent_window_before_end = timedelta(minutes=1)  # "urgent" = last 1 min before effective end
+
+    def dms_enabled(s: Stay) -> bool:
+        return getattr(s, "dead_mans_switch_enabled", 0) == 1
+
+    def alert_email(s: Stay) -> bool:
+        return getattr(s, "dead_mans_switch_alert_email", 1) == 1
+
+    stays = (
+        db.query(Stay)
+        .filter(
+            Stay.checked_out_at.is_(None),
+            Stay.cancelled_at.is_(None),
+        )
+        .all()
+    )
+    for stay in stays:
+        if not dms_enabled(stay):
+            continue
+        # Prefer checked_in_at + 2 min (when testing via check-in flow); else created_at + 2 min (accept-invite flow)
+        checked_in_at = getattr(stay, "checked_in_at", None)
+        if checked_in_at:
+            base_dt = _ensure_utc(checked_in_at)
+        else:
+            created_at = getattr(stay, "created_at", None)
+            if not created_at:
+                continue
+            base_dt = _ensure_utc(created_at)
+        effective_end_dt = base_dt + effective_end_delta
+        effective_end_date_str = effective_end_dt.date().isoformat()
+
+        # 1) 48h before (test: before effective end, send once)
+        if now < effective_end_dt and not _dms_already_logged(db, DMS_TITLE_48H_BEFORE, stay_id=stay.id):
+            owner = db.query(User).filter(User.id == stay.owner_id).first()
+            prop = db.query(Property).filter(Property.id == stay.property_id).first()
+            if owner and alert_email(stay):
+                try:
+                    send_dead_mans_switch_48h_before(
+                        owner.email,
+                        _get_guest_name(db, stay),
+                        _get_property_name(db, prop),
+                        effective_end_date_str,
+                    )
+                except Exception:
+                    pass
+                create_log(
+                    db,
+                    CATEGORY_DEAD_MANS_SWITCH,
+                    DMS_TITLE_48H_BEFORE,
+                    f"Stay {stay.id}: 48h before (test mode, effective end {effective_end_date_str}) alert sent to owner.",
+                    property_id=stay.property_id,
+                    stay_id=stay.id,
+                    meta={"guest_id": stay.guest_id, "owner_id": stay.owner_id, "dms_test_mode": True},
+                )
+                db.commit()
+
+        # 2) Urgent today (test: last minute before effective end)
+        if (
+            effective_end_dt - urgent_window_before_end <= now < effective_end_dt
+            and not _dms_already_logged(db, DMS_TITLE_URGENT_TODAY, stay_id=stay.id)
+        ):
+            owner = db.query(User).filter(User.id == stay.owner_id).first()
+            prop = db.query(Property).filter(Property.id == stay.property_id).first()
+            if owner and alert_email(stay):
+                try:
+                    send_dead_mans_switch_urgent_today(
+                        owner.email,
+                        _get_guest_name(db, stay),
+                        _get_property_name(db, prop),
+                        effective_end_date_str,
+                    )
+                except Exception:
+                    pass
+                create_log(
+                    db,
+                    CATEGORY_DEAD_MANS_SWITCH,
+                    DMS_TITLE_URGENT_TODAY,
+                    f"Stay {stay.id}: urgent (test mode, effective end {effective_end_date_str}) alert sent to owner.",
+                    property_id=stay.property_id,
+                    stay_id=stay.id,
+                    meta={"guest_id": stay.guest_id, "owner_id": stay.owner_id, "dms_test_mode": True},
+                )
+                db.commit()
+
+        # 3) Auto-execute after effective end (test: 2 min after create)
+        if now < effective_end_dt:
+            continue
+        if getattr(stay, "occupancy_confirmation_response", None) is not None:
+            continue
+        if getattr(stay, "dead_mans_switch_triggered_at", None) is not None:
+            continue
+        if _dms_already_logged(db, DMS_TITLE_AUTO_EXECUTED, stay_id=stay.id):
+            continue
+
+        owner = db.query(User).filter(User.id == stay.owner_id).first()
+        prop = db.query(Property).filter(Property.id == stay.property_id).first()
+        guest_name = _get_guest_name(db, stay)
+        property_name = _get_property_name(db, prop)
+
+        stay.dead_mans_switch_triggered_at = now
+        db.add(stay)
+
+        prev_status = "unknown"
+        if prop:
+            prev_status = getattr(prop, "occupancy_status", None) or "unknown"
+            prop.occupancy_status = OccupancyStatus.unconfirmed.value
+            if prop.usat_token_state == USAT_TOKEN_RELEASED:
+                prop.usat_token_state = USAT_TOKEN_STAGED
+                prop.usat_token_released_at = None
+            prop.shield_mode_enabled = 1
+            db.add(prop)
+
+        create_log(
+            db,
+            CATEGORY_DEAD_MANS_SWITCH,
+            DMS_TITLE_AUTO_EXECUTED,
+            f"Stay {stay.id}: No owner response by deadline (test mode, effective end {effective_end_date_str}). Occupancy status flipped {prev_status} -> unconfirmed.",
+            property_id=stay.property_id,
+            stay_id=stay.id,
+            meta={
+                "guest_id": stay.guest_id,
+                "owner_id": stay.owner_id,
+                "stay_end_date": effective_end_date_str,
+                "occupancy_status_previous": prev_status,
+                "occupancy_status_new": OccupancyStatus.unconfirmed.value,
+                "utility_lock_activated": True,
+                "dms_test_mode": True,
+            },
+        )
+        db.commit()
+        try:
+            if prop:
+                profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+                if profile:
+                    sync_subscription_quantities(db, profile)
+        except Exception:
+            pass
+        if owner and alert_email(stay):
+            try:
+                send_dead_mans_switch_auto_executed(
+                    owner.email,
+                    guest_name,
+                    property_name,
+                    effective_end_date_str,
+                )
+                send_shield_mode_activated_email(
+                    owner.email,
+                    property_name,
+                    triggered_by_dead_mans_switch=True,
+                )
+            except Exception:
+                pass
+
+    # Shield activation (test mode): skip last-day Shield activation tied to real stay_end_date to avoid side effects
+    return
+
+
 def run_dead_mans_switch_job(db: Session) -> None:
-    """Dead Man's Switch: 48h before alert, today alert, 48h after auto-execute."""
+    """Dead Man's Switch: 48h before alert, today alert, 48h after auto-execute. When DMS_TEST_MODE=true, uses 2 min after stay creation."""
+    if settings.dms_test_mode:
+        _run_dead_mans_switch_job_test_mode(db)
+        return
+
     today = date.today()
     two_days_later = today + timedelta(days=2)
     two_days_ago = today - timedelta(days=2)
@@ -191,17 +368,23 @@ def run_dead_mans_switch_job(db: Session) -> None:
     def alert_email(s: Stay) -> bool:
         return getattr(s, "dead_mans_switch_alert_email", 1) == 1
 
-    # 1) 48 hours before lease end
+    # 1) 48 hours before lease end: turn DMS on for this stay (prod: DMS is not on from creation) and send alert
     for stay in (
         db.query(Stay)
         .filter(
+            Stay.checked_in_at.isnot(None),
             Stay.stay_end_date == two_days_later,
             Stay.checked_out_at.is_(None),
             Stay.cancelled_at.is_(None),
         )
         .all()
     ):
-        if not dms_enabled(stay) or _dms_already_logged(db, DMS_TITLE_48H_BEFORE, stay_id=stay.id):
+        # In prod, DMS turns on here (48h before lease end), not at creation or check-in
+        if not dms_enabled(stay):
+            stay.dead_mans_switch_enabled = 1
+            db.add(stay)
+            db.commit()
+        if _dms_already_logged(db, DMS_TITLE_48H_BEFORE, stay_id=stay.id):
             continue
         owner = db.query(User).filter(User.id == stay.owner_id).first()
         prop = db.query(Property).filter(Property.id == stay.property_id).first()
@@ -227,10 +410,11 @@ def run_dead_mans_switch_job(db: Session) -> None:
         )
         db.commit()
 
-    # 1.5) Last day of guest's stay: activate Shield Mode for the property (any stay ending today)
+    # 1.5) Last day of guest's stay: activate Shield Mode for the property (any checked-in stay ending today)
     stays_ending_today = (
         db.query(Stay)
         .filter(
+            Stay.checked_in_at.isnot(None),
             Stay.stay_end_date == today,
             Stay.checked_out_at.is_(None),
             Stay.cancelled_at.is_(None),
@@ -277,10 +461,11 @@ def run_dead_mans_switch_job(db: Session) -> None:
             except Exception:
                 pass
 
-    # 2) Lease end date = today (urgent)
+    # 2) Lease end date = today (urgent; only for checked-in stays)
     for stay in (
         db.query(Stay)
         .filter(
+            Stay.checked_in_at.isnot(None),
             Stay.stay_end_date == today,
             Stay.checked_out_at.is_(None),
             Stay.cancelled_at.is_(None),
@@ -313,10 +498,11 @@ def run_dead_mans_switch_job(db: Session) -> None:
         )
         db.commit()
 
-    # 3) 48 hours after lease end – flip to UNCONFIRMED (no auto-checkout; silence is forensic evidence)
+    # 3) 48 hours after lease end – flip to UNCONFIRMED (only for checked-in stays; no auto-checkout)
     for stay in (
         db.query(Stay)
         .filter(
+            Stay.checked_in_at.isnot(None),
             Stay.stay_end_date <= two_days_ago,
             Stay.checked_out_at.is_(None),
             Stay.cancelled_at.is_(None),

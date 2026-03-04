@@ -24,6 +24,8 @@ import OnboardingIdentityComplete from './pages/Onboarding/OnboardingIdentityCom
 import OnboardingPOA from './pages/Onboarding/OnboardingPOA';
 import ProviderAuthorityLetter from './pages/Provider/ProviderAuthorityLetter';
 import Landing from './pages/Landing';
+import { LivePropertyPage } from './pages/LivePropertyPage';
+import { PortfolioPage } from './pages/PortfolioPage';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -340,6 +342,16 @@ const App: React.FC = () => {
         {view === 'help' && state.user?.user_type !== UserType.PROPERTY_OWNER && <HelpCenter navigate={navigate} />}
         {view.startsWith('property/') && state.user?.user_type === UserType.PROPERTY_OWNER && <PropertyDetail propertyId={view.split('/')[1]} user={state.user} navigate={navigate} setLoading={setLoading} notify={showNotification} />}
 
+        {/* Public live property page (no auth; URL uses slug, not property id) */}
+        {view.startsWith('live/') && (
+          <LivePropertyPage slug={view.replace(/^live\/?/, '').split('/')[0] || ''} />
+        )}
+
+        {/* Public portfolio page (no auth; owner's properties + basic info) */}
+        {view.startsWith('portfolio/') && (
+          <PortfolioPage slug={view.replace(/^portfolio\/?/, '').split('/')[0] || ''} />
+        )}
+
         {/* Provider authority letter (public link from email) */}
         {view.startsWith('provider/authority/') && (
           <ProviderAuthorityLetter
@@ -358,7 +370,7 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {!['', 'login', 'register', 'verify'].includes(view) && !view.startsWith('guest-login') && !view.startsWith('guest-signup') && !view.startsWith('invite/') && !view.startsWith('onboarding/') && (
+      {!['', 'login', 'register', 'verify'].includes(view) && !view.startsWith('guest-login') && !view.startsWith('guest-signup') && !view.startsWith('invite/') && !view.startsWith('onboarding/') && !view.startsWith('live/') && !view.startsWith('portfolio/') && (
         <footer className="bg-white border-t border-gray-200 py-10">
           <div className="max-w-7xl mx-auto px-4 text-center">
             <p className="text-gray-500 text-sm">© 2024 DocuStay AI. Documentation platform—not a law firm.</p>

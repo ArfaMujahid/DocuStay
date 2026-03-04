@@ -40,6 +40,9 @@ class OwnerProfile(Base):
     onboarding_billing_unit_count = Column(Integer, nullable=True)
     onboarding_invoice_paid_at = Column(DateTime(timezone=True), nullable=True)  # Set when onboarding invoice is paid; required before inviting guests
 
+    # Public portfolio page: unique slug for URL (e.g. /#portfolio/abc123)
+    portfolio_slug = Column(String(32), unique=True, nullable=True, index=True)
+
     user = relationship("User", backref="owner_profile")
     properties = relationship("Property", back_populates="owner_profile")
 
@@ -95,5 +98,8 @@ class Property(Base):
 
     # Status state machine: VACANT | OCCUPIED | UNKNOWN | UNCONFIRMED. UNCONFIRMED = asked for confirmation (e.g. DMS), no response by deadline.
     occupancy_status = Column(String(32), nullable=False, default=OccupancyStatus.unknown.value)
+
+    # Public live link: unique slug for URL (no DB id in URL). Used for #live/<slug> property info page.
+    live_slug = Column(String(32), unique=True, nullable=True, index=True)
 
     owner_profile = relationship("OwnerProfile", back_populates="properties")

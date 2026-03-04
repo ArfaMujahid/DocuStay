@@ -1,24 +1,29 @@
-"""Delete pending invitations that were not accepted within 12 hours."""
+"""Mark pending invitations that were not accepted within 12 hours as expired (status + token_state)."""
+import logging
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.invitation import Invitation
 
+logger = logging.getLogger("uvicorn.error")
 PENDING_INVITATION_EXPIRE_HOURS = 12
 
 
 def run_invitation_cleanup_job() -> None:
-    """Delete all pending invitations older than 12 hours."""
+    """Mark pending invitations older than 12 hours as expired: status='expired', token_state='EXPIRED'."""
     db: Session = SessionLocal()
     try:
         threshold = datetime.now(timezone.utc) - timedelta(hours=PENDING_INVITATION_EXPIRE_HOURS)
-        deleted = db.query(Invitation).filter(
+        invs = db.query(Invitation).filter(
             Invitation.status == "pending",
             Invitation.created_at < threshold,
-        ).delete()
+        ).all()
+        for inv in invs:
+            inv.status = "expired"
+            inv.token_state = "EXPIRED"
+            db.add(inv)
         db.commit()
-        if deleted:
-            import logging
-            logging.getLogger("uvicorn.error").info("Invitation cleanup: deleted %d expired pending invitation(s).", deleted)
+        if invs:
+            logger.info("Invitation cleanup: marked %d pending invitation(s) as expired (status=expired, token_state=EXPIRED).", len(invs))
     finally:
         db.close()

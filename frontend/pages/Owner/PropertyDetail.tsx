@@ -4,7 +4,8 @@ import { Card, Button, Input, Modal } from '../../components/UI';
 import { InviteGuestModal } from '../../components/InviteGuestModal';
 import { UserSession } from '../../types';
 import { JURISDICTION_RULES } from '../../services/jleService';
-import { propertiesApi, dashboardApi, type Property, type OwnerStayView } from '../../services/api';
+import { propertiesApi, dashboardApi, APP_ORIGIN, type Property, type OwnerStayView } from '../../services/api';
+import { copyToClipboard } from '../../utils/clipboard';
 
 function formatStayDuration(startStr: string, endStr: string): string {
   const start = new Date(startStr);
@@ -61,12 +62,15 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
   const [confirmingOccupancy, setConfirmingOccupancy] = useState(false);
   const [confirmOccupancyAction, setConfirmOccupancyAction] = useState<'vacated' | 'renewed' | 'holdover' | null>(null);
   const [renewEndDate, setRenewEndDate] = useState('');
+  const [showLiveLinkQR, setShowLiveLinkQR] = useState(false);
+  const [copyToast, setCopyToast] = useState<string | null>(null);
   const id = Number(propertyId);
   const stateKey = property?.state ?? 'FL';
   const jurisdictionInfo = JURISDICTION_RULES[stateKey as keyof typeof JURISDICTION_RULES] ?? JURISDICTION_RULES.FL;
   const propertyStays = stays.filter((s) => s.property_id === id);
-  const activeStaysForProperty = propertyStays.filter((s) => !s.checked_out_at && !s.cancelled_at);
-  const activeStays = stays.filter((s) => !s.checked_out_at && !s.cancelled_at);
+  // Only checked-in stays (guest clicked Check in) count as active for occupancy and DMS
+  const activeStaysForProperty = propertyStays.filter((s) => s.checked_in_at && !s.checked_out_at && !s.cancelled_at);
+  const activeStays = stays.filter((s) => s.checked_in_at && !s.checked_out_at && !s.cancelled_at);
   const activeStay = activeStaysForProperty.find((s) => !isOverstayed(s.stay_end_date)) ?? activeStaysForProperty[0];
   const isOccupied = activeStaysForProperty.length > 0;
   const hasActiveStay = activeStaysForProperty.length > 0;
@@ -76,6 +80,10 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
   // Display status: active stay → OCCUPIED; else use property.occupancy_status (vacant | occupied | unknown | unconfirmed)
   const displayStatus = isOccupied ? 'OCCUPIED' : (property?.occupancy_status ?? 'unknown').toUpperCase();
   const stayNeedingConfirmation = propertyStays.find((s) => s.show_occupancy_confirmation_ui);
+  /** Stay to use for vacated/renewed/holdover: confirmation prompt stay, or any checked-in active stay on this property */
+  const stayForOccupancyActions = stayNeedingConfirmation ?? (activeStaysForProperty.length > 0 ? activeStay ?? null : null);
+  /** Upcoming stay (not yet checked in) for DMS copy */
+  const upcomingStayForProperty = propertyStays.find((s) => !s.checked_in_at && !s.checked_out_at && !s.cancelled_at);
 
   const loadData = useCallback(() => {
     if (!id || isNaN(id)) {
@@ -329,7 +337,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
       </header>
 
       <div className="flex border-b border-slate-200 mb-8 overflow-x-auto no-scrollbar">
-        {['Overview', 'Guests', 'Documentation'].map(tab => (
+        {['Overview', 'Stay', 'Guests', 'Documentation'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab.toLowerCase())}
@@ -366,6 +374,20 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                     ))}
                   </dl>
                 </Card>
+                {property.live_slug && (
+                  <Card className="p-6 border-slate-200">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Live link page</h3>
+                    <p className="text-sm text-slate-600 mb-4">Anyone with this link can view property info, owner contact, current or last stay, and activity log (no login required).</p>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      className="w-full sm:w-auto"
+                      onClick={() => setShowLiveLinkQR(true)}
+                    >
+                      Open live link
+                    </Button>
+                  </Card>
+                )}
                 <Card className="p-6 border-slate-200">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Ownership proof</h3>
                   {property.ownership_proof_filename ? (
@@ -402,25 +424,33 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                     <p className="text-sm text-slate-500">You do not have any proof uploaded.</p>
                   )}
                 </Card>
-                {stayNeedingConfirmation && (
-                  <Card className="mb-6 p-5 md:p-6 border-amber-200 bg-amber-50/80">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-2">Confirm occupancy status</h3>
-                    <p className="text-sm text-amber-900 mb-3">
-                      {stayNeedingConfirmation.needs_occupancy_confirmation
-                        ? `Please confirm the status of this unit before ${stayNeedingConfirmation.confirmation_deadline_at ? new Date(stayNeedingConfirmation.confirmation_deadline_at).toLocaleString() : 'the deadline'}.`
-                        : 'No response was received by the deadline. Status is UNCONFIRMED. Please confirm now.'}
-                    </p>
+                {stayForOccupancyActions && (
+                  <Card className={`mb-6 p-5 md:p-6 ${stayNeedingConfirmation ? 'border-amber-200 bg-amber-50/80' : 'border-slate-200'}`}>
+                    <h3 className={`text-xs font-bold uppercase tracking-wider mb-2 ${stayNeedingConfirmation ? 'text-amber-800' : 'text-slate-600'}`}>
+                      {stayNeedingConfirmation ? 'Confirm occupancy status' : 'Update stay or confirm occupancy'}
+                    </h3>
+                    {stayNeedingConfirmation ? (
+                      <p className="text-sm text-amber-900 mb-3">
+                        {stayNeedingConfirmation.needs_occupancy_confirmation
+                          ? `Please confirm the status of this unit before ${stayNeedingConfirmation.confirmation_deadline_at ? new Date(stayNeedingConfirmation.confirmation_deadline_at).toLocaleString() : 'the deadline'}.`
+                          : 'No response was received by the deadline. Status is UNCONFIRMED. Please confirm now.'}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-slate-600 mb-3">
+                        Extend the lease, mark the unit vacated, or confirm holdover for <strong>{stayForOccupancyActions.guest_name}</strong>.
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-3">
                       <Button
                         variant="outline"
-                        className="border-amber-600 text-amber-800 hover:bg-amber-100"
+                        className={stayNeedingConfirmation ? 'border-amber-600 text-amber-800 hover:bg-amber-100' : ''}
                         disabled={confirmingOccupancy}
                         onClick={async () => {
-                          if (!stayNeedingConfirmation) return;
+                          if (!stayForOccupancyActions) return;
                           setConfirmOccupancyAction('vacated');
                           setConfirmingOccupancy(true);
                           try {
-                            await dashboardApi.confirmOccupancyStatus(stayNeedingConfirmation.stay_id, 'vacated');
+                            await dashboardApi.confirmOccupancyStatus(stayForOccupancyActions.stay_id, 'vacated');
                             notify('success', 'Unit marked as vacated.');
                             loadData();
                           } catch (e) {
@@ -435,7 +465,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                       </Button>
                       <Button
                         variant="outline"
-                        className="border-amber-600 text-amber-800 hover:bg-amber-100"
+                        className={stayNeedingConfirmation ? 'border-amber-600 text-amber-800 hover:bg-amber-100' : ''}
                         disabled={confirmingOccupancy}
                         onClick={() => setConfirmOccupancyAction('renewed')}
                       >
@@ -443,14 +473,14 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                       </Button>
                       <Button
                         variant="outline"
-                        className="border-amber-600 text-amber-800 hover:bg-amber-100"
+                        className={stayNeedingConfirmation ? 'border-amber-600 text-amber-800 hover:bg-amber-100' : ''}
                         disabled={confirmingOccupancy}
                         onClick={async () => {
-                          if (!stayNeedingConfirmation) return;
+                          if (!stayForOccupancyActions) return;
                           setConfirmOccupancyAction('holdover');
                           setConfirmingOccupancy(true);
                           try {
-                            await dashboardApi.confirmOccupancyStatus(stayNeedingConfirmation.stay_id, 'holdover');
+                            await dashboardApi.confirmOccupancyStatus(stayForOccupancyActions.stay_id, 'holdover');
                             notify('success', 'Holdover confirmed.');
                             loadData();
                           } catch (e) {
@@ -471,16 +501,16 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                           value={renewEndDate}
                           onChange={(e) => setRenewEndDate(e.target.value)}
                           className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                          min={stayNeedingConfirmation?.stay_end_date ?? undefined}
+                          min={stayForOccupancyActions?.stay_end_date ?? undefined}
                         />
                         <Button
                           variant="outline"
                           disabled={!renewEndDate || confirmingOccupancy}
                           onClick={async () => {
-                            if (!stayNeedingConfirmation || !renewEndDate) return;
+                            if (!stayForOccupancyActions || !renewEndDate) return;
                             setConfirmingOccupancy(true);
                             try {
-                              await dashboardApi.confirmOccupancyStatus(stayNeedingConfirmation.stay_id, 'renewed', renewEndDate);
+                              await dashboardApi.confirmOccupancyStatus(stayForOccupancyActions.stay_id, 'renewed', renewEndDate);
                               notify('success', 'Lease renewed.');
                               setRenewEndDate('');
                               setConfirmOccupancyAction(null);
@@ -580,6 +610,11 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                           </span>
                           <p className="text-xs text-slate-500">Alerts you if the stay ends without checkout or renewal. Shown for current guest stay.</p>
                         </>
+                      ) : upcomingStayForProperty ? (
+                        <>
+                          <span className="text-sm font-medium text-slate-600">Off</span>
+                          <p className="text-xs text-slate-500">Activates when the guest checks in. Alerts you if the stay ends without checkout or renewal.</p>
+                        </>
                       ) : (
                         <span className="text-sm text-slate-500">No active stay at this property.</span>
                       )}
@@ -588,37 +623,69 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                 </div>
                 </>
               )}
-
-              <Card className="p-6 border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">Jurisdiction Shield</h3>
-                <div className="grid md:grid-cols-2 gap-10">
-                  <div>
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-12 h-12 bg-blue-500/10 text-blue-600 rounded-2xl flex items-center justify-center font-black">{property.region_code || property.state}</div>
-                      <div>
-                        <p className="text-xs text-slate-500 uppercase font-black tracking-widest">State Rules</p>
-                        <p className="text-slate-800 font-bold">{jurisdictionInfo.name}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center p-4 rounded-xl bg-slate-100 border border-slate-200">
-                        <span className="text-sm text-slate-600">Max Safe Stay</span>
-                        <span className="text-sm font-black text-green-600">{jurisdictionInfo.maxSafeStayDays} Days</span>
-                      </div>
-                      <div className="flex justify-between items-center p-4 rounded-xl bg-slate-100 border border-slate-200">
-                        <span className="text-sm text-slate-600">Primary Statute</span>
-                        <span className="text-sm font-black text-blue-600">{jurisdictionInfo.keyStatute}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200">
-                    <p className="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-2">Stay documentation</p>
-                    <p className="text-sm text-slate-600 leading-relaxed">DocuStay records authorized stay limits by region for status documentation and audit history. Max stay for this region: {jurisdictionInfo.maxSafeStayDays} days.</p>
-                  </div>
-                </div>
-              </Card>
             </div>
           </div>
+        )}
+
+        {activeTab === 'stay' && (
+          <Card className="overflow-hidden border-slate-200">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">Stay (Invite token)</h3>
+              {propertyStays.length === 0 ? (
+                <p className="text-slate-500">No stays for this property yet. When you invite a guest and they accept, the current stay will appear here with its Invite ID and token state.</p>
+              ) : (
+                <div className="space-y-6">
+                  {propertyStays.map((stay) => {
+                    const isActive = !stay.checked_out_at && !stay.cancelled_at;
+                    const stateLabel = stay.token_state ?? '—';
+                    const stateClass =
+                      stateLabel === 'BURNED'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : stateLabel === 'STAGED'
+                          ? 'bg-sky-50 text-sky-700 border-sky-200'
+                          : stateLabel === 'EXPIRED'
+                            ? 'bg-slate-100 text-slate-600 border-slate-200'
+                            : stateLabel === 'REVOKED'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200';
+                    return (
+                      <div key={stay.stay_id} className={`rounded-xl border p-5 ${isActive ? 'border-slate-200 bg-slate-50/50' : 'border-slate-100 bg-white'}`}>
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold uppercase tracking-wide border ${stateClass}`}>
+                            {stateLabel}
+                          </span>
+                          {stay.invite_id && (
+                            <span className="text-slate-500 text-sm font-mono">Invite ID: {stay.invite_id}</span>
+                          )}
+                          {isActive && <span className="text-xs text-emerald-600 font-medium">Current stay</span>}
+                        </div>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <dt className="text-slate-500">Guest</dt>
+                            <dd className="font-medium text-slate-800">{stay.guest_name}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Check-in</dt>
+                            <dd className="font-medium text-slate-800">{stay.stay_start_date}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Check-out</dt>
+                            <dd className="font-medium text-slate-800">{stay.stay_end_date}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Status</dt>
+                            <dd className="font-medium text-slate-800">
+                              {stay.cancelled_at ? 'Cancelled' : stay.checked_out_at ? 'Completed' : stay.revoked_at ? 'Revoked' : isOverstayed(stay.stay_end_date) ? 'Overstayed' : 'Active'}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
         )}
 
         {activeTab === 'guests' && (
@@ -839,6 +906,58 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         navigate={navigate}
         initialPropertyId={id}
       />
+
+      {/* Live link QR code modal (same pattern as guest side) */}
+      {showLiveLinkQR && property?.live_slug && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+          <div className="max-w-sm w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200 relative">
+            <button type="button" onClick={() => setShowLiveLinkQR(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1 text-center">Live link page</h3>
+            <p className="text-slate-500 text-sm mb-4 text-center">Scan or share this link to open the property info page (no login).</p>
+            <div className="flex justify-center mb-4">
+              <div className="bg-slate-50 p-4 rounded-xl">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : APP_ORIGIN}/#live/${property.live_slug}`)}`}
+                  alt="QR code for live link"
+                  className="w-40 h-40 rounded-lg"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full"
+                onClick={() => window.open(`${typeof window !== 'undefined' ? window.location.origin : APP_ORIGIN}/#live/${property.live_slug}`, '_blank', 'noopener,noreferrer')}
+              >
+                Open live page
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const url = `${typeof window !== 'undefined' ? window.location.origin : APP_ORIGIN}/#live/${property.live_slug}`;
+                  const ok = await copyToClipboard(url);
+                  setCopyToast(ok ? 'Live link copied to clipboard.' : 'Could not copy. Try selecting the link manually.');
+                  setTimeout(() => setCopyToast(null), 3000);
+                }}
+              >
+                Copy live link
+              </Button>
+              {copyToast && (
+                <p className={`text-sm text-center mt-2 ${copyToast.startsWith('Live link') ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {copyToast}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

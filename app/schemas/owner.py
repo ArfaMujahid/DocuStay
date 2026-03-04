@@ -38,11 +38,6 @@ class PropertyUpdate(BaseModel):
     shield_mode_enabled: bool | None = None
 
 
-class ReleaseUsatTokenRequest(BaseModel):
-    """Which stay(s) to release the USAT token to (active guests at this property)."""
-    stay_ids: list[int] = []  # at least one required; validated in endpoint
-
-
 class BulkUploadResult(BaseModel):
     """Result of CSV bulk upload: counts and first failure info."""
     created: int = 0
@@ -53,6 +48,7 @@ class BulkUploadResult(BaseModel):
 
 class PropertyResponse(BaseModel):
     id: int
+    live_slug: str | None = None  # unique public slug for live link URL (#live/<slug>)
     name: str | None
     street: str
     city: str

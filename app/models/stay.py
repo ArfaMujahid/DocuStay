@@ -13,6 +13,7 @@ class Stay(Base):
     guest_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+    invitation_id = Column(Integer, ForeignKey("invitations.id"), nullable=True, index=True)  # links to invite token (invitation_code)
 
     stay_start_date = Column(Date, nullable=False)
     stay_end_date = Column(Date, nullable=False)
@@ -29,6 +30,7 @@ class Stay(Base):
     usat_token_released_at = Column(DateTime(timezone=True), nullable=True)
 
     # Guest actions: when set, stay is view-only (no Checkout/Cancel stay buttons)
+    checked_in_at = Column(DateTime(timezone=True), nullable=True)  # when guest clicks Check in; occupancy/DMS apply only after this
     checked_out_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
 

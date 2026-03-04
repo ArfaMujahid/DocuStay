@@ -23,7 +23,11 @@ class Invitation(Base):
     relationship_to_owner = Column(SQLEnum(RelationshipToOwner), nullable=False)
     region_code = Column(String(20), nullable=False)
 
-    status = Column(String(20), nullable=False, default="pending")  # pending, accepted
+    status = Column(String(20), nullable=False, default="pending")  # pending, accepted, cancelled
+
+    # Invite-as-token state (Invite ID = invitation_code; used as Stay ID for display)
+    # STAGED=created, BURNED=guest accepted+signed MoA, EXPIRED=stay ended/checked out, REVOKED=cancelled by owner/guest
+    token_state = Column(String(20), nullable=False, default="STAGED", server_default="STAGED")
 
     # Dead Man's Switch: auto-protect when stay end passes without owner response
     dead_mans_switch_enabled = Column(Integer, nullable=False, default=0)  # 0 | 1 (SQLite-friendly)

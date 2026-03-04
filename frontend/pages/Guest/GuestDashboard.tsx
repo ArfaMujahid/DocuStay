@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Input } from '../../components/UI';
 import { UserSession } from '../../types';
-import { dashboardApi, authApi, type GuestStayView, type GuestPendingInviteView } from '../../services/api';
+import { dashboardApi, authApi, APP_ORIGIN, type GuestStayView, type GuestPendingInviteView } from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
 import AgreementSignModal from '../../components/AgreementSignModal';
 import { PENDING_INVITE_STORAGE_KEY } from './GuestLogin';
@@ -41,9 +41,13 @@ function datesOverlap(
   return a1 < b2 && a2 > b1;
 }
 
+/** Today's date in local timezone as YYYY-MM-DD (so check-in on "today" shows as ongoing, not upcoming). */
 function getTodayStr(): string {
   const d = new Date();
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 type StayFilter = 'all' | 'ongoing' | 'future' | 'previous' | 'future_invites';
@@ -53,7 +57,6 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
   const [pendingInvites, setPendingInvites] = useState<GuestPendingInviteView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showQR, setShowQR] = useState(false);
   const [selectedStay, setSelectedStay] = useState<GuestStayView | null>(null);
   const [stayFilter, setStayFilter] = useState<StayFilter>('all');
   const [endStayConfirm, setEndStayConfirm] = useState<GuestStayView | null>(null);
@@ -64,6 +67,10 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
   const [inviteLinkInput, setInviteLinkInput] = useState('');
   const [addingInvite, setAddingInvite] = useState(false);
   const [agreementDownloading, setAgreementDownloading] = useState(false);
+  const [showLiveLinkModal, setShowLiveLinkModal] = useState(false);
+  const [liveLinkSlug, setLiveLinkSlug] = useState<string | null>(null);
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [checkingInStay, setCheckingInStay] = useState<GuestStayView | null>(null);
 
   const loadData = useCallback(() => {
     Promise.all([
@@ -145,6 +152,19 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
     }
   }, [cancelStayConfirm, loadData, notify]);
 
+  const handleCheckIn = useCallback(async (s: GuestStayView) => {
+    setCheckingInStay(s);
+    try {
+      await dashboardApi.guestCheckIn(s.stay_id);
+      notify('success', 'You are checked in. Your stay is now active.');
+      loadData();
+    } catch (e) {
+      notify('error', (e as Error)?.message ?? 'Could not check in.');
+    } finally {
+      setCheckingInStay(null);
+    }
+  }, [loadData, notify]);
+
   const handleAddInviteLink = useCallback(() => {
     const code = parseInviteCode(inviteLinkInput);
     if (!code) {
@@ -185,11 +205,16 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
   const isEmpty = stays.length === 0 && pendingInvites.length === 0;
   const today = getTodayStr();
 
+  // Ongoing = guest has checked in and stay period includes today
   const ongoingStays = stays.filter(
-    (s) => s.approved_stay_start_date <= today && s.approved_stay_end_date >= today
+    (s) => s.checked_in_at && !s.checked_out_at && !s.cancelled_at && s.approved_stay_start_date <= today && s.approved_stay_end_date >= today
   );
-  const futureStays = stays.filter((s) => s.approved_stay_start_date > today);
-  const previousStays = stays.filter((s) => s.approved_stay_end_date < today);
+  const futureStays = stays.filter(
+    (s) => !s.checked_out_at && !s.cancelled_at && s.approved_stay_start_date > today
+  );
+  const completedStays = stays.filter(
+    (s) => s.checked_out_at != null || s.cancelled_at != null || (s.approved_stay_end_date < today && s.checked_in_at)
+  );
 
   const filteredStays: GuestStayView[] =
     stayFilter === 'all'
@@ -199,7 +224,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         : stayFilter === 'future'
           ? futureStays
           : stayFilter === 'previous'
-            ? previousStays
+            ? completedStays
             : [];
 
   const futureInvites = pendingInvites.filter((inv) =>
@@ -208,7 +233,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
 
   const guestEmail = user?.email ?? '';
   const guestFullName = user?.user_name ?? '';
-  const stay = selectedStay ?? (stayFilter === 'future_invites' ? null : filteredStays[0] ?? stays[0] ?? null);
+  const stay = selectedStay ?? (stayFilter === 'future_invites' ? null : filteredStays[0] ?? null);
   const dLeft = stay ? daysLeft(stay.approved_stay_end_date) : 0;
   const totalDays = stay ? Math.max(1, Math.ceil((new Date(stay.approved_stay_end_date).getTime() - new Date(stay.approved_stay_start_date).getTime()) / (1000 * 60 * 60 * 24))) : 1;
   const elapsedDays = Math.max(0, totalDays - dLeft);
@@ -218,7 +243,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
     { id: 'all', label: 'All stays', count: stays.length },
     { id: 'ongoing', label: 'Ongoing stay', count: ongoingStays.length },
     { id: 'future', label: 'Future stay', count: futureStays.length },
-    { id: 'previous', label: 'Previous stay', count: previousStays.length },
+    { id: 'previous', label: 'Completed', count: completedStays.length },
     { id: 'future_invites', label: 'Future invites', count: futureInvites.length },
   ];
 
@@ -284,15 +309,19 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
               {filteredStays.length === 0 ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 md:p-4">
                   <p className="text-slate-600 text-sm">
-                    {stayFilter === 'all' ? 'No stays yet.' : `No ${stayFilter} stays.`} Add an invitation link and accept an invite to see stays here.
+                    {stayFilter === 'all' ? 'No stays yet.' : stayFilter === 'previous' ? 'No completed stays.' : `No ${stayFilter} stays.`} Add an invitation link and accept an invite to see stays here.
                   </p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3 md:gap-2">
                     {filteredStays.map((s) => {
-                      const isOngoing = s.approved_stay_start_date <= today && s.approved_stay_end_date >= today;
+                      const isOngoing = !!(s.checked_in_at && s.approved_stay_start_date <= today && s.approved_stay_end_date >= today);
                       const isFuture = s.approved_stay_start_date > today;
-                      const canCheckout = !s.checked_out_at && !s.cancelled_at && s.approved_stay_end_date >= today && (s.approved_stay_start_date <= today || s.revoked_at != null);
+                      const isUpcoming = !s.checked_in_at && !s.checked_out_at && !s.cancelled_at && s.approved_stay_start_date <= today && s.approved_stay_end_date >= today;
+                      // Show Check in when guest hasn't checked in yet (within stay window); show Checkout only after check-in or if revoked
+                      const canCheckIn = isUpcoming;
+                      const hasCheckedIn = !!(s.checked_in_at != null && s.checked_in_at !== '');
+                      const canCheckout = (hasCheckedIn || s.revoked_at != null) && !s.checked_out_at && !s.cancelled_at && s.approved_stay_end_date >= today;
                       const canCancel = isFuture && !s.cancelled_at;
                       const isSelected = selectedStay?.stay_id === s.stay_id;
                       return (
@@ -314,9 +343,9 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide bg-red-50 text-red-700 border border-red-100">Revoked</span>
                               )}
                               <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${
-                                s.cancelled_at ? 'bg-amber-50 text-amber-700 border border-amber-100' : s.checked_out_at ? 'bg-slate-100 text-slate-600 border border-slate-200' : isOngoing ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : isFuture ? 'bg-sky-50 text-sky-700 border border-sky-100' : 'bg-slate-100 text-slate-600'
+                                s.cancelled_at ? 'bg-amber-50 text-amber-700 border border-amber-100' : s.checked_out_at ? 'bg-slate-100 text-slate-600 border border-slate-200' : isOngoing ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : isUpcoming ? 'bg-amber-50 text-amber-700 border border-amber-100' : isFuture ? 'bg-sky-50 text-sky-700 border border-sky-100' : 'bg-slate-100 text-slate-600'
                               }`}>
-                                {s.cancelled_at ? 'Cancelled' : s.checked_out_at ? 'Completed' : isOngoing ? 'Ongoing' : isFuture ? 'Future' : 'Previous'}
+                                {s.cancelled_at ? 'Cancelled' : s.checked_out_at ? 'Completed' : isOngoing ? 'Ongoing' : isUpcoming ? 'Upcoming' : isFuture ? 'Future' : 'Previous'}
                               </span>
                               <span className="text-slate-400 text-xs">{s.region_code}</span>
                             </div>
@@ -325,6 +354,18 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                               {formatDate(s.approved_stay_start_date)} – {formatDate(s.approved_stay_end_date)}
                             </p>
                           </button>
+                          {canCheckIn && (
+                            <div className="px-4 pb-4 pt-0">
+                              <button
+                                type="button"
+                                disabled={!!checkingInStay}
+                                className="w-full py-2.5 px-4 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                                onClick={(e) => { e.stopPropagation(); handleCheckIn(s); }}
+                              >
+                                {checkingInStay?.stay_id === s.stay_id ? 'Checking in…' : 'Check in'}
+                              </button>
+                            </div>
+                          )}
                           {canCheckout && (
                             <div className="px-4 pb-4 pt-0">
                               <button
@@ -392,7 +433,9 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       </div>
 
       {/* Full-width stay detail (same width as invitation bar) - when a stay is selected, below Filters | Stay cards */}
-      {stay && stayFilter !== 'future_invites' && (
+      {stay && stayFilter !== 'future_invites' && (() => {
+        const detailHasCheckedIn = !!(stay.checked_in_at != null && stay.checked_in_at !== '');
+        return (
         <div className="w-full space-y-6 mb-6 lg:mb-8">
       {/* Revoked: must vacate in 12 hours */}
       {stay.revoked_at || stay.vacate_by ? (
@@ -422,25 +465,44 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                   ? 'bg-amber-50 text-amber-700 border border-amber-100'
                   : stay.checked_out_at
                     ? 'bg-slate-100 text-slate-600'
-                    : stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
+                    : detailHasCheckedIn && stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
                       ? 'bg-emerald-50 text-emerald-700'
-                      : stay.approved_stay_start_date > today
-                        ? 'bg-sky-50 text-sky-700'
-                        : 'bg-slate-100 text-slate-600'
+                      : !detailHasCheckedIn && stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
+                        ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                        : stay.approved_stay_start_date > today
+                          ? 'bg-sky-50 text-sky-700'
+                          : 'bg-slate-100 text-slate-600'
               }`}>
                 {stay.cancelled_at
                   ? 'Cancelled'
                   : stay.checked_out_at
                     ? 'Completed'
-                    : stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
+                    : detailHasCheckedIn && stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
                       ? 'Ongoing'
-                      : stay.approved_stay_start_date > today
+                      : !detailHasCheckedIn && stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
                         ? 'Upcoming'
-                        : 'Ended'}
+                        : stay.approved_stay_start_date > today
+                          ? 'Upcoming'
+                          : 'Ended'}
               </span>
               <span className="text-slate-400">·</span>
               <span className="text-slate-500 text-sm">{stay.property_name}</span>
               <span className="text-slate-400 text-sm">({stay.region_code})</span>
+              {stay.invite_id && (
+                <>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-500 text-sm font-mono">Invite ID: {stay.invite_id}</span>
+                  {stay.token_state && (
+                    <span className={`ml-1 px-1.5 py-0.5 rounded text-xs font-medium ${
+                      stay.token_state === 'BURNED' ? 'bg-emerald-50 text-emerald-700' :
+                      stay.token_state === 'EXPIRED' ? 'bg-slate-100 text-slate-600' :
+                      stay.token_state === 'REVOKED' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {stay.token_state}
+                    </span>
+                  )}
+                </>
+              )}
             </div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
               {stay.cancelled_at ? 'Stay cancelled' : stay.checked_out_at ? 'Stay completed' : stay.approved_stay_end_date < today ? 'Stay ended' : stay.approved_stay_start_date > today ? 'Upcoming stay' : `${dLeft} day${dLeft !== 1 ? 's' : ''} left`}
@@ -461,10 +523,27 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
               <div className="h-full bg-slate-800 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
             </div>
             <p className="text-xs text-slate-400 font-medium">Stay progress</p>
-            {!stay.checked_out_at && !stay.cancelled_at && (
-              <Button variant="primary" className="w-full h-11 rounded-lg font-medium" onClick={() => { setSelectedStay(stay); setShowQR(true); }}>View access token</Button>
+            {stay.property_live_slug && (
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full h-11 rounded-lg font-medium"
+                onClick={() => { setLiveLinkSlug(stay.property_live_slug ?? null); setShowLiveLinkModal(true); }}
+              >
+                Open live link
+              </Button>
             )}
-            {!stay.checked_out_at && !stay.cancelled_at && (stay.approved_stay_end_date >= today && (stay.approved_stay_start_date <= today || stay.revoked_at != null)) && (
+            {!stay.checked_out_at && !stay.cancelled_at && stay.approved_stay_end_date >= today && stay.approved_stay_start_date <= today && !detailHasCheckedIn && (
+              <button
+                type="button"
+                disabled={!!checkingInStay}
+                className="w-full h-11 rounded-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                onClick={() => handleCheckIn(stay)}
+              >
+                {checkingInStay?.stay_id === stay.stay_id ? 'Checking in…' : 'Check in'}
+              </button>
+            )}
+            {!stay.checked_out_at && !stay.cancelled_at && stay.approved_stay_end_date >= today && (detailHasCheckedIn || stay.revoked_at != null) && (
               <button
                 type="button"
                 className="w-full h-11 rounded-lg font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
@@ -515,80 +594,10 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
               {agreementDownloading ? 'Loading…' : 'Download signed agreement'}
             </Button>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-base font-semibold text-slate-900 mb-4">Authorization & classification</h3>
-            <div className="space-y-3">
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Region</p>
-                <p className="text-slate-900 font-medium">{stay.region_code} — {stay.region_classification}</p>
-              </div>
-              {stay.statute_reference && (
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Applicable statute</p>
-                  <p className="text-slate-800 font-mono text-sm">{stay.statute_reference}</p>
-                </div>
-              )}
-              {stay.usat_token && (
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">USAT token</p>
-                  <p className="text-slate-900 font-mono text-sm break-all mb-2">{stay.usat_token}</p>
-                  <Button variant="outline" className="text-xs py-1.5 px-3 rounded-lg" onClick={async () => { const ok = await copyToClipboard(stay.usat_token!); if (ok) notify('success', 'Token copied.'); else notify('error', 'Copy failed.'); }}>Copy token</Button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-base font-semibold text-slate-900 mb-4">Stay documentation & restrictions</h3>
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-sky-50/80 border border-sky-100">
-                <h4 className="font-semibold text-sky-900 text-sm mb-1">Temporary stay only</h4>
-                <p className="text-sm text-slate-700 leading-relaxed">{stay.legal_notice}</p>
-              </div>
-              {stay.plain_english_explanation && (
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                  <h4 className="font-semibold text-slate-900 text-sm mb-1">What this means for you</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed">{stay.plain_english_explanation}</p>
-                </div>
-              )}
-              {stay.applicable_laws && stay.applicable_laws.length > 0 && (
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                  <h4 className="font-semibold text-slate-800 text-sm mb-1">Applicable laws</h4>
-                  <ul className="list-disc list-inside text-sm text-slate-600 space-y-0.5">
-                    {stay.applicable_laws.map((law, i) => (
-                      <li key={i}>{law}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-100">
-                <h4 className="font-semibold text-amber-900 text-sm mb-1">Vacate by checkout date</h4>
-                <p className="text-xs text-slate-600 leading-relaxed">You must vacate by {formatDate(stay.approved_stay_end_date)}. Failure to leave may trigger removal under applicable law.</p>
-              </div>
-            </div>
-          </div>
         </div>
 
-        {/* Right: Restrictions & Help */}
+        {/* Right: Help */}
         <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-base font-semibold text-slate-900 mb-4">Stay restrictions</h3>
-            <ul className="space-y-2.5">
-              {[
-                'Cannot extend stay on platform',
-                'Cannot transfer authorization',
-                'Cannot create utility accounts',
-                'Cannot receive mail here',
-                'Cannot claim residency',
-              ].map((r) => (
-                <li key={r} className="flex items-center gap-2.5 text-sm text-slate-600">
-                  <span className="w-1 h-1 rounded-full bg-slate-300 shrink-0" />
-                  {r}
-                </li>
-              ))}
-            </ul>
-          </div>
-
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h4 className="font-semibold text-slate-900 mb-3">Need help?</h4>
             <div className="flex flex-col gap-2">
@@ -599,22 +608,60 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         </div>
       </div>
 
-      {/* QR Modal */}
-      {showQR && (
+      {/* Live link QR modal (same as owner: one button opens this, modal has QR + Open live page + Copy live link) */}
+      {showLiveLinkModal && liveLinkSlug && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="max-w-sm w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200 relative">
-            <button onClick={() => setShowQR(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            <button type="button" onClick={() => { setShowLiveLinkModal(false); setLiveLinkSlug(null); setCopyToast(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <h3 className="text-xl font-semibold text-slate-900 mb-1">Access token</h3>
-            <p className="text-slate-500 text-sm mb-6">Stay #{selectedStay?.stay_id ?? '—'}</p>
-            <div className="bg-slate-50 p-4 rounded-xl mb-6 inline-block">
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=DocuStay-Stay-${selectedStay?.stay_id ?? 0}`} alt="QR Code" className="w-48 h-48 rounded-lg" />
+            <h3 className="text-lg font-semibold text-slate-900 mb-1 text-center">Live link page</h3>
+            <p className="text-slate-500 text-sm mb-4 text-center">Scan or share this link to open the property info page (no login).</p>
+            <div className="flex justify-center mb-4">
+              <div className="bg-slate-50 p-4 rounded-xl">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : APP_ORIGIN}/#live/${liveLinkSlug}`)}`}
+                  alt="QR code for live link"
+                  className="w-40 h-40 rounded-lg"
+                />
+              </div>
             </div>
-            <p className="text-xs text-slate-500">For access. Does not grant tenancy.</p>
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full"
+                onClick={() => window.open(`${typeof window !== 'undefined' ? window.location.origin : APP_ORIGIN}/#live/${liveLinkSlug}`, '_blank', 'noopener,noreferrer')}
+              >
+                Open live page
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const url = `${typeof window !== 'undefined' ? window.location.origin : APP_ORIGIN}/#live/${liveLinkSlug}`;
+                  const ok = await copyToClipboard(url);
+                  setCopyToast(ok ? 'Live link copied to clipboard.' : 'Could not copy.');
+                  setTimeout(() => setCopyToast(null), 3000);
+                }}
+              >
+                Copy live link
+              </Button>
+            </div>
+            {copyToast && (
+              <p className={`text-sm text-center mt-2 ${copyToast.startsWith('Live link') ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {copyToast}
+              </p>
+            )}
           </div>
         </div>
       )}
+        </div>
+  );
+})()}
 
       {/* Checkout confirmation */}
       {endStayConfirm && (
@@ -665,8 +712,6 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
               </button>
             </div>
           </div>
-        </div>
-      )}
         </div>
       )}
 

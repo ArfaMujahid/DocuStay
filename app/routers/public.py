@@ -1,0 +1,297 @@
+"""Public API (no auth): live property page by slug – evidence view."""
+from datetime import date, datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.owner import Property, OwnerProfile
+from app.models.user import User
+from app.models.stay import Stay
+from app.models.guest import GuestProfile
+from app.models.audit_log import AuditLog
+from app.models.owner_poa_signature import OwnerPOASignature
+from app.services.agreements import agreement_content_to_pdf, poa_content_with_signature
+from app.services.dropbox_sign import get_signed_pdf
+from app.schemas.public import (
+    LivePropertyPagePayload,
+    LivePropertyInfo,
+    LiveOwnerInfo,
+    LiveCurrentGuestInfo,
+    LiveStaySummary,
+    LiveLogEntry,
+    PortfolioPagePayload,
+    PortfolioOwnerInfo,
+    PortfolioPropertyItem,
+)
+
+router = APIRouter(prefix="/public", tags=["public"])
+
+
+def _is_active_stay(s: Stay) -> bool:
+    """True if stay is checked in and not checked out/cancelled (current guest)."""
+    if getattr(s, "checked_in_at", None) is None:
+        return False
+    if getattr(s, "checked_out_at", None) is not None:
+        return False
+    if getattr(s, "cancelled_at", None) is not None:
+        return False
+    return True
+
+
+@router.get("/live/{slug}", response_model=LivePropertyPagePayload)
+def get_live_property_page(slug: str, db: Session = Depends(get_db)):
+    """
+    Public live property page by unique slug (no auth).
+    Returns property info, owner contact, and either current guest + logs
+    or last stay, upcoming stays, and mode/status + logs.
+    """
+    if not slug or not slug.strip():
+        raise HTTPException(status_code=404, detail="Not found")
+    slug = slug.strip()
+    prop = db.query(Property).filter(Property.live_slug == slug, Property.deleted_at.is_(None)).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Property not found")
+    owner_user = db.query(User).filter(User.id == profile.user_id).first()
+    owner_name = (owner_user.full_name if owner_user else None) or None
+    owner_email = (owner_user.email if owner_user else "") or ""
+    owner_phone = getattr(owner_user, "phone", None) if owner_user else None
+    owner_info = LiveOwnerInfo(full_name=owner_name, email=owner_email, phone=owner_phone)
+
+    token_state = getattr(prop, "usat_token_state", None) or "staged"
+    prop_info = LivePropertyInfo(
+        name=prop.name,
+        street=prop.street,
+        city=prop.city,
+        state=prop.state,
+        zip_code=prop.zip_code,
+        region_code=prop.region_code,
+        occupancy_status=getattr(prop, "occupancy_status", None) or "unknown",
+        shield_mode_enabled=bool(getattr(prop, "shield_mode_enabled", 0)),
+        token_state=token_state,
+    )
+
+    # POA for Authority layer
+    poa_signed_at: datetime | None = None
+    poa_signature_id: int | None = None
+    if profile and profile.user_id:
+        poa_sig = (
+            db.query(OwnerPOASignature)
+            .filter(OwnerPOASignature.used_by_user_id == profile.user_id)
+            .first()
+        )
+        if poa_sig:
+            poa_signed_at = poa_sig.signed_at
+            poa_signature_id = poa_sig.id
+
+    today = date.today()
+    # Current stay: active (not checked out, not cancelled) and not in the past only by end date
+    current_stays = [
+        s
+        for s in db.query(Stay).filter(Stay.property_id == prop.id).all()
+        if _is_active_stay(s)
+    ]
+    # Prefer the one that is "ongoing" (start <= today <= end or end in future)
+    current_stay = None
+    for s in current_stays:
+        if s.stay_end_date >= today and s.stay_start_date <= today:
+            current_stay = s
+            break
+    if not current_stay and current_stays:
+        # Overstay: end date passed but not checked out
+        current_stay = max(current_stays, key=lambda x: (x.stay_end_date, x.id))
+
+    # Logs for this property (all categories)
+    log_rows = (
+        db.query(AuditLog)
+        .filter(AuditLog.property_id == prop.id)
+        .order_by(AuditLog.created_at.desc())
+        .limit(100)
+    ).all()
+    logs = [
+        LiveLogEntry(
+            category=r.category or "—",
+            title=r.title or "—",
+            message=r.message or "—",
+            created_at=r.created_at if r.created_at is not None else datetime.now(timezone.utc),
+        )
+        for r in log_rows
+    ]
+
+    if current_stay:
+        authorization_state = "REVOKED" if getattr(current_stay, "revoked_at", None) else "ACTIVE"
+        guest = db.query(User).filter(User.id == current_stay.guest_id).first()
+        guest_profile = db.query(GuestProfile).filter(GuestProfile.user_id == current_stay.guest_id).first()
+        guest_name = (guest_profile.full_legal_name if guest_profile else None) or (guest.full_name if guest else None) or (guest.email if guest else "Guest")
+        return LivePropertyPagePayload(
+            has_current_guest=True,
+            property=prop_info,
+            owner=owner_info,
+            current_guest=LiveCurrentGuestInfo(
+                guest_name=guest_name,
+                stay_start_date=current_stay.stay_start_date,
+                stay_end_date=current_stay.stay_end_date,
+                checked_out_at=getattr(current_stay, "checked_out_at", None),
+                dead_mans_switch_enabled=bool(getattr(current_stay, "dead_mans_switch_enabled", 0)),
+            ),
+            last_stay=None,
+            upcoming_stays=[],
+            logs=logs,
+            authorization_state=authorization_state,
+            record_id=slug,
+            generated_at=datetime.now(timezone.utc),
+            poa_signed_at=poa_signed_at,
+            poa_signature_id=poa_signature_id,
+        )
+
+    # No current guest: last stay (most recent ended) and upcoming
+    all_stays = db.query(Stay).filter(Stay.property_id == prop.id).order_by(Stay.stay_end_date.desc()).all()
+    last_stay = None
+    for s in all_stays:
+        if getattr(s, "checked_out_at", None) is not None or s.stay_end_date < today:
+            guest = db.query(User).filter(User.id == s.guest_id).first()
+            gp = db.query(GuestProfile).filter(GuestProfile.user_id == s.guest_id).first()
+            gn = (gp.full_legal_name if gp else None) or (guest.full_name if guest else None) or (guest.email if guest else "Guest")
+            last_stay = LiveStaySummary(
+                guest_name=gn,
+                stay_start_date=s.stay_start_date,
+                stay_end_date=s.stay_end_date,
+                checked_out_at=getattr(s, "checked_out_at", None),
+            )
+            break
+
+    upcoming = []
+    for s in all_stays:
+        if s.stay_start_date > today and getattr(s, "cancelled_at", None) is None:
+            guest = db.query(User).filter(User.id == s.guest_id).first()
+            gp = db.query(GuestProfile).filter(GuestProfile.user_id == s.guest_id).first()
+            gn = (gp.full_legal_name if gp else None) or (guest.full_name if guest else None) or (guest.email if guest else "Guest")
+            upcoming.append(
+                LiveStaySummary(
+                    guest_name=gn,
+                    stay_start_date=s.stay_start_date,
+                    stay_end_date=s.stay_end_date,
+                    checked_out_at=None,
+                )
+            )
+    upcoming.sort(key=lambda x: x.stay_start_date)
+
+    occ = getattr(prop, "occupancy_status", None) or "unknown"
+    authorization_state = "NONE"
+    if occ in ("occupied", "unknown", "unconfirmed") or last_stay:
+        authorization_state = "EXPIRED"
+
+    return LivePropertyPagePayload(
+        has_current_guest=False,
+        property=prop_info,
+        owner=owner_info,
+        current_guest=None,
+        last_stay=last_stay,
+        upcoming_stays=upcoming,
+        logs=logs,
+        authorization_state=authorization_state,
+        record_id=slug,
+        generated_at=datetime.now(timezone.utc),
+        poa_signed_at=poa_signed_at,
+        poa_signature_id=poa_signature_id,
+    )
+
+
+@router.get("/live/{slug}/poa")
+def get_live_property_poa_pdf(slug: str, db: Session = Depends(get_db)):
+    """
+    Public: return signed Master POA PDF for the property identified by live slug.
+    No auth; for use by "View POA" on the live evidence page.
+    """
+    if not slug or not slug.strip():
+        raise HTTPException(status_code=404, detail="Not found")
+    slug = slug.strip()
+    prop = db.query(Property).filter(Property.live_slug == slug, Property.deleted_at.is_(None)).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+    if not profile or not profile.user_id:
+        raise HTTPException(status_code=404, detail="POA not available")
+    sig = (
+        db.query(OwnerPOASignature)
+        .filter(OwnerPOASignature.used_by_user_id == profile.user_id)
+        .first()
+    )
+    if not sig:
+        raise HTTPException(status_code=404, detail="POA not on file for this property")
+
+    if sig.signed_pdf_bytes:
+        return Response(
+            content=sig.signed_pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'inline; filename="DocuStay-Master-POA-Signed.pdf"'},
+        )
+    if getattr(sig, "dropbox_sign_request_id", None):
+        pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
+        if pdf_bytes:
+            sig.signed_pdf_bytes = pdf_bytes
+            db.commit()
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": 'inline; filename="DocuStay-Master-POA-Signed.pdf"'},
+            )
+    date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+    content_with_sig = poa_content_with_signature(sig.document_content, sig.typed_signature, date_str)
+    pdf_bytes = agreement_content_to_pdf(sig.document_title, content_with_sig)
+    sig.signed_pdf_bytes = pdf_bytes
+    db.commit()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="DocuStay-Master-POA-Signed.pdf"'},
+    )
+
+
+@router.get("/portfolio/{slug}", response_model=PortfolioPagePayload)
+def get_portfolio_page(slug: str, db: Session = Depends(get_db)):
+    """
+    Public portfolio page by owner's unique slug (no auth).
+    Returns owner basic info and list of active properties (public details only).
+    """
+    if not slug or not slug.strip():
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    slug = slug.strip()
+    profile = db.query(OwnerProfile).filter(OwnerProfile.portfolio_slug == slug).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    owner_user = db.query(User).filter(User.id == profile.user_id).first()
+    owner_name = (owner_user.full_name if owner_user else None) or None
+    owner_email = (owner_user.email if owner_user else "") or ""
+    owner_phone = getattr(owner_user, "phone", None) if owner_user else None
+    owner_state = getattr(owner_user, "state", None) if owner_user else None
+    owner_info = PortfolioOwnerInfo(
+        full_name=owner_name,
+        email=owner_email,
+        phone=owner_phone,
+        state=owner_state,
+    )
+    properties = (
+        db.query(Property)
+        .filter(Property.owner_profile_id == profile.id, Property.deleted_at.is_(None))
+        .order_by(Property.created_at.asc())
+        .all()
+    )
+    property_items = [
+        PortfolioPropertyItem(
+            id=p.id,
+            name=p.name,
+            city=p.city,
+            state=p.state,
+            region_code=p.region_code,
+            property_type_label=getattr(p, "property_type_label", None) or (p.property_type.value if p.property_type else None),
+            bedrooms=getattr(p, "bedrooms", None),
+        )
+        for p in properties
+    ]
+    return PortfolioPagePayload(owner=owner_info, properties=property_items)

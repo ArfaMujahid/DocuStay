@@ -4,6 +4,7 @@ import { UserSession } from '../../types';
 import { ownerPoaApi, dashboardApi, API_URL } from '../../services/api';
 import type { OwnerPOASignatureResponse } from '../../services/api';
 import type { BillingResponse } from '../../services/api';
+import { copyToClipboard } from '../../utils/clipboard';
 
 const Settings: React.FC<{
   user: UserSession | null;
@@ -15,14 +16,9 @@ const Settings: React.FC<{
   const [poaSignature, setPoaSignature] = useState<OwnerPOASignatureResponse | null | undefined>(undefined);
   const [billing, setBilling] = useState<BillingResponse | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
-  const [prefs, setPrefs] = useState({
-    emailNotifs: true,
-    smsNotifs: true,
-    autoEnforce: false,
-    defaultStayDays: 14,
-    requireBiometrics: true,
-  });
-
+  const [portfolioLink, setPortfolioLink] = useState<{ portfolio_slug: string; portfolio_url: string } | null>(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [portfolioCopyFeedback, setPortfolioCopyFeedback] = useState(false);
   const isOwner = user?.user_type === 'PROPERTY_OWNER';
   useEffect(() => {
     if (!isOwner) return;
@@ -39,6 +35,19 @@ const Settings: React.FC<{
       .catch(() => setBilling(null))
       .finally(() => setBillingLoading(false));
   }, [isOwner]);
+
+  useEffect(() => {
+    if (!isOwner) return;
+    setPortfolioLoading(true);
+    dashboardApi.ownerPortfolioLink()
+      .then(setPortfolioLink)
+      .catch(() => setPortfolioLink(null))
+      .finally(() => setPortfolioLoading(false));
+  }, [isOwner]);
+
+  const portfolioFullUrl = portfolioLink
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}${typeof window !== 'undefined' ? (window.location.pathname || '') : ''}#${portfolioLink.portfolio_url}`
+    : '';
 
   const openSignedPoaPdf = () => {
     if (!poaSignature?.signature_id) return;
@@ -140,6 +149,44 @@ const Settings: React.FC<{
           </Card>
         )}
 
+        {/* Portfolio (owners only) */}
+        {isOwner && (
+          <Card className="p-8 md:p-10">
+            <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-6">Portfolio</h2>
+            <p className="text-gray-600 text-sm mb-4">
+              Share a public page with your name and list of properties. Anyone with the link can view it—no login required.
+            </p>
+            {portfolioLoading ? (
+              <p className="text-gray-500 text-sm">Loading…</p>
+            ) : portfolioLink ? (
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => window.open(portfolioFullUrl, '_blank')}
+                >
+                  View portfolio
+                </Button>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={async () => {
+                    const ok = await copyToClipboard(portfolioFullUrl);
+                    if (ok) {
+                      setPortfolioCopyFeedback(true);
+                      setTimeout(() => setPortfolioCopyFeedback(false), 2000);
+                    }
+                  }}
+                >
+                  {portfolioCopyFeedback ? 'Copied!' : 'Copy portfolio link'}
+                </Button>
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">Unable to load portfolio link. Try refreshing.</p>
+            )}
+          </Card>
+        )}
+
         {/* Master POA (owners only) */}
         {isOwner && (
           <Card className="p-8 md:p-10">
@@ -164,81 +211,6 @@ const Settings: React.FC<{
           </Card>
         )}
 
-        {/* Notifications */}
-        <Card className="p-8 md:p-10">
-          <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-6">Multi-Channel Alerts</h2>
-          <div className="space-y-4">
-            {[
-              { id: 'emailNotifs', label: 'Email Notifications', desc: 'Receive detailed stay reports and documentation copies.' },
-             
-            ].map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between p-4 rounded-lg bg-gray-50 border border-gray-200"
-              >
-                <div>
-                  <p className="font-medium text-gray-900">{item.label}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{item.desc}</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-4">
-                  <input
-                    type="checkbox"
-                    checked={(prefs as any)[item.id]}
-                    onChange={(e) => setPrefs({ ...prefs, [item.id]: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500/40 rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5 peer-checked:bg-blue-700" />
-                </label>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        {/* Default Stay Parameters */}
-        <Card className="p-8 md:p-10">
-          <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-6">Default Stay Parameters</h2>
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Default Max Duration ({prefs.defaultStayDays} days)
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="29"
-                value={prefs.defaultStayDays}
-                onChange={(e) => setPrefs({ ...prefs, defaultStayDays: parseInt(e.target.value) })}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-700"
-              />
-              <p className="mt-2 text-xs text-gray-500">
-                DocuStay documents stays within the configured duration for your region.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-              <h4 className="font-semibold text-slate-800 text-sm mb-2">Documentation defaults</h4>
-              <ul className="text-sm text-gray-700 space-y-2">
-                <li className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-blue-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  Temporary occupant status documented
-                </li>
-                <li className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-blue-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  Utility Kill Switch Authorization
-                </li>
-              </ul>
-            </div>
-          </div>
-        </Card>
-
-        {/* Security */}
-        <Card className="p-8 md:p-10">
-          <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-6">Security</h2>
-          <p className="text-gray-600 text-sm">Password and security options will appear here.</p>
-        </Card>
       </div>
     </div>
   );
