@@ -46,8 +46,7 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialInviteCode, setPending
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const inviteCode = parseInviteCode(formData.invitation_link);
-    const hasInviteLink = !!formData.invitation_link.trim();
-    const required = {
+    const requiredFields = {
       full_name: formData.full_name.trim(),
       email: formData.email.trim(),
       phone: formData.phone.trim(),
@@ -58,12 +57,16 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialInviteCode, setPending
       permanent_state: formData.permanent_state.trim(),
       permanent_zip: formData.permanent_zip.trim(),
     };
-    const allRequiredFilled = Object.values(required).every(Boolean) &&
-      formData.terms_agreed && formData.privacy_agreed &&
-      formData.guest_status_acknowledged && formData.no_tenancy_acknowledged && formData.vacate_acknowledged;
+    const allFieldsFilled = Object.values(requiredFields).every(Boolean);
+    const allCheckboxesChecked =
+      formData.terms_agreed &&
+      formData.privacy_agreed &&
+      formData.guest_status_acknowledged &&
+      formData.no_tenancy_acknowledged &&
+      formData.vacate_acknowledged;
 
-    if (hasInviteLink && !allRequiredFilled) {
-      showError('The invitation link is optional. Please fill in all required fields (name, email, phone, password, address, and legal acknowledgments) to create your account.');
+    if (!allFieldsFilled || !allCheckboxesChecked) {
+      showError('Please fill in all required fields and accept all acknowledgments and agreements before continuing.');
       return;
     }
 

@@ -42,9 +42,20 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+    const newErrors: Record<string, { error: string }> = {};
+    if (!formData.full_name.trim()) newErrors.full_name = { error: 'Full name is required.' };
+    if (!formData.email.trim()) newErrors.email = { error: 'Email is required.' };
     const phoneCheck = validatePhone(formData.phone);
-    if (!phoneCheck.valid) {
-      setErrors((prev: any) => ({ ...prev, phone: { error: phoneCheck.error } }));
+    if (!phoneCheck.valid) newErrors.phone = { error: phoneCheck.error };
+    if (!formData.password) newErrors.password = { error: 'Password is required.' };
+    if (formData.password && formData.password.length < 8) newErrors.password = { error: 'Password must be at least 8 characters.' };
+    if (formData.password !== formData.confirm_password) newErrors.password_match = { error: 'Passwords do not match.' };
+    if (!formData.state) newErrors.state = { error: 'Primary state is required.' };
+    if (!formData.city.trim()) newErrors.city = { error: 'City is required.' };
+    if (!formData.terms_agreed) newErrors.terms = { error: 'You must agree to the Terms of Service.' };
+    if (!formData.privacy_agreed) newErrors.privacy = { error: 'You must agree to the Privacy Policy.' };
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
     setLoading(true);

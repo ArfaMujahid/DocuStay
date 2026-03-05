@@ -7,6 +7,7 @@ from app.models.owner import OwnerProfile, Property
 from app.models.guest import GuestProfile
 from app.models.stay import Stay
 from app.models.region_rule import RegionRule
+from app.models.jurisdiction import Jurisdiction, JurisdictionStatute, JurisdictionZipMapping
 from app.models.invitation import Invitation
 from app.models.guest_pending_invite import GuestPendingInvite
 from app.models.agreement_signature import AgreementSignature
@@ -23,6 +24,9 @@ __all__ = [
     "GuestProfile",
     "Stay",
     "RegionRule",
+    "Jurisdiction",
+    "JurisdictionStatute",
+    "JurisdictionZipMapping",
     "Invitation",
     "GuestPendingInvite",
     "AgreementSignature",

@@ -89,6 +89,20 @@ def _ensure_property_usat_token(prop: Property, db: Session) -> None:
     db.add(prop)
 
 
+def _ensure_property_live_slug(prop: Property, db: Session) -> None:
+    """Set live_slug if missing (e.g. property created via bulk upload). So live link / QR section can always be shown."""
+    if prop.live_slug:
+        return
+    for _ in range(15):
+        slug = secrets.token_urlsafe(12).replace("+", "-").replace("/", "_")[:24]
+        if db.query(Property).filter(Property.live_slug == slug).first() is None:
+            prop.live_slug = slug
+            break
+    else:
+        prop.live_slug = secrets.token_urlsafe(12).replace("+", "-").replace("/", "_")[:20] + "-" + str(prop.id)
+    db.add(prop)
+
+
 @router.get("/config", response_model=OwnerConfigResponse)
 def get_owner_config(
     current_user: User = Depends(require_owner_onboarding_complete),
@@ -221,6 +235,10 @@ def add_property(
         property_type_label=data.property_type,
         bedrooms=data.bedrooms,
     )
+    if data.tax_id is not None:
+        prop.tax_id = data.tax_id.strip() or None
+    if data.apn is not None:
+        prop.apn = data.apn.strip() or None
     db.add(prop)
     db.flush()
     # Unique live_slug for public property page URL (#live/<slug>), no DB id in URL
@@ -259,7 +277,7 @@ def add_property(
     )
     db.commit()
     db.refresh(prop)
-    # Billing: first property upload triggers one-time onboarding fee (idempotent); ensure subscription exists; sync quantities
+    # Billing: first property upload triggers one-time onboarding invoice only. Subscription is created when they pay (webhook).
     if profile.onboarding_billing_completed_at is None:
         total_units = db.query(Property).filter(Property.owner_profile_id == profile.id, Property.deleted_at.is_(None)).count()
         if total_units >= 1:
@@ -267,9 +285,9 @@ def add_property(
                 on_onboarding_properties_completed(db, profile, current_user, total_units)
             except Exception as e:
                 print(f"[PropertyFlow] Onboarding billing failed (property still created): {e}", flush=True)
-    elif profile.stripe_customer_id and not profile.stripe_subscription_id:
+    elif profile.onboarding_invoice_paid_at is not None and profile.stripe_customer_id and not profile.stripe_subscription_id:
         try:
-            ensure_subscription(db, profile)
+            ensure_subscription(db, profile, current_user)
         except Exception as e:
             print(f"[PropertyFlow] Subscription ensure failed: {e}", flush=True)
     try:
@@ -322,7 +340,7 @@ def _run_utility_bucket_for_property(prop: Property, db: Session) -> None:
     )
     if not providers:
         return
-    letters = generate_authority_letters(providers, address, prop.name, prop.region_code)
+    letters = generate_authority_letters(providers, address, prop.name, prop.region_code, db=db, zip_code=prop.zip_code)
     for p, content in letters:
         prv = PropertyUtilityProvider(
             property_id=prop.id,
@@ -379,10 +397,13 @@ def bulk_upload_properties(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_owner_onboarding_complete),
 ):
-    """Upload properties via CSV. Required: Address, City, State, Zip, Occupied (YES/NO). If Occupied=YES: Tenant Name, Lease Start, Lease End required. Optional: Unit No, Shield Mode (YES/NO, default NO). Each property gets a Property Lifecycle Anchor Token. Occupied=YES: burn token, set occupancy, create invite (BURNED) with DMS from lease end. Occupied=NO: token STAGED, status VACANT."""
+    """Upload properties via CSV. Required: Address, City, State, Zip, Occupied (YES/NO). If Occupied=YES: Tenant Name, Lease Start, Lease End required. Optional: Unit No, Shield Mode (YES/NO, default NO; independent of Occupied—owner can also turn on/off anytime in dashboard), Tax ID, APN. Each property gets a Property Lifecycle Anchor Token. Occupied=YES: burn token, set occupancy, create invite (BURNED) with DMS from lease end. Occupied=NO: token STAGED, status VACANT."""
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
     if not profile:
-        raise HTTPException(status_code=404, detail="No owner profile")
+        profile = OwnerProfile(user_id=current_user.id)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
 
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Please upload a CSV file.")
@@ -441,6 +462,8 @@ def bulk_upload_properties(
         lease_start_str = _get_cell(row, "lease_start", "lease_start")
         lease_end_str = _get_cell(row, "lease_end", "lease_end")
         shield_mode_raw = _get_cell(row, "shield_mode", "shield_mode")
+        tax_id_raw = _get_cell(row, "tax_id", "tax_id")
+        apn_raw = _get_cell(row, "apn", "parcel", "apn")
 
         street = (address or "").strip()
         if unit_no:
@@ -477,7 +500,8 @@ def bulk_upload_properties(
         occupied = _parse_bool_cell(occupied_raw)
         shield_mode = _parse_bool_cell(shield_mode_raw)
         region_code = (state_upper).upper()[:20]
-        property_name = _get_cell(row, "property_name")
+        # Name = property address (street, city, state) for CSV upload
+        address_as_name = f"{street.strip()}, {city.strip()}, {state_upper}".strip(", ")
 
         if occupied:
             if not (tenant_name or "").strip():
@@ -509,7 +533,7 @@ def bulk_upload_properties(
         if existing_match is None:
             prop = Property(
                 owner_profile_id=profile.id,
-                name=property_name,
+                name=address_as_name,
                 street=street.strip(),
                 city=city.strip(),
                 state=state_upper,
@@ -522,8 +546,11 @@ def bulk_upload_properties(
                 occupancy_status=OccupancyStatus.vacant.value if not occupied else OccupancyStatus.occupied.value,
                 shield_mode_enabled=1 if shield_mode else 0,
             )
+            prop.tax_id = (tax_id_raw or "").strip() or None
+            prop.apn = (apn_raw or "").strip() or None
             db.add(prop)
             db.flush()
+            _ensure_property_live_slug(prop, db)
             for _ in range(10):
                 token = "USAT-" + secrets.token_hex(12).upper()
                 if db.query(Property).filter(Property.usat_token == token).first() is None:
@@ -539,7 +566,7 @@ def bulk_upload_properties(
             # except Exception as e:
             #     print(f"[Owners] Utility bucket failed for property {prop.id} (row {row_num}): {e}")
             created += 1
-            property_display = (property_name or "").strip() or f"{street.strip()}, {city.strip()}, {state_upper}".strip(", ")
+            property_display = address_as_name
             create_log(
                 db,
                 CATEGORY_STATUS_CHANGE,
@@ -592,8 +619,8 @@ def bulk_upload_properties(
             existing_props.append(prop)
         else:
             updates: dict[str, object] = {}
-            if property_name is not None and (existing_match.name or "").strip() != (property_name or "").strip():
-                updates["name"] = property_name
+            if (existing_match.name or "").strip() != address_as_name:
+                updates["name"] = address_as_name
             if street.strip() != (existing_match.street or "").strip():
                 updates["street"] = street.strip()
             if city.strip() != (existing_match.city or "").strip():
@@ -606,6 +633,12 @@ def bulk_upload_properties(
                 updates["occupancy_status"] = OccupancyStatus.occupied.value if occupied else OccupancyStatus.vacant.value
             if (1 if shield_mode else 0) != (existing_match.shield_mode_enabled or 0):
                 updates["shield_mode_enabled"] = 1 if shield_mode else 0
+            tax_id_val = (tax_id_raw or "").strip() or None
+            apn_val = (apn_raw or "").strip() or None
+            if (existing_match.tax_id or None) != tax_id_val:
+                updates["tax_id"] = tax_id_val
+            if (existing_match.apn or None) != apn_val:
+                updates["apn"] = apn_val
             new_token_state = USAT_TOKEN_RELEASED if occupied else USAT_TOKEN_STAGED
             if (existing_match.usat_token_state or USAT_TOKEN_STAGED) != new_token_state:
                 existing_match.usat_token_state = new_token_state
@@ -626,6 +659,10 @@ def bulk_upload_properties(
                     existing_match.occupancy_status = val
                 elif key == "shield_mode_enabled":
                     existing_match.shield_mode_enabled = val
+                elif key == "tax_id":
+                    existing_match.tax_id = val
+                elif key == "apn":
+                    existing_match.apn = val
             if updates:
                 updated += 1
             # When updating to occupied with tenant info, create invite (BURNED) if none exists for this property+tenant+dates
@@ -678,27 +715,31 @@ def bulk_upload_properties(
                     )
             db.commit()
 
-    # Billing: first property upload triggers one-time onboarding fee (idempotent); ensure subscription exists; sync quantities
-    if profile.onboarding_billing_completed_at is None:
-        total_units = (
-            db.query(Property)
-            .filter(Property.owner_profile_id == profile.id, Property.deleted_at.is_(None))
-            .count()
-        )
-        if total_units >= 1:
+    # Billing: after bulk upload, same as single-property add — create onboarding invoice when first properties were just added, then sync subscription.
+    # Re-query profile so we have latest DB state after all commits in the loop.
+    if created >= 1 or updated >= 1:
+        profile_fresh = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+        if profile_fresh:
+            if profile_fresh.onboarding_billing_completed_at is None:
+                total_units = (
+                    db.query(Property)
+                    .filter(Property.owner_profile_id == profile_fresh.id, Property.deleted_at.is_(None))
+                    .count()
+                )
+                if total_units >= 1:
+                    try:
+                        on_onboarding_properties_completed(db, profile_fresh, current_user, total_units)
+                    except Exception as e:
+                        print(f"[Owners] Onboarding billing failed after bulk upload (properties still created): {e}", flush=True)
+            elif profile_fresh.onboarding_invoice_paid_at is not None and profile_fresh.stripe_customer_id and not profile_fresh.stripe_subscription_id:
+                try:
+                    ensure_subscription(db, profile_fresh, current_user)
+                except Exception as e:
+                    print(f"[Owners] Subscription ensure failed after bulk upload: {e}", flush=True)
             try:
-                on_onboarding_properties_completed(db, profile, current_user, total_units)
+                sync_subscription_quantities(db, profile_fresh)
             except Exception as e:
-                print(f"[Owners] Onboarding billing failed after bulk upload (properties still created): {e}", flush=True)
-    elif profile.stripe_customer_id and not profile.stripe_subscription_id:
-        try:
-            ensure_subscription(db, profile)
-        except Exception as e:
-            print(f"[Owners] Subscription ensure failed after bulk upload: {e}", flush=True)
-    try:
-        sync_subscription_quantities(db, profile)
-    except Exception as e:
-        print(f"[Owners] Subscription sync failed after bulk upload: {e}", flush=True)
+                print(f"[Owners] Subscription sync failed after bulk upload: {e}", flush=True)
 
     return BulkUploadResult(created=created, updated=updated, failed_from_row=failed_from_row, failure_reason=failure_reason)
 
@@ -719,7 +760,24 @@ def get_property(
     ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-    return PropertyResponse.model_validate(prop)
+    # Backfill live_slug if missing (e.g. bulk-uploaded property) so live link / QR section is always available
+    if not prop.live_slug:
+        _ensure_property_live_slug(prop, db)
+        db.commit()
+        db.refresh(prop)
+    from app.schemas.owner import PropertyJurisdictionDocumentation
+    from app.services.jurisdiction_sot import get_jurisdiction_for_property
+    payload = PropertyResponse.model_validate(prop).model_dump()
+    jinfo = get_jurisdiction_for_property(db, prop.zip_code, prop.region_code)
+    if jinfo:
+        payload["jurisdiction_documentation"] = PropertyJurisdictionDocumentation(
+            name=jinfo.name,
+            region_code=jinfo.region_code,
+            max_stay_days=jinfo.max_stay_days,
+            warning_days=jinfo.warning_days or 0,
+            tenancy_threshold_days=jinfo.tenancy_threshold_days,
+        )
+    return PropertyResponse(**payload)
 
 
 @router.get("/properties/{property_id}/utilities", response_model=PropertyUtilityProvidersResponse)
@@ -884,7 +942,7 @@ def set_property_utilities(
         db.add(prv)
         db.flush()
         content = next(
-            (c for _p, c in generate_authority_letters([u], address, prop.name or "", prop.region_code)),
+            (c for _p, c in generate_authority_letters([u], address, prop.name or "", prop.region_code, db=db, zip_code=prop.zip_code)),
             "",
         )
         letter = PropertyAuthorityLetter(
@@ -1216,6 +1274,9 @@ def _snapshot_property(prop: Property) -> dict:
         "property_type_label": prop.property_type_label,
         "bedrooms": prop.bedrooms,
         "shield_mode_enabled": getattr(prop, "shield_mode_enabled", 0),
+        "vacant_monitoring_enabled": getattr(prop, "vacant_monitoring_enabled", 0),
+        "tax_id": getattr(prop, "tax_id", None),
+        "apn": getattr(prop, "apn", None),
     }
 
 
@@ -1257,9 +1318,19 @@ def update_property(
         prop.property_type_label = data.property_type
     if data.bedrooms is not None:
         prop.bedrooms = data.bedrooms
-    # Owner can only turn Shield Mode OFF; it turns on automatically on the last day of a guest's stay
-    if data.shield_mode_enabled is not None and data.shield_mode_enabled is False:
-        prop.shield_mode_enabled = 0
+    # Shield Mode: owner can turn ON or OFF anytime. Also turns on automatically on last day of stay and when DMS runs; turns off when a new guest accepts an invitation.
+    if data.shield_mode_enabled is not None:
+        prop.shield_mode_enabled = 1 if data.shield_mode_enabled else 0
+    # Vacant-unit monitoring: only enable when property is vacant; can disable anytime.
+    if data.vacant_monitoring_enabled is not None:
+        if data.vacant_monitoring_enabled and (getattr(prop, "occupancy_status", None) or "").lower() != OccupancyStatus.vacant.value:
+            pass  # do not enable for non-vacant
+        else:
+            prop.vacant_monitoring_enabled = 1 if data.vacant_monitoring_enabled else 0
+    if data.tax_id is not None:
+        prop.tax_id = data.tax_id.strip() or None
+    if data.apn is not None:
+        prop.apn = data.apn.strip() or None
 
     new = _snapshot_property(prop)
     changes = []
@@ -1291,12 +1362,13 @@ def update_property(
             user_agent=ua,
             meta={"property_id": property_id, "property_name": property_name, "changes": changes_meta},
         )
-        if "shield_mode_enabled" in changes_meta and changes_meta["shield_mode_enabled"].get("new") == 0:
+        if "shield_mode_enabled" in changes_meta:
+            new_shield = changes_meta["shield_mode_enabled"].get("new")
             create_log(
                 db,
                 CATEGORY_SHIELD_MODE,
-                "Shield Mode turned off",
-                f"Owner turned off Shield Mode for {property_name}.",
+                "Shield Mode turned off" if new_shield == 0 else "Shield Mode turned on",
+                f"Owner turned {'off' if new_shield == 0 else 'on'} Shield Mode for {property_name}.",
                 property_id=prop.id,
                 actor_user_id=current_user.id,
                 actor_email=current_user.email,

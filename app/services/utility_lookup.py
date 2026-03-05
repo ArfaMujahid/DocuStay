@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx
 
+from sqlalchemy.orm import Session
+
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -33,11 +35,25 @@ class UtilityProvider:
     raw: dict[str, Any]
 
 
+def _territory_paragraph_from_sot(db: Session, zip_code: str | None, region_code: str | None) -> str | None:
+    """Build territory paragraph from JurisdictionInfo (SOT). Returns None if no jurisdiction found."""
+    from app.services.jurisdiction_sot import get_jurisdiction_for_property
+    jinfo = get_jurisdiction_for_property(db, zip_code, region_code)
+    if not jinfo:
+        return None
+    name = (jinfo.name or jinfo.region_code or "this jurisdiction").strip()
+    citations = ", ".join(s.citation for s in (jinfo.statutes or [])) if jinfo.statutes else "applicable law"
+    return (
+        f"This authorization is issued for the territory of {name}. "
+        f"DocuStay operates in accordance with applicable short-term stay and utility authorization requirements "
+        f"({citations})."
+    )
+
+
 def _territory_paragraph(region_code: str | None) -> str:
-    """Return territory-specific paragraph for the authority letter (placeholder content per region)."""
+    """Return territory-specific paragraph for the authority letter (fallback when SOT not used)."""
     if not region_code or not (region_code := region_code.strip().upper()):
         return "This authorization is issued for the property's jurisdiction."
-    # Dummy territory-specific content per region (can be replaced with real legal text later)
     _territory_text: dict[str, str] = {
         "NYC": "This authorization is issued for the territory of New York City. DocuStay operates in accordance with applicable New York short-term stay and utility authorization requirements.",
         "FL": "This authorization is issued for the territory of Florida. DocuStay operates in accordance with applicable Florida short-term stay and utility authorization requirements.",
@@ -53,9 +69,14 @@ def _authority_letter_content(
     address: str,
     property_name: str,
     region_code: str | None = None,
+    db: Session | None = None,
+    zip_code: str | None = None,
 ) -> str:
-    """Generate Authority Letter content for a utility provider (per property and per territory)."""
-    territory_para = _territory_paragraph(region_code)
+    """Generate Authority Letter content for a utility provider. When db (and optionally zip_code) are provided, territory paragraph is built from JurisdictionInfo SOT."""
+    if db is not None:
+        territory_para = _territory_paragraph_from_sot(db, zip_code, region_code) or _territory_paragraph(region_code)
+    else:
+        territory_para = _territory_paragraph(region_code)
     return f"""DocuStay Authority Letter – Burn-In Code Authorization
 
 To: {provider.name}
@@ -271,6 +292,11 @@ def generate_authority_letters(
     address: str,
     property_name: str | None = None,
     region_code: str | None = None,
+    db: Session | None = None,
+    zip_code: str | None = None,
 ) -> list[tuple[UtilityProvider, str]]:
-    """Generate Authority Letter content for each provider (per property and per territory). Returns [(provider, letter_content), ...]"""
-    return [(p, _authority_letter_content(p, address, property_name or "", region_code)) for p in providers]
+    """Generate Authority Letter content for each provider. When db is provided, territory text uses JurisdictionInfo SOT (zip_code optional). Returns [(provider, letter_content), ...]"""
+    return [
+        (p, _authority_letter_content(p, address, property_name or "", region_code, db=db, zip_code=zip_code))
+        for p in providers
+    ]

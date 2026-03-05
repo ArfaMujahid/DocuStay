@@ -50,6 +50,37 @@ function getTodayStr(): string {
   return `${y}-${m}-${day}`;
 }
 
+/** List of YYYY-MM-DD strings from start (inclusive) to end (inclusive). */
+function dateRange(startStr: string, endStr: string): string[] {
+  const out: string[] = [];
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  const cur = new Date(start);
+  while (cur <= end) {
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, '0');
+    const d = String(cur.getDate()).padStart(2, '0');
+    out.push(`${y}-${m}-${d}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+/** Human-friendly countdown: "X days", "1 day", "Ends today", "Ended". */
+function countdownLabel(endDateStr: string, todayStr: string): { label: string; sublabel?: string } {
+  const days = daysLeft(endDateStr);
+  if (days === 0) return { label: 'Ends today', sublabel: 'Check-out is today' };
+  if (days === 1) return { label: '1 day left', sublabel: 'until check-out' };
+  if (days > 0 && days <= 7) return { label: `${days} days left`, sublabel: 'until check-out' };
+  if (days > 7) {
+    const weeks = Math.floor(days / 7);
+    const remainder = days % 7;
+    if (remainder === 0) return { label: `${weeks} week${weeks !== 1 ? 's' : ''} left`, sublabel: `${days} days until check-out` };
+    return { label: `${days} days left`, sublabel: `${weeks} week${weeks !== 1 ? 's' : ''} and ${remainder} day${remainder !== 1 ? 's' : ''} until check-out` };
+  }
+  return { label: 'Stay ended', sublabel: undefined };
+}
+
 type StayFilter = 'all' | 'ongoing' | 'future' | 'previous' | 'future_invites';
 
 export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string) => void; notify: (t: 'success' | 'error', m: string) => void }> = ({ user, navigate, notify }) => {
@@ -566,6 +597,85 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
           </div>
         </div>
       </section>
+
+      {/* Countdown & calendar: time left in a pretty view (only when stay is current or upcoming and not ended) */}
+      {stay && !stay.checked_out_at && !stay.cancelled_at && stay.approved_stay_end_date >= today && (() => {
+        const countdown = countdownLabel(stay.approved_stay_end_date, today);
+        const allDays = dateRange(stay.approved_stay_start_date, stay.approved_stay_end_date);
+        const total = allDays.length;
+        const maxShow = 42; // ~6 weeks
+        const showDays = total <= maxShow ? allDays : allDays.slice(-maxShow);
+        const isUpcoming = stay.approved_stay_start_date > today;
+        return (
+          <section className="rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/80 via-white to-slate-50/60 p-6 md:p-8 shadow-sm">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-700 mb-4">Time left on your stay</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-8">
+              {/* Big countdown */}
+              <div className="flex-shrink-0">
+                <div className="inline-flex flex-col items-center justify-center rounded-2xl bg-white/90 border-2 border-indigo-200/80 shadow-inner px-8 py-6 min-w-[180px]">
+                  <span className="text-4xl md:text-5xl font-bold tabular-nums text-indigo-900">
+                    {dLeft}
+                  </span>
+                  <span className="text-sm font-semibold uppercase tracking-wider text-indigo-600 mt-1">
+                    {dLeft === 0 ? 'day (check-out today)' : dLeft === 1 ? 'day left' : 'days left'}
+                  </span>
+                  {countdown.sublabel && (
+                    <span className="text-xs text-slate-500 mt-0.5">{countdown.sublabel}</span>
+                  )}
+                </div>
+              </div>
+              {/* Calendar strip */}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-slate-500 mb-2">
+                  {isUpcoming ? 'Your stay period' : 'Stay timeline'} · {formatDate(stay.approved_stay_start_date)} → {formatDate(stay.approved_stay_end_date)}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {showDays.map((dayStr) => {
+                    const isToday = dayStr === today;
+                    const isEnd = dayStr === stay.approved_stay_end_date;
+                    const isPast = dayStr < today;
+                    const isStart = dayStr === stay.approved_stay_start_date;
+                    const dayNum = new Date(dayStr + 'T12:00:00').getDate();
+                    return (
+                      <div
+                        key={dayStr}
+                        title={`${dayStr}${isToday ? ' (today)' : ''}${isEnd ? ' (check-out)' : ''}`}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium transition-all ${
+                          isToday
+                            ? 'bg-indigo-600 text-white ring-2 ring-indigo-300 ring-offset-1 scale-110'
+                            : isEnd
+                              ? 'bg-amber-500 text-white font-semibold'
+                              : isPast
+                                ? 'bg-slate-200 text-slate-500'
+                                : isStart
+                                  ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                                  : 'bg-slate-100 text-slate-700 border border-slate-200/80'
+                        }`}
+                      >
+                        {dayNum}
+                      </div>
+                    );
+                  })}
+                </div>
+                {total > maxShow && (
+                  <p className="text-xs text-slate-400 mt-2">Showing last {maxShow} days of stay</p>
+                )}
+                <div className="flex flex-wrap gap-4 mt-3 text-xs text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded bg-indigo-600" /> Today
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded bg-amber-500" /> Check-out day
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded bg-slate-200" /> Past
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left: Authorization & documentation */}

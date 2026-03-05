@@ -4,7 +4,7 @@ import { Card, Button, Input, Modal } from '../../components/UI';
 import { InviteGuestModal } from '../../components/InviteGuestModal';
 import { UserSession } from '../../types';
 import { JURISDICTION_RULES } from '../../services/jleService';
-import { propertiesApi, dashboardApi, APP_ORIGIN, type Property, type OwnerStayView } from '../../services/api';
+import { propertiesApi, dashboardApi, APP_ORIGIN, type Property, type OwnerStayView, type BillingResponse } from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
 
 function formatStayDuration(startStr: string, endStr: string): string {
@@ -32,7 +32,7 @@ function isOverstayed(endDateStr: string): boolean {
   return end.getTime() < today.getTime();
 }
 
-export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; navigate: (v: string) => void; setLoading?: (l: boolean) => void; notify?: (t: 'success' | 'error', m: string) => void }> = ({ propertyId, user, navigate, setLoading: setGlobalLoading = () => {}, notify = () => {} }) => {
+export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; navigate: (v: string) => void; setLoading?: (l: boolean) => void; notify?: (t: 'success' | 'error', m: string) => void }> = ({ propertyId, user, navigate, setLoading: setGlobalLoading = () => {}, notify = (_t: 'success' | 'error', _m: string) => {} }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [property, setProperty] = useState<Property | null>(null);
   const [stays, setStays] = useState<OwnerStayView[]>([]);
@@ -56,6 +56,8 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
     property_type: 'house',
     bedrooms: '1',
     is_primary_residence: false,
+    tax_id: '',
+    apn: '',
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [proofLoading, setProofLoading] = useState(false);
@@ -64,9 +66,18 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
   const [renewEndDate, setRenewEndDate] = useState('');
   const [showLiveLinkQR, setShowLiveLinkQR] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [billing, setBilling] = useState<BillingResponse | null>(null);
   const id = Number(propertyId);
+  const canInvite = billing?.can_invite !== false;
   const stateKey = property?.state ?? 'FL';
-  const jurisdictionInfo = JURISDICTION_RULES[stateKey as keyof typeof JURISDICTION_RULES] ?? JURISDICTION_RULES.FL;
+  // Prefer jurisdiction from API (JurisdictionInfo SOT); fallback to frontend rules for legacy/offline
+  const jurisdictionInfo = property?.jurisdiction_documentation
+    ? {
+        name: property.jurisdiction_documentation.name,
+        maxSafeStayDays: property.jurisdiction_documentation.max_stay_days,
+        warningDays: property.jurisdiction_documentation.warning_days,
+      }
+    : (JURISDICTION_RULES[stateKey as keyof typeof JURISDICTION_RULES] ?? JURISDICTION_RULES.FL);
   const propertyStays = stays.filter((s) => s.property_id === id);
   // Only checked-in stays (guest clicked Check in) count as active for occupancy and DMS
   const activeStaysForProperty = propertyStays.filter((s) => s.checked_in_at && !s.checked_out_at && !s.cancelled_at);
@@ -112,6 +123,12 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    dashboardApi.billing()
+      .then(setBilling)
+      .catch(() => setBilling({ invoices: [], payments: [], can_invite: true }));
+  }, []);
+
   /** When edit modal opens, always pre-fill form from current property so existing values are retained. */
   const syncEditFormFromProperty = useCallback(() => {
     if (!property) return;
@@ -127,6 +144,8 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
       property_type: typeNorm || 'house',
       bedrooms: property.bedrooms ?? '1',
       is_primary_residence: property.owner_occupied ?? false,
+      tax_id: property.tax_id ?? '',
+      apn: property.apn ?? '',
     });
   }, [property]);
 
@@ -167,6 +186,8 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         property_type: editForm.property_type || undefined,
         bedrooms: editForm.bedrooms || undefined,
         is_primary_residence: editForm.is_primary_residence,
+        tax_id: editForm.tax_id?.trim() || undefined,
+        apn: editForm.apn?.trim() || undefined,
       };
       const updated = await propertiesApi.update(property.id, payload);
       setProperty(updated);
@@ -299,7 +320,21 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
           <div className="flex flex-wrap gap-3">
             <Button variant="outline" onClick={openEdit}>Edit Property</Button>
             {!isInactive && (
-              <Button variant="primary" onClick={() => setShowInviteModal(true)}>Invite Guest</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  if (!canInvite) {
+                    notify('error', 'Pay your onboarding invoice before inviting guests. Go to Billing to view and pay.');
+                    navigate('dashboard/billing');
+                    return;
+                  }
+                  setShowInviteModal(true);
+                }}
+                disabled={!canInvite}
+                title={!canInvite ? 'Pay your onboarding invoice in Billing first' : undefined}
+              >
+                Invite Guest
+              </Button>
             )}
             {isInactive ? (
               <Button
@@ -571,22 +606,22 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                           type="button"
                           role="switch"
                           aria-checked={shieldOn}
-                          disabled={shieldToggling || !shieldOn}
-                          title={!shieldOn ? "Shield Mode turns on automatically on the last day of a guest's stay" : 'Turn Shield Mode off'}
+                          disabled={shieldToggling || !property}
+                          title={shieldOn ? 'Turn Shield Mode off' : 'Turn Shield Mode on'}
                           onClick={async () => {
-                            if (!property || !shieldOn) return;
+                            if (!property) return;
                             setShieldToggling(true);
                             try {
-                              const updated = await propertiesApi.update(property.id, { shield_mode_enabled: false });
+                              const updated = await propertiesApi.update(property.id, { shield_mode_enabled: !shieldOn });
                               setProperty(updated);
-                              notify('success', 'Shield Mode turned off.');
+                              notify('success', shieldOn ? 'Shield Mode turned off.' : 'Shield Mode turned on.');
                             } catch (e) {
                               notify('error', (e as Error)?.message ?? 'Failed to update Shield Mode.');
                             } finally {
                               setShieldToggling(false);
                             }
                           }}
-                          className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${shieldOn ? 'cursor-pointer bg-emerald-600' : 'cursor-not-allowed bg-slate-200 opacity-60'} ${shieldToggling ? 'opacity-50' : ''}`}
+                          className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${shieldOn ? 'cursor-pointer bg-emerald-600' : 'cursor-pointer bg-slate-200 hover:bg-slate-300'} ${shieldToggling ? 'opacity-50' : ''}`}
                         >
                           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${shieldOn ? 'translate-x-5' : 'translate-x-1'}`} />
                         </button>
@@ -596,7 +631,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                         <span className="text-sm text-slate-600">Status: <span className="font-semibold text-slate-800">{shieldStatus}</span></span>
                       )}
                       {!shieldOn && (
-                        <span className="text-xs text-slate-500">Turns on automatically on the last day of a guest&apos;s stay</span>
+                        <span className="text-xs text-slate-500">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when Dead Man&apos;s Switch runs (48h after stay end).</span>
                       )}
                     </div>
                   </Card>
@@ -744,7 +779,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
             <h3 className="text-3xl font-black text-slate-800 tracking-tighter">Region documentation: {jurisdictionInfo.name}</h3>
 
             <section>
-              <h4 className="text-lg font-bold text-slate-700 mb-4 uppercase tracking-wider">Authorized stay limits</h4>
+              <h4 className="text-lg font-bold text-slate-700 mb-4 uppercase tracking-wider">Documented stay limits</h4>
               <p className="text-slate-600 leading-relaxed mb-4">DocuStay uses region-based stay limits for documentation and audit purposes. For {jurisdictionInfo.name}, the documented max stay is {jurisdictionInfo.maxSafeStayDays} days. All stays are recorded in the audit trail.</p>
             </section>
 
@@ -761,7 +796,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                 </div>
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="font-semibold text-slate-700 mr-2">Past limit:</span>
-                  <span className="text-slate-600">Stay exceeds documented max for {property?.state}. Status and actions are recorded in the audit trail.</span>
+                  <span className="text-slate-600">Stay exceeds documented max for {jurisdictionInfo.name}. Status and actions are recorded in the audit trail.</span>
                 </div>
               </div>
             </section>
@@ -873,6 +908,20 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
               { value: '4', label: '4' },
               { value: '5', label: '5+' },
             ]}
+          />
+          <Input
+            label="Tax ID (optional)"
+            name="tax_id"
+            value={editForm.tax_id}
+            onChange={(e) => setEditForm({ ...editForm, tax_id: e.target.value })}
+            placeholder="Property tax ID"
+          />
+          <Input
+            label="APN / Parcel (optional)"
+            name="apn"
+            value={editForm.apn}
+            onChange={(e) => setEditForm({ ...editForm, apn: e.target.value })}
+            placeholder="Assessor parcel number"
           />
           <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl bg-slate-100 border border-slate-200">
             <input

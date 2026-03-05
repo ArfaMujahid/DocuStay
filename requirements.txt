@@ -26,3 +26,7 @@ reportlab>=4.0.0
 
 # Stripe (Identity verification)
 stripe>=8.0.0
+
+# Doc / PDF generation (e.g. scripts/md_to_pdf.py)
+markdown>=3.5.0
+xhtml2pdf>=0.2.13

@@ -139,11 +139,27 @@ const Settings: React.FC<{
                     <p className="text-xs text-amber-700 mt-1">Go to Billing to view and pay.</p>
                   </div>
                 )}
-                {onOpenBilling && (
-                  <Button variant="outline" type="button" onClick={onOpenBilling}>
-                    View Billing & Invoices
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const { url } = await dashboardApi.billingPortalSession();
+                        if (url) window.location.href = url;
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                  >
+                    Set default payment method
                   </Button>
-                )}
+                  {onOpenBilling && (
+                    <Button variant="outline" type="button" onClick={onOpenBilling}>
+                      View Billing & Invoices
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </Card>

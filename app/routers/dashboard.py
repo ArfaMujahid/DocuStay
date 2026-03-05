@@ -247,6 +247,46 @@ def owner_cancel_invitation(
     return {"status": "success", "message": "Invitation cancelled."}
 
 
+@router.post("/owner/properties/{property_id}/confirm-vacant")
+def owner_confirm_vacant(
+    request: Request,
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner_onboarding_complete),
+):
+    """Confirm that a vacant unit is still vacant (vacant-unit monitoring response). Clears response deadline so the property is not flipped to UNCONFIRMED."""
+    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="No owner profile")
+    prop = db.query(Property).filter(
+        Property.id == property_id,
+        Property.owner_profile_id == profile.id,
+        Property.deleted_at.is_(None),
+    ).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if (getattr(prop, "occupancy_status", None) or "").lower() != OccupancyStatus.vacant.value:
+        raise HTTPException(status_code=400, detail="Property is not vacant. Confirm vacancy only for vacant units.")
+    now = datetime.now(timezone.utc)
+    prop.vacant_monitoring_confirmed_at = now
+    prop.vacant_monitoring_response_due_at = None
+    db.add(prop)
+    property_name = (prop.name or "").strip() or (f"{prop.city}, {prop.state}".strip(", ") if (prop.city or prop.state) else f"Property {property_id}")
+    create_log(
+        db,
+        CATEGORY_STATUS_CHANGE,
+        "Owner confirmed still vacant",
+        f"Owner confirmed unit still vacant for {property_name} (vacant monitoring).",
+        property_id=prop.id,
+        actor_user_id=current_user.id,
+        actor_email=current_user.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=(request.headers.get("user-agent") or "").strip() or None,
+    )
+    db.commit()
+    return {"status": "success", "message": "Vacancy confirmed. Next prompt will be sent at the next interval."}
+
+
 @router.get("/owner/stays", response_model=list[OwnerStayView])
 def owner_stays(
     db: Session = Depends(get_db),
@@ -901,7 +941,7 @@ def guest_stay_signed_agreement_pdf(
                 headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
             )
     date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
-    content = fill_guest_signature_in_content(sig.document_content, sig.typed_signature, date_str)
+    content = fill_guest_signature_in_content(sig.document_content, sig.typed_signature, date_str, getattr(sig, "ip_address", None))
     pdf_bytes = agreement_content_to_pdf(sig.document_title, content)
     sig.signed_pdf_bytes = pdf_bytes
     db.commit()
@@ -1145,6 +1185,15 @@ def owner_billing(
     payments: list[BillingPaymentView] = []
     try:
         for inv in stripe.Invoice.list(customer=profile.stripe_customer_id, limit=100).auto_paging_iter():
+            # Auto-finalize drafts so user gets a payable invoice; skip if finalize fails
+            if inv.status == "draft":
+                try:
+                    inv = stripe.Invoice.finalize_invoice(inv.id)
+                except stripe.StripeError:
+                    continue
+            # Never expose draft to the client
+            if inv.status == "draft":
+                continue
             created_dt = datetime.fromtimestamp(inv.created, tz=timezone.utc) if inv.created else datetime.now(timezone.utc)
             amount_due = getattr(inv, "amount_due", 0) or 0
             amount_paid = getattr(inv, "amount_paid", 0) or 0

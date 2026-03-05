@@ -1,4 +1,4 @@
-"""Agreement document generation for invitation flows."""
+"""Agreement document generation for invitation flows. Uses JurisdictionInfo from DB SOT when available."""
 from __future__ import annotations
 
 import hashlib
@@ -11,12 +11,16 @@ from sqlalchemy.orm import Session
 from app.models.invitation import Invitation
 from app.models.owner import Property
 from app.models.user import User
+from app.services.jurisdiction_sot import JurisdictionInfo, get_jurisdiction_for_property
 
 
-def fill_guest_signature_in_content(content: str, guest_name: str, signed_date: str) -> str:
-    """Replace the blank guest signature line with the signer's name and date."""
-    # Patterns for guest line (Licensee, Occupant, Guest) with blank underscores and date
+def fill_guest_signature_in_content(
+    content: str, guest_name: str, signed_date: str, ip_address: str | None = None
+) -> str:
+    """Replace the blank guest signature line with the signer's name, date, and optionally IP."""
+    # Patterns for guest/signature lines with blank underscores
     patterns = [
+        (r"Signed:\s*_{10,}\s+Date:\s*_{10,}", f"Signed: {guest_name}   Date: {signed_date}"),
         (r"Licensee:\s*_{10,}\s+Date:\s*_{10,}", f"Licensee: {guest_name}   Date: {signed_date}"),
         (r"Occupant:\s*_{10,}\s+Date:\s*_{10,}", f"Occupant: {guest_name}   Date: {signed_date}"),
         (r"Guest:\s*_{10,}\s+Date:\s*_{10,}", f"Guest: {guest_name}   Date: {signed_date}"),
@@ -24,6 +28,8 @@ def fill_guest_signature_in_content(content: str, guest_name: str, signed_date: 
     result = content
     for pattern, replacement in patterns:
         result = re.sub(pattern, replacement, result, count=1)
+    if ip_address is not None and "IP Address:" in result:
+        result = re.sub(r"IP Address:\s*_{10,}", f"IP Address: {ip_address}", result, count=1)
     return result
 
 
@@ -62,6 +68,65 @@ def _normalize_region(region_code: str) -> str:
     return rc or "US"
 
 
+def _guest_acknowledgment_content(
+    *,
+    property_address: str | None,
+    guest_name: str,
+    checkin: str,
+    checkout: str,
+    statute_citation: str,
+) -> str:
+    """Build GUEST ACKNOWLEDGMENT body (facts only; no trespass/may result in/legal conclusions). Statute from jurisdiction lookup (zip → state → statute)."""
+    prop_display = (property_address or "[Address, Unit]").strip()
+    return f"""GUEST ACKNOWLEDGMENT
+
+Property: {prop_display}
+Guest: {guest_name}
+Authorization Period: {checkin} to {checkout}
+
+By signing below, you acknowledge:
+
+1. You are authorized to occupy this property only during the period stated above.
+2. This authorization is personal to you. It does not include the right to sublet, assign, or transfer.
+3. During this period, you may:
+   - Receive mail at this address.
+   - Perform maintenance with owner consent.
+   - Pay utility bills on behalf of the owner (if applicable).
+4. None of the activities listed above create a tenancy or lease. Under {statute_citation}, a written lease is required for tenancy.
+5. The owner has granted DocuStay authority to document occupancy (Master POA on file).
+
+Your authorization expires automatically on {checkout}. Renewal requires a new acknowledgment.
+
+Signed: __________________________  Date: ________________
+IP Address: ______________________
+"""
+
+
+def _build_agreement_from_jurisdiction(
+    jinfo: JurisdictionInfo,
+    *,
+    owner_name: str,
+    guest_name: str,
+    today: str,
+    checkin: str,
+    checkout: str,
+    property_address: str | None,
+) -> tuple[str, str]:
+    """Build GUEST ACKNOWLEDGMENT title and content from JurisdictionInfo (SOT). Returns (title, content). Statute from jurisdiction lookup."""
+    title = "GUEST ACKNOWLEDGMENT"
+    statute_citation = "applicable state and local law"
+    if jinfo.statutes:
+        statute_citation = jinfo.statutes[0].citation
+    content = _guest_acknowledgment_content(
+        property_address=property_address,
+        guest_name=guest_name,
+        checkin=checkin,
+        checkout=checkout,
+        statute_citation=statute_citation,
+    )
+    return (title, content)
+
+
 def build_invitation_agreement(
     db: Session,
     invitation_code: str,
@@ -90,133 +155,45 @@ def build_invitation_agreement(
     checkin = str(inv.stay_start_date) if inv.stay_start_date else "[Check-in Date]"
     checkout = str(inv.stay_end_date) if inv.stay_end_date else "[Check-out Date]"
 
-    # Core templates (plain text) — intentionally concise, but aligned to the user's provided drafts.
-    if region == "NYC":
-        title = "REVOCABLE LICENSE FOR TEMPORARY OCCUPANCY (NEW YORK CITY)"
-        content = f"""TITLE: REVOCABLE LICENSE FOR TEMPORARY OCCUPANCY (NYC)
+    # Prefer JurisdictionInfo from DB SOT so statute citations and removal text are dynamic.
+    jinfo = get_jurisdiction_for_property(db, prop.zip_code if prop else None, region)
+    if jinfo is not None:
+        title, content = _build_agreement_from_jurisdiction(
+            jinfo,
+            owner_name=owner_name,
+            guest_name=guest_name,
+            today=today,
+            checkin=checkin,
+            checkout=checkout,
+            property_address=property_address,
+        )
+        document_id = f"DSA-{code}-{jinfo.region_code}"
+        doc_hash = _sha256_hex(content)
+        return AgreementDoc(
+            document_id=document_id,
+            region_code=jinfo.region_code,
+            title=title,
+            content=content,
+            document_hash=doc_hash,
+            property_address=property_address,
+            stay_start_date=str(inv.stay_start_date) if inv.stay_start_date else None,
+            stay_end_date=str(inv.stay_end_date) if inv.stay_end_date else None,
+            host_name=host_name,
+        )
 
-1. PARTIES & PROPERTY
-This Revocable License ("Agreement") is entered into on {today} between {owner_name} ("Licensor") and {guest_name} ("Licensee") for the temporary use of the property located at: {property_address or "[Full Property Address]"}.
-
-2. NATURE OF THE RELATIONSHIP (CRITICAL NYC CLAUSE)
-This Agreement is a License, not a Lease. Licensee acknowledges that:
-- No landlord-tenant relationship is created under NY RPAPL § 711.
-- Licensor retains legal possession, custody, and control of the Premises at all times.
-- Licensee receives a personal, non-assignable privilege to enter the Premises for a temporary stay only.
-
-3. NON-EXCLUSIVE POSSESSION
-Licensee shall not have exclusive possession of any portion of the Premises. Licensor (and Licensor's agents) may enter any area used by Licensee at any time, for any reason, without notice. This is a shared-occupancy arrangement.
-
-4. TIME-BOUND LIMIT (NYC 30-DAY GUARDRAIL)
-This license begins on {checkin} and terminates automatically on {checkout}. Under no circumstances shall this license exceed 29 consecutive days. Licensee agrees to vacate and remove all personal belongings by the termination date/time set by Licensor.
-
-5. REVOCABILITY
-This license is revocable at will by the Licensor. Upon notice of revocation (via DocuStay notification or SMS), Licensee must vacate within the stated timeframe. Remaining after revocation or expiration may constitute trespass under NY law.
-
-6. UTILITY, MAIL, AND RESIDENCY RESTRICTIONS
-- Licensee shall not establish or modify utility accounts at this address.
-- Licensee shall not use the Premises for receipt of personal mail, voter registration, or government records.
-- Licensee shall not claim the Premises as a residence or domicile.
-
-SIGNATURES (ELECTRONIC)
-Licensor: ________________________   Date: __________
-Licensee: ________________________   Date: __________
-"""
-    elif region == "FL":
-        title = "VERIFIED COMPLAINT AND GUEST AUTHORIZATION (FLORIDA F.S. § 82.036)"
-        content = f"""TITLE: VERIFIED COMPLAINT AND GUEST AUTHORIZATION (PURSUANT TO F.S. § 82.036)
-
-1. IDENTIFICATION OF PARTIES
-This agreement is between {owner_name} ("Owner") and {guest_name} ("Occupant") regarding the dwelling located at: {property_address or "[Full Address]"}.
-
-2. OCCUPANT STATUS (TRANSIENT GUEST; NOT A TENANT)
-Occupant affirms they are a transient guest and NOT a tenant, and that no written or oral lease agreement has been authorized by the Owner.
-
-3. STATUTORY ACKNOWLEDGMENTS (UNDER PENALTY OF PERJURY)
-Occupant declares:
-- I am not an immediate family member of the Owner.
-- I am not a co-owner and am not listed on title.
-- There is no pending litigation regarding this property between myself and the Owner.
-
-4. AUTHORIZATION OF REMOVAL
-Occupant's authorization to remain expires on {checkout}. If Occupant remains past this time, they become an unauthorized person under Florida law and authorize the County Sheriff to remove them upon Owner's verified complaint as allowed by F.S. § 82.036.
-
-5. UTILITY FRAUD WAIVER & DAMAGES NOTICE
-Occupant has no authority to establish utilities for this property. Any attempt may constitute a criminal offense under Florida law. Intentional property damage may increase criminal exposure.
-
-SIGNATURES (ELECTRONIC; UNDER PENALTY OF PERJURY)
-Owner: ________________________   Date: __________
-Occupant: _____________________   Date: __________
-"""
-    elif region == "CA":
-        title = "TRANSIENT LODGER & TEMPORARY OCCUPANCY AGREEMENT (CALIFORNIA)"
-        content = f"""TITLE: TRANSIENT LODGER & TEMPORARY OCCUPANCY AGREEMENT (CALIFORNIA)
-
-1. PROPERTY & PARTIES
-This Agreement is made on {today} between {owner_name} ("Owner") and {guest_name} ("Lodger/Guest") for the property at: {property_address or "[Full Address]"}.
-
-2. TRANSIENT OCCUPANCY STATUS (CA CIV. CODE § 1940.1)
-This occupancy is transient in nature. Guest is not hiring the dwelling as a permanent resident and maintains a primary residence elsewhere.
-
-3. OWNER RIGHT OF ACCESS (NO EXCLUSIVE POSSESSION)
-Owner retains unrestricted access to and control of the dwelling. Guest does not have exclusive possession of any part of the premises.
-
-4. STAY DURATION & TERMINATION
-This license begins on {checkin} and ends on {checkout}. Guest agrees to vacate on or before the 29th day of occupancy to preserve transient status, unless otherwise required by law.
-
-5. SINGLE LODGER PROVISION (IF OWNER-OCCUPIED)
-If Owner resides on-site, Guest may be treated as a single lodger under CA Civ. Code § 1946.5 and may be subject to removal as a trespasser after proper notice.
-
-6. PROHIBITED ACTIONS
-Guest shall not receive mail/packages at the address, register a vehicle or business here, or activate/modify utilities.
-
-SIGNATURES (ELECTRONIC)
-Owner: ________________________   Date: __________
-Guest: ________________________   Date: __________
-"""
-    elif region == "TX":
-        title = "TRANSIENT GUEST AGREEMENT & NO-TENANCY WAIVER (TEXAS)"
-        content = f"""TITLE: TEXAS TRANSIENT GUEST AGREEMENT & NO-TENANCY WAIVER
-
-1. STATUS OF OCCUPANCY
-Guest acknowledges they are staying at {property_address or "[Property Address]"} as a transient guest only. This arrangement is NOT a residential lease under Texas Property Code Chapter 92.
-
-2. NO CONSIDERATION (THE “CHORES” TRAP)
-Guest agrees that performing chores, buying groceries, or contributing to utilities does not constitute rent and does not create a landlord-tenant relationship. Any such actions are voluntary gifts.
-
-3. PROHIBITION OF RESIDENCY SIGNS
-Guest agrees NOT to:
-- Receive personal mail/packages at this address.
-- Use this address for any government ID, voter registration, or business registration.
-- Move in large furniture or permanent appliances.
-
-4. RIGHT TO VACATE
-Owner may request Guest to leave at any time for any reason. Guest agrees to vacate within 24 hours of receiving a DocuStay notice. Occupancy after {checkout} is unauthorized.
-
-SIGNATURES (ELECTRONIC)
-Owner: ________________________   Date: __________
-Guest: ________________________   Date: __________
-"""
-    else:  # WA or fallback
-        title = "DECLARATION OF UNAUTHORIZED OCCUPANCY (WASHINGTON RCW 9A.52.105)"
-        content = f"""TITLE: DECLARATION OF UNAUTHORIZED OCCUPANCY (RCW 9A.52.105) — WASHINGTON
-
-1. DECLARATION OF OWNERSHIP
-{owner_name} declares under penalty of perjury that they are the record owner or authorized agent of the property at: {property_address or "[Address]"}.
-
-2. UNAUTHORIZED STATUS
-{guest_name} entered the property as a temporary guest only. They are not a tenant and have no valid rental agreement for an indefinite period.
-
-3. DEMAND TO VACATE
-Guest must vacate by {checkout}. Remaining past the authorized date/time is unauthorized occupancy.
-
-4. INDEMNITY
-Owner agrees to indemnify and hold harmless any law enforcement agency that relies on this sworn declaration as permitted by law.
-
-SIGNATURES (ELECTRONIC)
-Owner: ________________________   Date: __________
-Guest: ________________________   Date: __________
-"""
+    # Fallback: GUEST ACKNOWLEDGMENT with statute from region if available.
+    title = "GUEST ACKNOWLEDGMENT"
+    statute_citation = "applicable state and local law"
+    jinfo_fallback = get_jurisdiction_for_property(db, prop.zip_code if prop else None, region)
+    if jinfo_fallback and jinfo_fallback.statutes:
+        statute_citation = jinfo_fallback.statutes[0].citation
+    content = _guest_acknowledgment_content(
+        property_address=property_address,
+        guest_name=guest_name,
+        checkin=checkin,
+        checkout=checkout,
+        statute_citation=statute_citation,
+    )
 
     document_id = f"DSA-{code}-{region}"
     doc_hash = _sha256_hex(content)
@@ -261,6 +238,9 @@ The Master POA legally designates DocuStay as the owner's "Authorized Agent" to:
 - Generate legal evidence packages
 - Maintain forensic audit trails
 - Act as the "official record keeper" for property status
+
+4. Applicable Law (Jurisdiction)
+Jurisdiction-specific statutes, removal procedures, and guest-agreement language for each property are determined by that property's location (zip code and state/region) from DocuStay's jurisdiction database (single source of truth). The applicable law for each property is displayed on that property's live link page and is used when generating guest agreements and authority packages.
 
 SIGNATURE (ELECTRONIC)
 Owner: ________________________   Date: __________

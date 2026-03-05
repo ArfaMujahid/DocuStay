@@ -32,14 +32,15 @@ const GuestLogin: React.FC<GuestLoginProps> = ({ inviteCode: inviteCodeFromUrl, 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const hasInviteLink = !!formData.invitation_link.trim();
-    if (hasInviteLink && (!formData.email.trim() || !formData.password)) {
-      showError('The invitation link is optional. Please enter your email and password to sign in.');
+    const email = formData.email.trim();
+    const password = formData.password;
+    if (!email || !password) {
+      showError('Please enter your email and password.');
       return;
     }
     setLoading(true);
     try {
-      const result = await authApi.login(formData.email, formData.password, "guest");
+      const result = await authApi.login(email, password, "guest");
       setLoading(false);
       if (result.status !== 'success' || !result.data) {
         showError(result.message || 'Login failed. Please check your email and password.');

@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.stay import Stay
 from app.models.guest import GuestProfile
 from app.models.audit_log import AuditLog
+from app.models.invitation import Invitation
 from app.models.owner_poa_signature import OwnerPOASignature
 from app.services.agreements import agreement_content_to_pdf, poa_content_with_signature
 from app.services.dropbox_sign import get_signed_pdf
@@ -20,7 +21,10 @@ from app.schemas.public import (
     LiveOwnerInfo,
     LiveCurrentGuestInfo,
     LiveStaySummary,
+    LiveInvitationSummary,
     LiveLogEntry,
+    JurisdictionWrap,
+    JurisdictionStatuteView,
     PortfolioPagePayload,
     PortfolioOwnerInfo,
     PortfolioPropertyItem,
@@ -74,7 +78,25 @@ def get_live_property_page(slug: str, db: Session = Depends(get_db)):
         occupancy_status=getattr(prop, "occupancy_status", None) or "unknown",
         shield_mode_enabled=bool(getattr(prop, "shield_mode_enabled", 0)),
         token_state=token_state,
+        tax_id=getattr(prop, "tax_id", None) or None,
+        apn=getattr(prop, "apn", None) or None,
     )
+
+    # Jurisdictional wrap: applicable law for this property (zip → region → statutes)
+    jurisdiction_wrap = None
+    from app.services.jurisdiction_sot import get_jurisdiction_for_property
+    jinfo = get_jurisdiction_for_property(db, prop.zip_code, prop.region_code)
+    if jinfo:
+        jurisdiction_wrap = JurisdictionWrap(
+            state_name=jinfo.name,
+            applicable_statutes=[
+                JurisdictionStatuteView(citation=s.citation, plain_english=s.plain_english)
+                for s in jinfo.statutes
+            ],
+            removal_guest_text=jinfo.removal_guest_text,
+            removal_tenant_text=jinfo.removal_tenant_text,
+            agreement_type=jinfo.agreement_type,
+        )
 
     # POA for Authority layer
     poa_signed_at: datetime | None = None
@@ -123,6 +145,25 @@ def get_live_property_page(slug: str, db: Session = Depends(get_db)):
         for r in log_rows
     ]
 
+    # Invitations for this property – invite states indicate stay status (STAGED→pending, BURNED→accepted/stay, EXPIRED→ended, REVOKED→cancelled)
+    inv_rows = (
+        db.query(Invitation)
+        .filter(Invitation.property_id == prop.id)
+        .order_by(Invitation.created_at.desc())
+        .limit(50)
+    ).all()
+    invitations = [
+        LiveInvitationSummary(
+            invitation_code=inv.invitation_code,
+            guest_label=(inv.guest_name or inv.guest_email or "").strip() or None,
+            stay_start_date=inv.stay_start_date,
+            stay_end_date=inv.stay_end_date,
+            status=inv.status or "pending",
+            token_state=getattr(inv, "token_state", None) or "STAGED",
+        )
+        for inv in inv_rows
+    ]
+
     if current_stay:
         authorization_state = "REVOKED" if getattr(current_stay, "revoked_at", None) else "ACTIVE"
         guest = db.query(User).filter(User.id == current_stay.guest_id).first()
@@ -141,12 +182,14 @@ def get_live_property_page(slug: str, db: Session = Depends(get_db)):
             ),
             last_stay=None,
             upcoming_stays=[],
+            invitations=invitations,
             logs=logs,
             authorization_state=authorization_state,
             record_id=slug,
             generated_at=datetime.now(timezone.utc),
             poa_signed_at=poa_signed_at,
             poa_signature_id=poa_signature_id,
+            jurisdiction_wrap=jurisdiction_wrap,
         )
 
     # No current guest: last stay (most recent ended) and upcoming
@@ -193,12 +236,14 @@ def get_live_property_page(slug: str, db: Session = Depends(get_db)):
         current_guest=None,
         last_stay=last_stay,
         upcoming_stays=upcoming,
+        invitations=invitations,
         logs=logs,
         authorization_state=authorization_state,
         record_id=slug,
         generated_at=datetime.now(timezone.utc),
         poa_signed_at=poa_signed_at,
         poa_signature_id=poa_signature_id,
+        jurisdiction_wrap=jurisdiction_wrap,
     )
 
 

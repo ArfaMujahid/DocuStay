@@ -19,9 +19,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate }) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const email = formData.email.trim();
+    const password = formData.password;
+    if (!email || !password) {
+      showError('Please enter your email and password.');
+      return;
+    }
     setLoading(true);
     try {
-      const result = await authApi.login(formData.email, formData.password, "owner");
+      const result = await authApi.login(email, password, "owner");
       setLoading(false);
       if (result.status === 'success' && result.data) {
         notify('success', 'Logged in successfully.');

@@ -85,8 +85,8 @@ class Property(Base):
     # Soft delete: when set, property is hidden from dashboard and invite list; can be reactivated
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Shield Mode: software monitoring/enforcement state. When ON: PASSIVE GUARD (if occupied) or ACTIVE ENFORCEMENT (if vacant).
-    # Owner can turn OFF; auto-activated when Dead Man's Switch runs (owner can deactivate after).
+    # Shield Mode: software monitoring. Independent of vacant/occupied. Owner can turn ON or OFF anytime.
+    # ON: automatically on last day of guest's stay, and when Dead Man's Switch runs (48h after stay end). OFF: when owner turns off, or when a new guest accepts an invitation.
     shield_mode_enabled = Column(Integer, nullable=False, default=0)
 
     # Ownership verification proof (deed, tax bill, etc.) – stored in DB for property and user
@@ -101,5 +101,15 @@ class Property(Base):
 
     # Public live link: unique slug for URL (no DB id in URL). Used for #live/<slug> property info page.
     live_slug = Column(String(32), unique=True, nullable=True, index=True)
+
+    # Property identifier for authority package (Jurisdictional POA wrap)
+    tax_id = Column(String(64), nullable=True)
+    apn = Column(String(64), nullable=True)
+
+    # Vacant-unit monitoring (DMS for vacant): if enabled, system prompts at intervals; no response → UNCONFIRMED
+    vacant_monitoring_enabled = Column(Integer, nullable=False, default=0)
+    vacant_monitoring_last_prompted_at = Column(DateTime(timezone=True), nullable=True)
+    vacant_monitoring_response_due_at = Column(DateTime(timezone=True), nullable=True)
+    vacant_monitoring_confirmed_at = Column(DateTime(timezone=True), nullable=True)
 
     owner_profile = relationship("OwnerProfile", back_populates="properties")

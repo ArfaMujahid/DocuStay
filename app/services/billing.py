@@ -59,13 +59,29 @@ def _stripe_enabled() -> bool:
     return bool((s.stripe_secret_key or "").strip())
 
 
+def _is_placeholder_customer_id(customer_id: str | None) -> bool:
+    """True if this is a non-Stripe placeholder (e.g. from identity verification), not a real Stripe customer."""
+    if not customer_id or not isinstance(customer_id, str):
+        return True
+    c = customer_id.strip()
+    if not c.startswith("cus_"):
+        return True
+    # Known placeholders that are not real Stripe customer IDs
+    if c.lower() in ("cus_verified_placeholder", "cus_placeholder"):
+        return True
+    # Real Stripe IDs are cus_ + 24+ alphanumeric chars; placeholders often have words
+    if "placeholder" in c.lower() or "test" in c.lower():
+        return True
+    return False
+
+
 def get_or_create_stripe_customer(profile: OwnerProfile, user: User) -> str | None:
     """Ensure Stripe customer exists for this owner; return stripe_customer_id or None if Stripe disabled."""
     if not _stripe_enabled():
         return None
     import stripe
     stripe.api_key = get_settings().stripe_secret_key
-    if profile.stripe_customer_id:
+    if profile.stripe_customer_id and not _is_placeholder_customer_id(profile.stripe_customer_id):
         try:
             stripe.Customer.retrieve(profile.stripe_customer_id)
             return profile.stripe_customer_id
@@ -115,14 +131,39 @@ def _get_or_create_stripe_products() -> tuple[str, str]:
     return baseline_id, shield_id
 
 
-def ensure_subscription(db: Session, profile: OwnerProfile) -> None:
-    """Create Stripe subscription (baseline $1/unit + Shield $10/unit) if not already created. Idempotent."""
-    if not _stripe_enabled() or not profile.stripe_customer_id:
+def ensure_subscription(db: Session, profile: OwnerProfile, user: User | None = None) -> None:
+    """Create Stripe subscription (baseline $1/unit + Shield $10/unit) if not already created. Idempotent.
+    If profile.stripe_customer_id is a placeholder (e.g. cus_verified_placeholder), creates a real Stripe customer first."""
+    if not _stripe_enabled():
         return
+    import stripe
+    stripe.api_key = get_settings().stripe_secret_key
+    # Replace placeholder customer ID with a real Stripe customer so Subscription.create succeeds
+    if _is_placeholder_customer_id(profile.stripe_customer_id) or not profile.stripe_customer_id:
+        u = user or db.query(User).filter(User.id == profile.user_id).first()
+        if u:
+            customer_id = get_or_create_stripe_customer(profile, u)
+            if customer_id:
+                profile.stripe_customer_id = customer_id
+                db.commit()
+                db.refresh(profile)
+        if not profile.stripe_customer_id or _is_placeholder_customer_id(profile.stripe_customer_id):
+            return
+    else:
+        try:
+            stripe.Customer.retrieve(profile.stripe_customer_id)
+        except stripe.InvalidRequestError:
+            u = user or db.query(User).filter(User.id == profile.user_id).first()
+            if u:
+                customer_id = get_or_create_stripe_customer(profile, u)
+                if customer_id:
+                    profile.stripe_customer_id = customer_id
+                    db.commit()
+                    db.refresh(profile)
+            if not profile.stripe_customer_id or _is_placeholder_customer_id(profile.stripe_customer_id):
+                return
     if profile.stripe_subscription_id:
         try:
-            import stripe
-            stripe.api_key = get_settings().stripe_secret_key
             stripe.Subscription.retrieve(profile.stripe_subscription_id)
             return  # already exists and valid
         except Exception:
@@ -174,10 +215,10 @@ def ensure_subscription(db: Session, profile: OwnerProfile) -> None:
         except Exception:
             pass
         # #endregion
-        # Build items with price_data.product (product ID only). Do NOT use product_data - Stripe API rejects it.
+        # Monthly subscription: $1/unit baseline + $10/unit Shield (recurring). Amounts in cents.
         item0_price_data = {
             "currency": "usd",
-            "unit_amount": 100,
+            "unit_amount": 100,  # $1.00 per unit per month (baseline)
             "recurring": {"interval": "month"},
             "product": baseline_prod_id,
         }
@@ -187,7 +228,7 @@ def ensure_subscription(db: Session, profile: OwnerProfile) -> None:
                 {
                     "price_data": {
                         "currency": "usd",
-                        "unit_amount": 1000,
+                        "unit_amount": 1000,  # $10.00 per Shield unit per month
                         "recurring": {"interval": "month"},
                         "product": shield_prod_id,
                     },
@@ -217,6 +258,7 @@ def ensure_subscription(db: Session, profile: OwnerProfile) -> None:
             customer=profile.stripe_customer_id,
             items=items,
             metadata={"owner_profile_id": str(profile.id)},
+            payment_behavior="default_incomplete",
         )
         baseline_item_id: str | None = None
         shield_item_id: str | None = None
@@ -363,11 +405,8 @@ def charge_onboarding_fee(
     )
     db.commit()
     logger.info("Onboarding invoice created for profile_id=%s, units=%s, amount_cents=%s", profile.id, total_units, fee.amount_cents)
-    # Requirement 2: create monthly subscription (baseline + Shield) after onboarding
-    try:
-        ensure_subscription(db, profile)
-    except Exception as e:
-        logger.warning("Subscription creation failed after onboarding (invoice already created): %s", e)
+    # Monthly subscription is created only after onboarding invoice is paid (see billing webhook invoice.paid).
+    # This keeps the first invoice as the one-time tier fee only (e.g. $299 for 1–5 units).
     return hosted_url
 
 

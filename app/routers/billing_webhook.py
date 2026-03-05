@@ -68,12 +68,20 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             actor_email=user.email if user else None,
             meta={"stripe_invoice_id": inv.id, "amount_paid_cents": amount_paid, "currency": currency},
         )
-        # If this is the onboarding invoice (metadata has onboarding_units), mark profile so owner can invite guests
+        # If this is the onboarding invoice (metadata has onboarding_units), mark profile and create monthly subscription
         if meta.get("onboarding_units") and profile.onboarding_invoice_paid_at is None:
             from datetime import datetime, timezone
             profile.onboarding_invoice_paid_at = datetime.now(timezone.utc)
             logger.info("Set onboarding_invoice_paid_at for profile_id=%s (invoice %s)", profile_id, inv.id)
-        db.commit()
+            db.commit()
+            # Create monthly subscription ($1/unit baseline + $10/unit Shield) now that onboarding is paid
+            try:
+                from app.services.billing import ensure_subscription
+                ensure_subscription(db, profile, user)
+            except Exception as e:
+                logger.warning("Subscription creation failed after onboarding payment (profile_id=%s): %s", profile_id, e)
+        else:
+            db.commit()
         logger.info("Logged invoice.paid for profile_id=%s invoice=%s", profile_id, inv.id)
 
     return {"received": True}

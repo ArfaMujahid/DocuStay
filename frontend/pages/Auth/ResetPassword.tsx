@@ -42,6 +42,14 @@ const ResetPassword: React.FC<ResetPasswordProps> = ({ setLoading, notify, navig
       showError('Invalid or missing reset link. Please use the link from your email or request a new one.');
       return;
     }
+    if (!formData.newPassword || !formData.confirmPassword) {
+      showError('Please enter and confirm your new password.');
+      return;
+    }
+    if (formData.newPassword.length < 8) {
+      showError('Password must be at least 8 characters.');
+      return;
+    }
     if (formData.newPassword !== formData.confirmPassword) {
       showError('Passwords do not match.');
       return;

@@ -511,6 +511,8 @@ export interface LivePropertyInfo {
   shield_mode_enabled: boolean;
   /** staged | released – for Quick Decision layer */
   token_state?: string;
+  tax_id?: string | null;
+  apn?: string | null;
 }
 
 export interface LiveOwnerInfo {
@@ -534,11 +536,34 @@ export interface LiveStaySummary {
   checked_out_at?: string | null;
 }
 
+/** Invitation summary – invite states indicate stay status (STAGED/BURNED/EXPIRED/REVOKED). */
+export interface LiveInvitationSummary {
+  invitation_code: string;
+  guest_label: string | null;
+  stay_start_date: string;
+  stay_end_date: string;
+  status: string;
+  token_state: string;
+}
+
 export interface LiveLogEntry {
   category: string;
   title: string;
   message: string;
   created_at: string;
+}
+
+export interface JurisdictionStatuteView {
+  citation: string;
+  plain_english?: string | null;
+}
+
+export interface JurisdictionWrap {
+  state_name: string;
+  applicable_statutes: JurisdictionStatuteView[];
+  removal_guest_text?: string | null;
+  removal_tenant_text?: string | null;
+  agreement_type?: string | null;
 }
 
 export interface LivePropertyPagePayload {
@@ -548,12 +573,14 @@ export interface LivePropertyPagePayload {
   current_guest: LiveCurrentGuestInfo | null;
   last_stay: LiveStaySummary | null;
   upcoming_stays: LiveStaySummary[];
+  invitations: LiveInvitationSummary[];
   logs: LiveLogEntry[];
   authorization_state: string; // ACTIVE | NONE | EXPIRED | REVOKED
   record_id: string;
   generated_at: string;
   poa_signed_at: string | null;
   poa_signature_id: number | null;
+  jurisdiction_wrap?: JurisdictionWrap | null;
 }
 
 /** Public portfolio page (owner): basic info + properties list. */
@@ -701,12 +728,22 @@ export interface Property {
   usat_token_state?: string;
   usat_token_released_at?: string | null;
   deleted_at?: string | null;
-  /** Shield Mode: software monitoring. ON = PASSIVE GUARD (occupied) or ACTIVE MONITORING (vacant). Owner can turn OFF. */
+  /** Shield Mode: independent of vacant/occupied. Owner can turn ON or OFF anytime. Auto ON: last day of guest's stay, and when Dead Man's Switch runs (48h after stay end). Auto OFF: when new guest accepts invitation. */
   shield_mode_enabled?: boolean;
   occupancy_status?: string;  // vacant | occupied | unknown | unconfirmed
   ownership_proof_filename?: string | null;
   ownership_proof_type?: string | null;
   ownership_proof_uploaded_at?: string | null;
+  tax_id?: string | null;
+  apn?: string | null;
+  /** From JurisdictionInfo SOT for Documentation tab (region name, stay limits, warning days). */
+  jurisdiction_documentation?: {
+    name: string;
+    region_code: string;
+    max_stay_days: number;
+    warning_days: number;
+    tenancy_threshold_days?: number | null;
+  } | null;
 }
 
 export interface BulkUploadResult {
@@ -778,6 +815,8 @@ export const propertiesApi = {
     property_type?: string;
     bedrooms?: string;
     is_primary_residence: boolean;
+    tax_id?: string;
+    apn?: string;
   }) =>
     request<Property>("/owners/properties", {
       method: "POST",
@@ -833,6 +872,8 @@ export const propertiesApi = {
     is_primary_residence?: boolean;
     owner_occupied?: boolean;
     shield_mode_enabled?: boolean;
+    tax_id?: string;
+    apn?: string;
   }) =>
     request<Property>(`/owners/properties/${id}`, {
       method: "PUT",

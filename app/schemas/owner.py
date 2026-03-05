@@ -19,6 +19,8 @@ class PropertyCreate(BaseModel):
     is_primary_residence: bool = False
     owner_occupied: bool | None = None
     property_type_enum: PropertyType | None = None
+    tax_id: str | None = None
+    apn: str | None = None
 
 
 class PropertyUpdate(BaseModel):
@@ -36,6 +38,9 @@ class PropertyUpdate(BaseModel):
     owner_occupied: bool | None = None
     property_type_enum: PropertyType | None = None
     shield_mode_enabled: bool | None = None
+    vacant_monitoring_enabled: bool | None = None
+    tax_id: str | None = None
+    apn: str | None = None
 
 
 class BulkUploadResult(BaseModel):
@@ -44,6 +49,15 @@ class BulkUploadResult(BaseModel):
     updated: int = 0
     failed_from_row: int | None = None  # 1-based; None if all succeeded
     failure_reason: str | None = None
+
+
+class PropertyJurisdictionDocumentation(BaseModel):
+    """Jurisdiction info for property Documentation tab (from JurisdictionInfo SOT)."""
+    name: str
+    region_code: str
+    max_stay_days: int
+    warning_days: int
+    tenancy_threshold_days: int | None = None
 
 
 class PropertyResponse(BaseModel):
@@ -55,6 +69,7 @@ class PropertyResponse(BaseModel):
     state: str
     zip_code: str | None
     region_code: str
+    jurisdiction_documentation: PropertyJurisdictionDocumentation | None = None  # from SOT for Documentation tab
     owner_occupied: bool
     property_type: PropertyType | None
     property_type_label: str | None
@@ -68,6 +83,12 @@ class PropertyResponse(BaseModel):
     ownership_proof_filename: str | None = None
     ownership_proof_type: str | None = None
     ownership_proof_uploaded_at: datetime | None = None
+    tax_id: str | None = None
+    apn: str | None = None
+
+    # Vacant-unit monitoring (DMS for vacant)
+    vacant_monitoring_enabled: bool = False
+    vacant_monitoring_response_due_at: datetime | None = None
 
     # Smarty standardized address (ZIP-code utility bucket / authority letters)
     smarty_delivery_line_1: str | None = None
@@ -81,6 +102,13 @@ class PropertyResponse(BaseModel):
     @field_validator("shield_mode_enabled", mode="before")
     @classmethod
     def coerce_shield_mode(cls, v: bool | int | None) -> bool:
+        if v is None:
+            return False
+        return bool(v)
+
+    @field_validator("vacant_monitoring_enabled", mode="before")
+    @classmethod
+    def coerce_vacant_monitoring(cls, v: bool | int | None) -> bool:
         if v is None:
             return False
         return bool(v)

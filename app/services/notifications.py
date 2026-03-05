@@ -546,6 +546,37 @@ def send_shield_mode_activated_email(
     return send_email(owner_email, subject, html)
 
 
+def send_vacant_monitoring_prompt(
+    owner_email: str,
+    property_name: str,
+    response_due_date: str,
+) -> bool:
+    """Vacant-unit monitoring: prompt owner to confirm unit is still vacant. Response due by response_due_date."""
+    subject = f"[DocuStay] Confirm vacancy – {property_name}"
+    html = f"""
+    <p>Hello,</p>
+    <p>You have <strong>vacant-unit monitoring</strong> enabled for <strong>{property_name}</strong>.</p>
+    <p>Please confirm that this unit is still vacant by <strong>{response_due_date}</strong> in your DocuStay dashboard. If we do not receive your confirmation, the property status will be set to UNCONFIRMED and Shield Mode will be activated.</p>
+    <p>— DocuStay</p>
+    """
+    return send_email(owner_email, subject, html)
+
+
+def send_vacant_monitoring_flipped(
+    owner_email: str,
+    property_name: str,
+) -> bool:
+    """Vacant-unit monitoring: no response by deadline – status flipped to UNCONFIRMED, Shield on."""
+    subject = f"[DocuStay] Vacant monitoring – status set to UNCONFIRMED – {property_name}"
+    html = f"""
+    <p>Hello,</p>
+    <p>No response was received by the deadline for your vacant-unit monitoring prompt for <strong>{property_name}</strong>.</p>
+    <p>The system has set occupancy status to <strong>UNCONFIRMED</strong> and activated <strong>Shield Mode</strong> for this property. You can confirm occupancy or adjust settings in your DocuStay dashboard.</p>
+    <p>— DocuStay</p>
+    """
+    return send_email(owner_email, subject, html)
+
+
 def send_sms(to_phone: str, body: str) -> bool:
     """Optional SMS via Twilio."""
     if not settings.twilio_account_sid or not settings.twilio_auth_token:

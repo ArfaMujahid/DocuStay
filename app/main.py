@@ -16,6 +16,7 @@ from app.database import Base, engine
 # Import models so Base.metadata has all tables before create_all (schema source of truth)
 from app.models import (  # noqa: F401
     User, OwnerProfile, Property, GuestProfile, Stay, RegionRule,
+    Jurisdiction, JurisdictionStatute, JurisdictionZipMapping,
     Invitation, GuestPendingInvite, AgreementSignature, ReferenceOption,
     AuditLog, OwnerPOASignature, PendingRegistration,
     PropertyUtilityProvider, PropertyAuthorityLetter,
@@ -89,11 +90,12 @@ def startup():
         Base.metadata.create_all(bind=engine)
         logger.info("[startup] Database tables created/verified")
         from app.database import SessionLocal
-        from app.seed import seed_region_rules
+        from app.seed import seed_region_rules, seed_jurisdiction_sot
         db = SessionLocal()
         try:
             seed_region_rules(db)
-            logger.info("[startup] Region rules seeded")
+            seed_jurisdiction_sot(db)
+            logger.info("[startup] Region rules and jurisdiction SOT seeded")
         finally:
             db.close()
         logger.info("[startup] Step 2 done: database OK")
@@ -139,13 +141,14 @@ def db_setup():
     try:
         Base.metadata.create_all(bind=engine)
         from app.database import SessionLocal
-        from app.seed import seed_region_rules
+        from app.seed import seed_region_rules, seed_jurisdiction_sot
         db = SessionLocal()
         try:
             seed_region_rules(db)
+            seed_jurisdiction_sot(db)
         finally:
             db.close()
-        return {"status": "ok", "message": "Tables created and region rules seeded."}
+        return {"status": "ok", "message": "Tables created and region rules + jurisdiction SOT seeded."}
     except Exception as e:
         log.exception("db-setup failed")
         return JSONResponse(

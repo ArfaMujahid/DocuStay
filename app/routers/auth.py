@@ -1144,6 +1144,10 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
         # Occupancy is set to OCCUPIED only when guest checks in (guest_check_in endpoint).
         db.commit()
         db.refresh(stay)
+        # Shield Mode turns off when a new guest accepts an invitation.
+        prop_for_shield = db.query(Property).filter(Property.id == inv.property_id).first()
+        if prop_for_shield and getattr(prop_for_shield, "shield_mode_enabled", 0) == 1:
+            prop_for_shield.shield_mode_enabled = 0
         ip = request.client.host if request.client else None
         ua = (request.headers.get("user-agent") or "").strip() or None
         create_log(
@@ -1339,6 +1343,10 @@ def accept_invite(
     ).delete(synchronize_session="fetch")
     db.commit()
     db.refresh(stay)
+    # Shield Mode turns off when a new guest accepts an invitation.
+    _prop = db.query(Property).filter(Property.id == inv.property_id).first()
+    if _prop and getattr(_prop, "shield_mode_enabled", 0) == 1:
+        _prop.shield_mode_enabled = 0
     ip = request.client.host if request.client else None
     ua = (request.headers.get("user-agent") or "").strip() or None
     create_log(

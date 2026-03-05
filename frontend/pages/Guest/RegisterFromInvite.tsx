@@ -45,6 +45,26 @@ const RegisterFromInvite: React.FC<Props> = ({ invitationId, navigate, setLoadin
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const requiredFilled =
+      formData.full_name.trim() &&
+      formData.email.trim() &&
+      formData.phone.trim() &&
+      formData.password &&
+      formData.confirm_password &&
+      formData.permanent_address.trim() &&
+      formData.permanent_city.trim() &&
+      formData.permanent_state.trim() &&
+      formData.permanent_zip.trim();
+    const allCheckboxesChecked =
+      formData.terms_agreed &&
+      formData.privacy_agreed &&
+      formData.guest_status_acknowledged &&
+      formData.no_tenancy_acknowledged &&
+      formData.vacate_acknowledged;
+    if (!requiredFilled || !allCheckboxesChecked) {
+      notify('error', 'Please fill in all required fields and accept all acknowledgments and agreements before continuing.');
+      return;
+    }
     if (!agreementSignatureId) {
       notify('error', 'You must review and sign the agreement to continue.');
       setAgreementOpen(true);

@@ -23,9 +23,14 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ role, setLoading, notif
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      showError('Please enter your email address.');
+      return;
+    }
     setLoading(true);
     try {
-      const result = await authApi.forgotPassword(email.trim(), role);
+      const result = await authApi.forgotPassword(trimmedEmail, role);
       setLoading(false);
       if (result.status === 'ok') {
         setSubmitted(true);

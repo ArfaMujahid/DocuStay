@@ -71,7 +71,7 @@ def get_invitation_agreement(
             signature_id = sig.id
             has_dropbox_signed_pdf = bool(getattr(sig, "dropbox_sign_request_id", None) or getattr(sig, "signed_pdf_bytes", None))
             date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
-            content = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str)
+            content = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str, getattr(sig, "ip_address", None))
 
     return AgreementDocResponse(
         document_id=doc.document_id,
@@ -117,7 +117,7 @@ def get_invitation_agreement_pdf(
         )
         if sig:
             date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
-            content = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str)
+            content = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str, getattr(sig, "ip_address", None))
 
     pdf_bytes = agreement_content_to_pdf(doc.title, content)
     filename = f"DocuStay-Agreement-{invitation_code.strip().upper()}.pdf"
@@ -193,7 +193,7 @@ def sign_invitation_agreement(
     db.refresh(sig)
 
     date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
-    content_with_sig = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str)
+    content_with_sig = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str, getattr(sig, "ip_address", None))
     sig.signed_pdf_bytes = agreement_content_to_pdf(doc.title, content_with_sig)
     db.commit()
 
@@ -317,7 +317,7 @@ def sign_invitation_agreement_with_dropbox(
     db.refresh(sig)
 
     date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
-    content_with_sig = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str)
+    content_with_sig = fill_guest_signature_in_content(doc.content, sig.typed_signature, date_str, getattr(sig, "ip_address", None))
     sig.signed_pdf_bytes = agreement_content_to_pdf(doc.title, content_with_sig)
     db.commit()
 
@@ -377,7 +377,7 @@ def get_signed_agreement_pdf(
             )
 
     date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
-    content = fill_guest_signature_in_content(sig.document_content, sig.typed_signature, date_str)
+    content = fill_guest_signature_in_content(sig.document_content, sig.typed_signature, date_str, getattr(sig, "ip_address", None))
     pdf_bytes = agreement_content_to_pdf(sig.document_title, content)
     sig.signed_pdf_bytes = pdf_bytes
     db.commit()

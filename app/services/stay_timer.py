@@ -14,6 +14,8 @@ from app.services.notifications import (
     send_dead_mans_switch_urgent_today,
     send_dead_mans_switch_auto_executed,
     send_shield_mode_activated_email,
+    send_vacant_monitoring_prompt,
+    send_vacant_monitoring_flipped,
 )
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_SHIELD_MODE, CATEGORY_DEAD_MANS_SWITCH
 from app.services.billing import sync_subscription_quantities
@@ -582,6 +584,95 @@ def run_dead_mans_switch_job(db: Session) -> None:
                 pass
 
 
+# Vacant monitoring audit title (idempotency)
+VACANT_MONITORING_FLIPPED = "Vacant monitoring: no response – status UNCONFIRMED"
+
+
+def run_vacant_monitoring_job(db: Session) -> None:
+    """Vacant-unit monitoring: prompt at defined intervals; no response by deadline → flip to UNCONFIRMED, Shield on."""
+    interval_days = getattr(settings, "vacant_monitoring_interval_days", 7) or 7
+    response_days = getattr(settings, "vacant_monitoring_response_days", 7) or 7
+    now = datetime.now(timezone.utc)
+    today = now.date()
+
+    vacant_with_monitoring = (
+        db.query(Property)
+        .filter(
+            Property.occupancy_status == OccupancyStatus.vacant.value,
+            Property.deleted_at.is_(None),
+        )
+        .all()
+    )
+    # Filter by vacant_monitoring_enabled (attribute may not exist on older DBs)
+    monitored = [p for p in vacant_with_monitoring if getattr(p, "vacant_monitoring_enabled", 0) == 1]
+
+    for prop in monitored:
+        last_prompted = getattr(prop, "vacant_monitoring_last_prompted_at", None)
+        response_due = getattr(prop, "vacant_monitoring_response_due_at", None)
+        confirmed_at = getattr(prop, "vacant_monitoring_confirmed_at", None)
+
+        # 1) Send prompt if due (never prompted, or interval has elapsed since last prompt)
+        due_for_prompt = last_prompted is None or (
+            (now - last_prompted).total_seconds() >= interval_days * 24 * 3600
+        )
+        if due_for_prompt:
+            prop.vacant_monitoring_last_prompted_at = now
+            prop.vacant_monitoring_response_due_at = now + timedelta(days=response_days)
+            db.add(prop)
+            db.commit()
+            profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+            owner = db.query(User).filter(User.id == profile.user_id).first() if profile else None
+            if owner and owner.email:
+                property_name = (prop.name or "").strip() or (f"{prop.city}, {prop.state}".strip(", ") if (prop.city or prop.state) else "Property")
+                response_due_date = (now + timedelta(days=response_days)).strftime("%Y-%m-%d")
+                try:
+                    send_vacant_monitoring_prompt(owner.email, property_name, response_due_date)
+                except Exception:
+                    pass
+            continue  # do not also flip in same run for this property
+
+        # 2) Flip to UNCONFIRMED if response_due_at has passed and no confirmation since last prompt
+        if response_due is None:
+            continue
+        if response_due.tzinfo is None:
+            response_due = response_due.replace(tzinfo=timezone.utc)
+        if response_due > now:
+            continue
+        if confirmed_at is not None and last_prompted is not None and confirmed_at >= last_prompted:
+            continue
+        if _dms_already_logged(db, VACANT_MONITORING_FLIPPED, property_id=prop.id):
+            continue
+
+        prev_status = getattr(prop, "occupancy_status", None) or "vacant"
+        prop.occupancy_status = OccupancyStatus.unconfirmed.value
+        prop.shield_mode_enabled = 1
+        prop.vacant_monitoring_response_due_at = None
+        db.add(prop)
+        create_log(
+            db,
+            CATEGORY_STATUS_CHANGE,
+            VACANT_MONITORING_FLIPPED,
+            f"Vacant monitoring: no response by deadline. Property {prop.id} status {prev_status} -> unconfirmed; Shield Mode on.",
+            property_id=prop.id,
+            meta={"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.unconfirmed.value},
+        )
+        db.commit()
+        profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+        try:
+            if profile:
+                sync_subscription_quantities(db, profile)
+        except Exception:
+            pass
+        owner = db.query(User).filter(User.id == profile.user_id).first() if profile else None
+        if owner and owner.email:
+            property_name = (prop.name or "").strip() or (f"{prop.city}, {prop.state}".strip(", ") if (prop.city or prop.state) else "Property")
+            try:
+                send_vacant_monitoring_flipped(owner.email, property_name)
+                send_shield_mode_activated_email(owner.email, property_name, triggered_by_dead_mans_switch=False)
+            except Exception:
+                pass
+
+
 def run_stay_notification_job() -> None:
     """Run once per day (or on demand): find stays approaching limit, send emails; then detect overstays, email owner+guest and log; then Dead Man's Switch."""
     if not settings.notification_cron_enabled:
@@ -595,5 +686,6 @@ def run_stay_notification_job() -> None:
             send_legal_warnings_for_stay(stay, db, statute_ref or stay.region_code)
         send_overstay_alerts_and_log(db)
         run_dead_mans_switch_job(db)
+        run_vacant_monitoring_job(db)
     finally:
         db.close()

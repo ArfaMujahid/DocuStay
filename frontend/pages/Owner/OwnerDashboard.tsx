@@ -84,6 +84,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
   const [billing, setBilling] = useState<BillingResponse | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
   const [paymentReturnMessage, setPaymentReturnMessage] = useState<string | null>(null);
+  const [showVoidInvoiceDialog, setShowVoidInvoiceDialog] = useState(false);
 
   const setLoadingWrapper = (x: boolean) => { setLoadingState(x); setLoading(x); };
 
@@ -838,7 +839,27 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                           onClick={() => navigate(`property/${prop.id}`)}
                           className="min-w-0 flex-1 text-left hover:opacity-90 transition-opacity"
                         >
-                          <h3 className="text-lg font-bold text-slate-800 truncate">{displayName}</h3>
+                          <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                            <h3 className="text-lg font-bold text-slate-800 truncate">{displayName}</h3>
+                            {(() => {
+                              const displayStatus = isOccupied ? 'OCCUPIED' : (prop.occupancy_status ?? 'unknown').toUpperCase();
+                              return (
+                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase ${
+                                  displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
+                                  displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                                  displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                                  'bg-slate-100 text-slate-600'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
+                                    displayStatus === 'VACANT' ? 'bg-slate-400' :
+                                    displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                                  }`} />
+                                  {displayStatus}
+                                </span>
+                              );
+                            })()}
+                          </div>
                           <p className="text-sm text-slate-600 mt-1 truncate">{address || '—'}</p>
                           <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-500">
                             <span>Region: <span className="text-slate-600 font-medium">{prop.region_code}</span></span>
@@ -903,7 +924,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         </div>
                       </div>
 
-                      {/* Shield Mode: turns on automatically on last day of guest's stay; owner can only turn OFF */}
+                      {/* Shield Mode: independent of vacant/occupied; owner can turn ON or OFF anytime. Auto ON: last day of stay, DMS run (48h after stay end). Auto OFF: when new guest accepts invitation. */}
                       <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                         <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Shield Mode</p>
                         <div className="flex flex-wrap items-center gap-4">
@@ -912,14 +933,13 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                               type="button"
                               role="switch"
                               aria-checked={shieldOn}
-                              disabled={shieldTogglePropertyId === prop.id || !shieldOn}
-                              title={!shieldOn ? "Shield Mode turns on automatically on the last day of a guest's stay" : 'Turn Shield Mode off'}
+                              disabled={shieldTogglePropertyId === prop.id}
+                              title={shieldOn ? 'Turn Shield Mode off' : 'Turn Shield Mode on'}
                               onClick={async () => {
-                                if (!shieldOn) return;
                                 setShieldTogglePropertyId(prop.id);
                                 try {
-                                  await propertiesApi.update(prop.id, { shield_mode_enabled: false });
-                                  notify('success', 'Shield Mode turned off.');
+                                  await propertiesApi.update(prop.id, { shield_mode_enabled: !shieldOn });
+                                  notify('success', shieldOn ? 'Shield Mode turned off.' : 'Shield Mode turned on.');
                                   loadData();
                                 } catch (e) {
                                   notify('error', (e as Error)?.message ?? 'Failed to update Shield Mode.');
@@ -927,7 +947,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                   setShieldTogglePropertyId(null);
                                 }
                               }}
-                              className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${shieldOn ? 'cursor-pointer bg-emerald-600' : 'cursor-not-allowed bg-slate-200 opacity-60'} ${shieldTogglePropertyId === prop.id ? 'opacity-50' : ''}`}
+                              className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${shieldOn ? 'cursor-pointer bg-emerald-600' : 'cursor-pointer bg-slate-200 hover:bg-slate-300'} ${shieldTogglePropertyId === prop.id ? 'opacity-50' : ''}`}
                             >
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${shieldOn ? 'translate-x-5' : 'translate-x-1'}`} />
                             </button>
@@ -939,7 +959,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                             </span>
                           )}
                           {!shieldOn && (
-                            <span className="text-xs text-slate-500">Turns on automatically on the last day of a guest&apos;s stay</span>
+                            <span className="text-xs text-slate-500">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when Dead Man&apos;s Switch runs (48h after stay end).</span>
                           )}
                           <span className="text-xs text-slate-400">$10/month subscription</span>
                         </div>
@@ -983,11 +1003,27 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                   {inactiveProperties.map((prop) => {
                     const address = [prop.street, prop.city, prop.state, prop.zip_code].filter(Boolean).join(', ');
                     const displayName = prop.name || address || `Property #${prop.id}`;
+                    const displayStatus = (prop.occupancy_status ?? 'unknown').toUpperCase();
                     return (
                       <Card key={prop.id} className="p-6 border border-slate-200 bg-slate-50/50">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                           <div className="min-w-0 flex-1">
-                            <h3 className="text-lg font-bold text-slate-700 truncate">{displayName}</h3>
+                            <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                              <h3 className="text-lg font-bold text-slate-700 truncate">{displayName}</h3>
+                              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase ${
+                                displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
+                                displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                                displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
+                                  displayStatus === 'VACANT' ? 'bg-slate-400' :
+                                  displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                                }`} />
+                                {displayStatus}
+                              </span>
+                            </div>
                             <p className="text-sm text-slate-600 mt-1 truncate">{address || '—'}</p>
                             <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-500">
                               <span>Region: <span className="text-slate-600 font-medium">{prop.region_code}</span></span>
@@ -1049,7 +1085,9 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 <>
                   <div className="mb-6">
                     <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Invoices</h4>
-                    {!billing || billing.invoices.length === 0 ? (
+                    {(() => {
+                      const displayInvoices = (billing?.invoices ?? []).filter((inv: BillingInvoiceView) => inv.status !== 'draft');
+                      return !billing || displayInvoices.length === 0 ? (
                       <p className="text-slate-500 text-sm">No invoices yet. Invoices are created when you add your first properties (onboarding fee) and for monthly subscription.</p>
                     ) : (
                       <div className="overflow-x-auto border border-slate-200 rounded-lg">
@@ -1065,7 +1103,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
-                            {billing.invoices.map((inv: BillingInvoiceView) => (
+                            {displayInvoices.map((inv: BillingInvoiceView) => (
                               <tr key={inv.id} className="hover:bg-slate-50">
                                 <td className="px-4 py-3 text-slate-600">{new Date(inv.created).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                                 <td className="px-4 py-3 font-mono text-slate-700">{inv.number ?? inv.id.slice(0, 12)}</td>
@@ -1075,11 +1113,20 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                                     inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
                                     inv.status === 'open' ? 'bg-amber-100 text-amber-800' :
+                                    inv.status === 'void' ? 'bg-slate-200 text-slate-600' :
                                     'bg-slate-100 text-slate-700'
                                   }`}>{inv.status}</span>
                                 </td>
                                 <td className="px-4 py-3">
-                                  {inv.status !== 'paid' ? (
+                                  {inv.status === 'void' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowVoidInvoiceDialog(true)}
+                                      className="text-blue-600 hover:underline"
+                                    >
+                                      Pay invoice
+                                    </button>
+                                  ) : inv.status !== 'paid' ? (
                                     inv.hosted_invoice_url ? (
                                       <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Pay invoice</a>
                                     ) : (
@@ -1104,7 +1151,8 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                           </tbody>
                         </table>
                       </div>
-                    )}
+                    );
+                    })()}
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Payments</h4>
@@ -1374,7 +1422,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       >
         <div className="px-6 py-4 space-y-3 text-slate-600 text-sm">
           <p><strong>Required columns:</strong> <code className="bg-slate-100 px-1 rounded">street_address</code> (or <code className="bg-slate-100 px-1 rounded">street</code>), <code className="bg-slate-100 px-1 rounded">city</code>, <code className="bg-slate-100 px-1 rounded">state</code>.</p>
-          <p><strong>Optional columns:</strong> <code className="bg-slate-100 px-1 rounded">property_name</code>, <code className="bg-slate-100 px-1 rounded">zip_code</code>, <code className="bg-slate-100 px-1 rounded">region_code</code>, <code className="bg-slate-100 px-1 rounded">property_type</code>, <code className="bg-slate-100 px-1 rounded">bedrooms</code>, <code className="bg-slate-100 px-1 rounded">is_primary_residence</code> (true/false).</p>
+          <p><strong>Optional columns:</strong> <code className="bg-slate-100 px-1 rounded">property_name</code>, <code className="bg-slate-100 px-1 rounded">zip_code</code>, <code className="bg-slate-100 px-1 rounded">region_code</code>, <code className="bg-slate-100 px-1 rounded">property_type</code>, <code className="bg-slate-100 px-1 rounded">bedrooms</code>, <code className="bg-slate-100 px-1 rounded">is_primary_residence</code> (true/false), <code className="bg-slate-100 px-1 rounded">tax_id</code>, <code className="bg-slate-100 px-1 rounded">apn</code>.</p>
           <p>Existing properties (same street, city, state) are updated only when values change. Empty optional cells keep existing values.</p>
           <p>If the upload fails partway, rows before the failure are saved.</p>
         </div>
@@ -1389,16 +1437,16 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       >
         <div className="px-6 py-4 space-y-4">
           <p className="text-slate-600 text-sm">
-            Use a CSV with: <strong>Required:</strong> <code className="bg-slate-100 px-1 rounded">Address</code>, <code className="bg-slate-100 px-1 rounded">City</code>, <code className="bg-slate-100 px-1 rounded">State</code>, <code className="bg-slate-100 px-1 rounded">Zip</code>, <code className="bg-slate-100 px-1 rounded">Occupied</code> (YES/NO). <strong>If Occupied=YES:</strong> <code className="bg-slate-100 px-1 rounded">Tenant Name</code>, <code className="bg-slate-100 px-1 rounded">Lease Start</code>, <code className="bg-slate-100 px-1 rounded">Lease End</code>. <strong>Optional:</strong> <code className="bg-slate-100 px-1 rounded">Unit No</code>, <code className="bg-slate-100 px-1 rounded">Shield Mode</code> (YES/NO, default NO).
+            Use a CSV with: <strong>Required:</strong> <code className="bg-slate-100 px-1 rounded">Address</code>, <code className="bg-slate-100 px-1 rounded">City</code>, <code className="bg-slate-100 px-1 rounded">State</code>, <code className="bg-slate-100 px-1 rounded">Zip</code>, <code className="bg-slate-100 px-1 rounded">Occupied</code> (YES/NO). <strong>If Occupied=YES:</strong> <code className="bg-slate-100 px-1 rounded">Tenant Name</code>, <code className="bg-slate-100 px-1 rounded">Lease Start</code>, <code className="bg-slate-100 px-1 rounded">Lease End</code>. <strong>Optional:</strong> <code className="bg-slate-100 px-1 rounded">Unit No</code>, <code className="bg-slate-100 px-1 rounded">Shield Mode</code> (YES/NO, default NO), <code className="bg-slate-100 px-1 rounded">Tax ID</code>, <code className="bg-slate-100 px-1 rounded">APN</code>.
           </p>
           <p className="text-xs text-slate-500">
-            Occupied=YES: property token is burned, tenant is recorded, an invite link is created (BURNED) with Dead-Man Switch from lease end. Occupied=NO: token stays STAGED, status VACANT. Shield Mode YES adds $10/month. Existing properties (same address, city, state) are updated when values change.
+            Occupied=YES: property token is burned, tenant is recorded, an invite link is created (BURNED) with Dead-Man Switch from lease end. Occupied=NO: token stays STAGED, status VACANT. Shield Mode is independent of Occupied—you can turn it on or off anytime in the dashboard; Shield Mode YES in CSV or when on adds $10/month. Existing properties (same address, city, state) are updated when values change.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button
               variant="outline"
               onClick={() => {
-                const header = 'Address,Unit No,City,State,Zip,Occupied,Tenant Name,Lease Start,Lease End,Shield Mode';
+                const header = 'Address,Unit No,City,State,Zip,Occupied,Tenant Name,Lease Start,Lease End,Shield Mode,Tax ID,APN';
                 const exampleOccupied = '123 Ocean Ave,,Miami,FL,33139,YES,Jane Doe,2025-01-01,2025-12-31,NO';
                 const exampleVacant = '456 Oak St,,Austin,TX,78701,NO,,,NO';
                 const blob = new Blob([header + '\n' + exampleOccupied + '\n' + exampleVacant], { type: 'text/csv' });
@@ -1464,6 +1512,34 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             )
           )}
           <Button onClick={() => setBulkUploadResult(null)}>Done</Button>
+        </div>
+      </Modal>
+
+      {/* Void invoice: cannot be paid; direct user to contact support */}
+      <Modal
+        open={showVoidInvoiceDialog}
+        title="This invoice cannot be paid"
+        onClose={() => setShowVoidInvoiceDialog(false)}
+        className="max-w-md"
+      >
+        <div className="px-6 py-4 space-y-4">
+          <p className="text-slate-600 text-sm">
+            This invoice is void and cannot be paid. Please contact support.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="primary"
+              onClick={() => {
+                setShowVoidInvoiceDialog(false);
+                navigate('help');
+              }}
+            >
+              Contact support
+            </Button>
+            <Button variant="outline" onClick={() => setShowVoidInvoiceDialog(false)}>
+              Close
+            </Button>
+          </div>
         </div>
       </Modal>
 

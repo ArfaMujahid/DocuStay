@@ -41,8 +41,10 @@ class LivePropertyInfo(BaseModel):
     zip_code: str | None
     region_code: str
     occupancy_status: str  # vacant | occupied | unknown | unconfirmed
-    shield_mode_enabled: bool  # mode: when True = PASSIVE GUARD or ACTIVE MONITORING
+    shield_mode_enabled: bool  # Independent of occupancy. When True, display as PASSIVE GUARD (occupied) or ACTIVE MONITORING (vacant).
     token_state: str = "staged"  # staged | released – for Quick Decision layer
+    tax_id: str | None = None
+    apn: str | None = None
 
 
 class LiveOwnerInfo(BaseModel):
@@ -69,12 +71,37 @@ class LiveStaySummary(BaseModel):
     checked_out_at: datetime | None = None
 
 
+class LiveInvitationSummary(BaseModel):
+    """Invitation summary for live page – invite states indicate stay status."""
+    invitation_code: str
+    guest_label: str | None  # guest_name or guest_email (no PII beyond what owner entered)
+    stay_start_date: date
+    stay_end_date: date
+    status: str  # pending, ongoing, accepted, cancelled
+    token_state: str  # STAGED, BURNED, EXPIRED, REVOKED
+
+
 class LiveLogEntry(BaseModel):
     """Single audit log entry for property (public view)."""
     category: str
     title: str
     message: str
     created_at: datetime
+
+
+class JurisdictionStatuteView(BaseModel):
+    """Single statute citation for authority wrap."""
+    citation: str
+    plain_english: str | None = None
+
+
+class JurisdictionWrap(BaseModel):
+    """Jurisdictional POA wrap: applicable law for this property (by zip/region)."""
+    state_name: str
+    applicable_statutes: list[JurisdictionStatuteView] = []
+    removal_guest_text: str | None = None
+    removal_tenant_text: str | None = None
+    agreement_type: str | None = None
 
 
 class LivePropertyPagePayload(BaseModel):
@@ -85,6 +112,7 @@ class LivePropertyPagePayload(BaseModel):
     current_guest: LiveCurrentGuestInfo | None = None
     last_stay: LiveStaySummary | None = None
     upcoming_stays: list[LiveStaySummary] = []
+    invitations: list[LiveInvitationSummary] = []  # invite states → stay status
     logs: list[LiveLogEntry] = []
     # Quick Decision / evidence layer
     authorization_state: str  # ACTIVE | NONE | EXPIRED | REVOKED
@@ -93,3 +121,5 @@ class LivePropertyPagePayload(BaseModel):
     # Authority layer (Master POA)
     poa_signed_at: datetime | None = None
     poa_signature_id: int | None = None  # for View POA link
+    # Jurisdictional wrap: applicable law for this property (by zip)
+    jurisdiction_wrap: JurisdictionWrap | None = None
