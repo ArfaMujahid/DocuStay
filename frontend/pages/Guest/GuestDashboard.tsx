@@ -130,19 +130,23 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       });
   }, [user]);
 
-  const loadData = useCallback(() => {
-    Promise.all([
+  const loadData = useCallback((): Promise<[GuestStayView[], GuestPendingInviteView[]]> => {
+    return Promise.all([
       dashboardApi.guestStays(),
       dashboardApi.guestPendingInvites().catch(() => []),
     ])
       .then(([staysData, pendingData]) => {
-        setStays(staysData);
+        // Deduplicate stays by stay_id (fixes duplicate display after signup flow)
+        const uniqueStays = [...new Map(staysData.map((s) => [s.stay_id, s])).values()];
+        setStays(uniqueStays);
         setPendingInvites(pendingData);
+        return [uniqueStays, pendingData];
       })
       .catch((e) => {
         const msg = (e as Error)?.message ?? 'Failed to load data.';
         setError(msg);
         notify('error', msg);
+        throw e;
       })
       .finally(() => setLoading(false));
   }, []);
@@ -166,9 +170,25 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
     if (toAccept.length === 0) return;
     Promise.all(
       toAccept.map((inv) => authApi.acceptInvite(inv.invitation_code, inv.accept_now_signature_id))
-    ).then(() => {
-      loadData();
-      notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+    ).then(async () => {
+      try {
+        const [staysData] = await loadData();
+        const firstInv = toAccept[0];
+        const newStay = staysData.find(
+          (s) =>
+            s.approved_stay_start_date === firstInv.stay_start_date &&
+            s.approved_stay_end_date === firstInv.stay_end_date &&
+            s.property_name === firstInv.property_name
+        );
+        if (newStay) {
+          setSelectedStay(newStay);
+          setStayFilter('all');
+        }
+        notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+      } catch {
+        loadData();
+        notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+      }
     }).catch((e) => {
       toAccept.forEach((inv) => acceptFailedRef.current.add(`${inv.invitation_code}:${inv.accept_now_signature_id}`));
       notify('error', (e as Error)?.message ?? 'Could not confirm your stay.');
@@ -197,9 +217,19 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
           clearInterval(t);
           sessionStorage.removeItem(DROPBOX_REDIRECT_INVITATION_CODE);
           sessionStorage.removeItem(DROPBOX_REDIRECT_SIGNATURE_ID);
-          authApi.acceptInvite(code, sigId).then(() => {
-            loadData();
-            notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+          authApi.acceptInvite(code, sigId).then(async () => {
+            try {
+              const [staysData] = await loadData();
+              const newStay = staysData.find((s) => s.invite_id === code);
+              if (newStay) {
+                setSelectedStay(newStay);
+                setStayFilter('all');
+              }
+              notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+            } catch {
+              loadData();
+              notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+            }
           }).catch((e) => {
             notify('error', (e as Error)?.message ?? 'Could not confirm your stay.');
           });
@@ -245,10 +275,25 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       agreementsApi.getSignatureStatus(sigId).then((res) => {
         if (res.completed) {
           clearInterval(t);
-          authApi.acceptInvite(inv.invitation_code, sigId).then(() => {
-            loadData();
+          authApi.acceptInvite(inv.invitation_code, sigId).then(async () => {
             setPendingSignatureModalInvite(null);
-            notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+            try {
+              const [staysData] = await loadData();
+              const newStay = staysData.find(
+                (s) =>
+                  s.approved_stay_start_date === inv.stay_start_date &&
+                  s.approved_stay_end_date === inv.stay_end_date &&
+                  s.property_name === inv.property_name
+              );
+              if (newStay) {
+                setSelectedStay(newStay);
+                setStayFilter('all');
+              }
+              notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+            } catch {
+              notify('error', 'Could not load your stay. Please refresh the page.');
+              loadData();
+            }
           }).catch((e) => {
             notify('error', (e as Error)?.message ?? 'Could not confirm your stay.');
             loadData();
