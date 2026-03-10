@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Input, Button, ErrorModal } from '../../components/UI';
+import { Input, Button, ErrorModal } from '../../components/UI';
 import { HeroBackground } from '../../components/HeroBackground';
+import { AuthCardLayout, AuthBullet } from '../../components/AuthCardLayout';
 import { authApi } from '../../services/api';
 import { validatePhone } from '../../utils/validatePhone';
 
@@ -47,6 +48,7 @@ const RegisterManager: React.FC<RegisterManagerProps> = ({ inviteToken, onLogin,
     const newErrors: Record<string, string> = {};
     if (!formData.full_name.trim()) newErrors.full_name = 'Full name is required.';
     if (!formData.email.trim()) newErrors.email = 'Email is required.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) newErrors.email = 'Please enter a valid email address.';
     if (formData.phone && !validatePhone(formData.phone).valid) newErrors.phone = validatePhone(formData.phone).error ?? 'Invalid phone.';
     if (!formData.password) newErrors.password = 'Password is required.';
     if (formData.password && formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters.';
@@ -91,10 +93,12 @@ const RegisterManager: React.FC<RegisterManagerProps> = ({ inviteToken, onLogin,
   if (!inviteData) {
     return (
       <HeroBackground className="flex-grow flex items-center justify-center">
-        <Card className="max-w-md mx-auto p-6 text-center">
-          <p className="text-gray-600 mb-4">Invalid or expired invitation. Please use the link from your invitation email.</p>
-          <Button onClick={() => navigate('login/property_manager')}>Back to Login</Button>
-        </Card>
+        <AuthCardLayout singleColumn maxWidth="2xl">
+          <div className="text-center">
+            <p className="text-slate-600 mb-4">Invalid or expired invitation. Please use the link from your invitation email.</p>
+            <Button onClick={() => navigate('login/property_manager')}>Back to Login</Button>
+          </div>
+        </AuthCardLayout>
         <ErrorModal open={errorModal.open} message={errorModal.message} onClose={() => setErrorModal((p) => ({ ...p, open: false }))} />
       </HeroBackground>
     );
@@ -102,10 +106,19 @@ const RegisterManager: React.FC<RegisterManagerProps> = ({ inviteToken, onLogin,
 
   return (
     <HeroBackground className="flex-grow">
-      <div className="w-full max-w-2xl mx-auto p-6">
-        <Card className="p-8">
-          <h1 className="text-xl font-semibold text-gray-900 mb-1">Property Manager Signup</h1>
-          <p className="text-gray-600 text-sm mb-6">You've been invited to manage {inviteData.property_name}. Create your account below.</p>
+      <AuthCardLayout maxWidth="4xl" leftPanel={
+        <>
+          <h2 className="text-2xl font-semibold text-slate-900 mb-3">Property Manager Signup</h2>
+          <p className="text-slate-600 text-sm mb-8">You&apos;ve been invited to manage <strong>{inviteData.property_name}</strong>.</p>
+          <ul className="space-y-3">
+            <AuthBullet>Create your account with the invited email</AuthBullet>
+            <AuthBullet>Complete identity verification</AuthBullet>
+            <AuthBullet>Access your property management dashboard</AuthBullet>
+          </ul>
+        </>
+      }>
+          <h1 className="text-xl font-semibold text-slate-900 mb-1 lg:hidden">Property Manager Signup</h1>
+          <p className="text-slate-600 text-sm mb-6">Create your account below.</p>
           <form onSubmit={handleSubmit} className="space-y-5">
             <Input
               label="Full Name"
@@ -126,7 +139,6 @@ const RegisterManager: React.FC<RegisterManagerProps> = ({ inviteToken, onLogin,
               required
               error={errors.email}
               readOnly
-              className="bg-gray-50"
             />
             <Input
               label="Phone"
@@ -158,14 +170,13 @@ const RegisterManager: React.FC<RegisterManagerProps> = ({ inviteToken, onLogin,
             />
             <Button type="submit" className="w-full py-2.5">Create Account</Button>
           </form>
-          <p className="mt-6 text-center text-gray-500 text-sm">
+          <p className="mt-6 text-center text-slate-500 text-sm">
             Already have an account?{' '}
-            <button type="button" onClick={() => navigate('login/property_manager')} className="text-blue-700 font-medium hover:underline">
+            <button type="button" onClick={() => navigate('login/property_manager')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline">
               Log in
             </button>
           </p>
-        </Card>
-      </div>
+      </AuthCardLayout>
       <ErrorModal open={errorModal.open} message={errorModal.message} onClose={() => setErrorModal((p) => ({ ...p, open: false }))} />
     </HeroBackground>
   );

@@ -64,7 +64,7 @@ from app.utility_providers.pending_provider_verification_job import run_pending_
 from app.utility_providers.sqlite_cache import add_pending_provider, get_pending_providers_for_property
 from app.config import get_settings
 from app.services.authority_letter_email import send_authority_letter_to_provider
-from app.services.notifications import send_manager_invite_email
+from app.services.notifications import send_manager_invite_email, send_shield_mode_turned_on_notification, send_dead_mans_switch_enabled_notification
 from app.services.dropbox_sign import get_signed_pdf
 from app.services.billing import on_onboarding_properties_completed, ensure_subscription, sync_subscription_quantities
 from app.services.permissions import can_perform_action, can_assign_property_manager, Action
@@ -1997,6 +1997,23 @@ def update_property(
                 ip_address=ip,
                 user_agent=ua,
             )
+            if new_shield == 1:
+                owner_user = None
+                if getattr(prop, "owner_profile_id", None):
+                    profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+                    owner_user = db.query(User).filter(User.id == profile.user_id).first() if profile else None
+                owner_email = (owner_user.email or "").strip() if owner_user else ""
+                manager_emails = [
+                    (u.email or "").strip()
+                    for a in db.query(PropertyManagerAssignment).filter(PropertyManagerAssignment.property_id == prop.id).all()
+                    for u in [db.query(User).filter(User.id == a.user_id).first()]
+                    if u and (u.email or "").strip()
+                ]
+                turned_on_by = "property manager" if current_user.role == UserRole.property_manager else "property owner"
+                try:
+                    send_shield_mode_turned_on_notification(owner_email, manager_emails, property_name, turned_on_by=turned_on_by)
+                except Exception as e:
+                    print(f"[Owners] Shield mode notification failed: {e}", flush=True)
     db.commit()
     db.refresh(prop)
     if "shield_mode_enabled" in (changes_meta or {}):
@@ -2324,6 +2341,22 @@ def create_invitation(
         ip_address=ip,
         user_agent=ua,
     )
+    if dms == 1:
+        property_name = (prop.name or "").strip() or f"{getattr(prop, 'city', '')}, {getattr(prop, 'state', '')}".strip(", ") or f"Property {prop.id}"
+        owner_profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+        owner_user = db.query(User).filter(User.id == owner_profile.user_id).first() if owner_profile else None
+        owner_email = (owner_user.email or "").strip() if owner_user else ""
+        manager_emails = [
+            (u.email or "").strip()
+            for a in db.query(PropertyManagerAssignment).filter(PropertyManagerAssignment.property_id == prop.id).all()
+            for u in [db.query(User).filter(User.id == a.user_id).first()]
+            if u and (u.email or "").strip()
+        ]
+        guest_name = (data.guest_name or "").strip() or (data.guest_email or "Guest").strip() or "Guest"
+        try:
+            send_dead_mans_switch_enabled_notification(owner_email, manager_emails, property_name, guest_name, str(end))
+        except Exception as e:
+            print(f"[Owners] DMS enabled notification failed: {e}", flush=True)
     db.commit()
     return {"invitation_code": code}
 
@@ -2540,8 +2573,12 @@ def get_invitation_details(
 ):
     """Public: get invitation details by code for the invite signup page (guest or tenant). Type comes from invitation_kind in DB."""
     code = code.strip().upper()
-    inv = db.query(Invitation).filter(Invitation.invitation_code == code, Invitation.status.in_(["pending", "ongoing"])).first()
+    inv = db.query(Invitation).filter(Invitation.invitation_code == code).first()
     if not inv:
+        return {"valid": False}
+    if inv.status == "accepted":
+        return {"valid": False, "already_accepted": True}
+    if inv.status not in ("pending", "ongoing"):
         return {"valid": False}
     prop = db.query(Property).filter(Property.id == inv.property_id).first()
     owner = db.query(User).filter(User.id == inv.owner_id).first()

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Modal, LoadingOverlay, Input } from '../../components/UI';
 import { InviteGuestModal } from '../../components/InviteGuestModal';
 import { InviteRoleChoiceModal } from '../../components/InviteRoleChoiceModal';
+import { InviteTenantModal } from '../../components/InviteTenantModal';
 import { UserSession } from '../../types';
 import { dashboardApi, propertiesApi, getContextMode, setContextMode, onPropertiesChanged, type OwnerStayView, type OwnerInvitationView, type OwnerAuditLogEntry, type Property, type BulkUploadResult, type BillingResponse, type BillingInvoiceView, type BillingPaymentView } from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
@@ -11,6 +12,7 @@ import { toUserFriendlyInvitationError } from '../../utils/invitationErrors';
 import Settings from '../Settings/Settings';
 import HelpCenter from '../Support/HelpCenter';
 import { ModeSwitcher } from '../../components/ModeSwitcher';
+import { InvitationsTabContent } from '../../components/InvitationsTabContent';
 
 function daysLeft(endDateStr: string): number {
   const end = new Date(endDateStr);
@@ -68,12 +70,6 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showInviteRoleChoice, setShowInviteRoleChoice] = useState(false);
   const [showInviteTenantModal, setShowInviteTenantModal] = useState(false);
-  const [inviteTenantPropertyId, setInviteTenantPropertyId] = useState<number | null>(null);
-  const [inviteTenantUnits, setInviteTenantUnits] = useState<Array<{ id: number; unit_label: string }>>([]);
-  const [inviteTenantUnitId, setInviteTenantUnitId] = useState<number | null>(null);
-  const [inviteTenantForm, setInviteTenantForm] = useState({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
-  const [inviteTenantSubmitting, setInviteTenantSubmitting] = useState(false);
-  const [inviteTenantLink, setInviteTenantLink] = useState<string | null>(null);
   const [revokeConfirmStay, setRevokeConfirmStay] = useState<OwnerStayView | null>(null);
   const [revokeSuccessGuest, setRevokeSuccessGuest] = useState<string | null>(null);
   const [packetModalStay, setPacketModalStay] = useState<OwnerStayView | null>(null);
@@ -95,6 +91,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
   const [billing, setBilling] = useState<BillingResponse | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
   const [paymentReturnMessage, setPaymentReturnMessage] = useState<string | null>(null);
+  const [paymentReturnIsError, setPaymentReturnIsError] = useState(false);
   const [showVoidInvoiceDialog, setShowVoidInvoiceDialog] = useState(false);
   const [showVerifyQRModal, setShowVerifyQRModal] = useState(false);
   const [verifyQRInviteId, setVerifyQRInviteId] = useState<string | null>(null);
@@ -259,11 +256,15 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
     const hash = window.location.hash || '';
     const hasPaymentReturn = /redirect_status=|payment_intent=|payment_intent_client_secret=/.test(search) || /[?&]redirect_status=|[?&]payment_intent=/.test(hash);
     if (!hasPaymentReturn) return;
+    const paymentFailed = /redirect_status=failed|payment_failed/.test(search) || /[?&]redirect_status=failed|[?&]payment_failed/.test(hash);
     setBillingLoading(true);
     dashboardApi.billing()
       .then((data) => {
         setBilling(data);
-        setPaymentReturnMessage("We've refreshed your payment status. If you just paid, your invoice and invite access are now updated.");
+        setPaymentReturnIsError(!!paymentFailed);
+        setPaymentReturnMessage(paymentFailed
+          ? "Your payment could not be processed. Please update your payment method in the payment portal and try again."
+          : "We've refreshed your payment status. If you just paid, your invoice and invite access are now updated.");
         // Clear payment params from URL so we don't re-trigger; keep user on Billing tab
         window.history.replaceState(null, '', window.location.pathname + '#dashboard/billing');
       })
@@ -587,329 +588,16 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             )}
           </div>
         ) : activeTab === 'invitations' ? (
-          /* Invitations tab: Pending, Accepted, Cancelled */
-          <div className="space-y-8">
-            <p className="text-slate-500 text-sm">
-              Invitations you’ve sent. Pending invitations are labeled as expired after 12 hours if not accepted.
-            </p>
-
-            {/* Pending (within 12h window) */}
-            <Card className="overflow-hidden">
-              <div className="p-6 border-b border-slate-200 bg-amber-50">
-                <h3 className="text-xl font-bold text-slate-800">Pending</h3>
-                <p className="text-xs text-slate-500 mt-1">Invites not yet accepted (within 12-hour window)</p>
-              </div>
-              <div className="overflow-x-auto">
-                {invitations.filter((i) => i.status === 'pending' && !i.is_expired).length === 0 ? (
-                  <p className="p-6 text-slate-500 text-sm">No pending invitations.</p>
-                ) : (
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
-                      <tr>
-                        <th className="px-6 py-4">Invited (email)</th>
-                        <th className="px-6 py-4">Property</th>
-                        <th className="px-6 py-4">Planned stay</th>
-                        <th className="px-6 py-4">Region</th>
-                        <th className="px-6 py-4">Invitation code</th>
-                        <th className="px-6 py-4">Invite ID status</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {invitations.filter((i) => i.status === 'pending' && !i.is_expired).map((inv) => (
-                        <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-5">
-                            <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
-                          </td>
-                          <td className="px-6 py-5">
-                            <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                            <p className="text-xs text-slate-500">{inv.region_code}</p>
-                          </td>
-                          <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
-                            {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
-                          </td>
-                          <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                          <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
-                          <td className="px-6 py-5">
-                            <TokenStateBadge tokenState={inv.token_state} />
-                          </td>
-                          <td className="px-6 py-5">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-700 border border-amber-200">Pending</span>
-                          </td>
-                          <td className="px-6 py-5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={async () => {
-                                  const url = `${typeof window !== 'undefined' ? window.location.origin : ''}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inv.invitation_code}`;
-                                  const ok = await copyToClipboard(url);
-                                  if (ok) notify('success', 'Invitation link copied to clipboard.');
-                                  else notify('error', 'Could not copy. Please copy the link manually.');
-                                }}
-                              >
-                                Copy link
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => { setVerifyQRInviteId(inv.invitation_code); setShowVerifyQRModal(true); }}>Verify QR</Button>
-                              <Button variant="outline" size="sm" onClick={async () => { try { await dashboardApi.cancelInvitation(inv.id); notify('success', 'Invitation cancelled.'); loadData(); } catch (e) { notify('error', (e as Error)?.message ?? 'Failed to cancel.'); } }}>Cancel invite</Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </Card>
-
-            {/* Expired (pending but 12h window exceeded) */}
-            <Card className="overflow-hidden">
-              <div className="p-6 border-b border-slate-200 bg-slate-100">
-                <h3 className="text-xl font-bold text-slate-800">Expired invites</h3>
-                <p className="text-xs text-slate-500 mt-1">Pending invites whose 12-hour window was exceeded (not accepted in time)</p>
-              </div>
-              <div className="overflow-x-auto">
-                {invitations.filter((i) => i.is_expired).length === 0 ? (
-                  <p className="p-6 text-slate-500 text-sm">No expired invitations.</p>
-                ) : (
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
-                      <tr>
-                        <th className="px-6 py-4">Invited (email)</th>
-                        <th className="px-6 py-4">Property</th>
-                        <th className="px-6 py-4">Planned stay</th>
-                        <th className="px-6 py-4">Region</th>
-                        <th className="px-6 py-4">Invitation code</th>
-                        <th className="px-6 py-4">Invite ID status</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {invitations.filter((i) => i.is_expired).map((inv) => (
-                        <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-5">
-                            <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
-                          </td>
-                          <td className="px-6 py-5">
-                            <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                            <p className="text-xs text-slate-500">{inv.region_code}</p>
-                          </td>
-                          <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
-                            {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
-                          </td>
-                          <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                          <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
-                          <td className="px-6 py-5">
-                            <TokenStateBadge tokenState={inv.token_state} />
-                          </td>
-                          <td className="px-6 py-5">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">Expired</span>
-                          </td>
-                          <td className="px-6 py-5">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={async () => {
-                                const url = `${typeof window !== 'undefined' ? window.location.origin : ''}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inv.invitation_code}`;
-                                const ok = await copyToClipboard(url);
-                                if (ok) notify('success', 'Invitation link copied to clipboard.');
-                                else notify('error', 'Could not copy. Please copy the link manually.');
-                              }}
-                            >
-                              Copy link
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </Card>
-
-            {/* Accepted / Ongoing: guest accepted (stay created) or unit occupied (e.g. CSV bulk upload) */}
-            <Card className="overflow-hidden">
-              <div className="p-6 border-b border-slate-200 bg-emerald-50">
-                <h3 className="text-xl font-bold text-slate-800">Accepted / Ongoing</h3>
-                <p className="text-xs text-slate-500 mt-1">Invites accepted by the guest (stay created) or occupied units from bulk upload. Status shows Ongoing or stay status.</p>
-              </div>
-              <div className="overflow-x-auto">
-                {invitations.filter((i) => i.status === 'accepted' || i.status === 'ongoing').length === 0 ? (
-                  <p className="p-6 text-slate-500 text-sm">No accepted or ongoing invitations.</p>
-                ) : (
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
-                      <tr>
-                        <th className="px-6 py-4">Invited (email)</th>
-                        <th className="px-6 py-4">Property</th>
-                        <th className="px-6 py-4">Planned stay</th>
-                        <th className="px-6 py-4">Region</th>
-                        <th className="px-6 py-4">Invitation code</th>
-                        <th className="px-6 py-4">Invite ID status</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {invitations.filter((i) => i.status === 'accepted' || i.status === 'ongoing').map((inv) => {
-                        const tokenState = (inv.token_state || 'BURNED').toUpperCase();
-                        const stayStatusLabel = tokenState === 'EXPIRED' ? 'Completed' : tokenState === 'REVOKED' ? 'Revoked' : 'Active stay';
-                        const stayStatusClass = tokenState === 'EXPIRED' ? 'bg-slate-100 text-slate-600 border-slate-200' : tokenState === 'REVOKED' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200';
-                        const statusLabel = inv.status === 'ongoing' ? 'Ongoing' : stayStatusLabel;
-                        const statusClass = inv.status === 'ongoing' ? 'bg-sky-100 text-sky-700 border-sky-200' : stayStatusClass;
-                        return (
-                          <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-5">
-                              <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
-                            </td>
-                            <td className="px-6 py-5">
-                              <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                              <p className="text-xs text-slate-500">{inv.region_code}</p>
-                            </td>
-                            <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
-                              {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
-                            </td>
-                            <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                            <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
-                            <td className="px-6 py-5">
-                              <TokenStateBadge tokenState={inv.token_state} />
-                            </td>
-                            <td className="px-6 py-5">
-                              <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${statusClass}`}>
-                                {statusLabel}
-                              </span>
-                            </td>
-                            <td className="px-6 py-5">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={async () => {
-                                    const url = `${typeof window !== 'undefined' ? window.location.origin : ''}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inv.invitation_code}`;
-                                    const ok = await copyToClipboard(url);
-                                    if (ok) notify('success', 'Invitation link copied to clipboard.');
-                                    else notify('error', 'Could not copy. Please copy the link manually.');
-                                  }}
-                                >
-                                  Copy link
-                                </Button>
-                                <Button variant="outline" size="sm" onClick={() => { setVerifyQRInviteId(inv.invitation_code); setShowVerifyQRModal(true); }}>Verify QR</Button>
-                                {(inv.status === 'ongoing' || inv.status === 'accepted') && (
-                                  <Button variant="outline" size="sm" onClick={async () => { try { await dashboardApi.cancelInvitation(inv.id); notify('success', 'Invitation cancelled.'); loadData(); } catch (e) { notify('error', (e as Error)?.message ?? 'Failed to cancel.'); } }}>Cancel invite</Button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </Card>
-
-            {/* Cancelled: by owner (invitation cancelled) and by guest (stay cancelled after accept) */}
-            <Card className="overflow-hidden">
-              <div className="p-6 border-b border-slate-200 bg-slate-50">
-                <h3 className="text-xl font-bold text-slate-800">Cancelled</h3>
-                <p className="text-xs text-slate-500 mt-1">Invites cancelled by you and stays cancelled by guests</p>
-              </div>
-              <div className="divide-y divide-slate-200">
-                {/* Cancelled by you (invitation cancelled before guest accepted) */}
-                <div className="p-6">
-                  <h4 className="text-sm font-bold text-slate-700 mb-2">Cancelled by you</h4>
-                  <p className="text-xs text-slate-500 mb-3">Invitations you cancelled before the guest accepted.</p>
-                  {invitations.filter((i) => i.status === 'cancelled').length === 0 ? (
-                    <p className="text-slate-500 text-sm">No cancelled invitations.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left">
-                        <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
-                          <tr>
-                            <th className="px-6 py-4">Invited (email)</th>
-                            <th className="px-6 py-4">Property</th>
-                            <th className="px-6 py-4">Planned stay</th>
-                            <th className="px-6 py-4">Region</th>
-                            <th className="px-6 py-4">Invitation code</th>
-                            <th className="px-6 py-4">Invite ID status</th>
-                            <th className="px-6 py-4">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200">
-                          {invitations.filter((i) => i.status === 'cancelled').map((inv) => (
-                            <tr key={`inv-${inv.id}`} className="hover:bg-slate-50 transition-colors">
-                              <td className="px-6 py-5">
-                                <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
-                              </td>
-                              <td className="px-6 py-5">
-                                <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                                <p className="text-xs text-slate-500">{inv.region_code}</p>
-                              </td>
-                              <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
-                                {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
-                              </td>
-                              <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                              <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
-                              <td className="px-6 py-5">
-                                <TokenStateBadge tokenState={inv.token_state} />
-                              </td>
-                              <td className="px-6 py-5">
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-200 text-slate-600 border border-slate-300">Cancelled by you</span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-                {/* Cancelled by guest (had accepted, then cancelled the stay) */}
-                <div className="p-6">
-                  <h4 className="text-sm font-bold text-slate-700 mb-2">Cancelled by guest</h4>
-                  <p className="text-xs text-slate-500 mb-3">Stays that the guest cancelled after accepting your invitation.</p>
-                  {stays.filter((s) => s.cancelled_at).length === 0 ? (
-                    <p className="text-slate-500 text-sm">No stays cancelled by guests.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left">
-                        <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
-                          <tr>
-                            <th className="px-6 py-4">Guest</th>
-                            <th className="px-6 py-4">Property</th>
-                            <th className="px-6 py-4">Planned stay</th>
-                            <th className="px-6 py-4">Region</th>
-                            <th className="px-6 py-4">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200">
-                          {stays.filter((s) => s.cancelled_at).map((stay) => (
-                            <tr key={`stay-${stay.stay_id}`} className="hover:bg-slate-50 transition-colors">
-                              <td className="px-6 py-5">
-                                <span className="text-sm font-medium text-slate-800">{stay.guest_name}</span>
-                              </td>
-                              <td className="px-6 py-5">
-                                <p className="text-sm font-medium text-slate-800">{stay.property_name}</p>
-                                <p className="text-xs text-slate-500">{stay.region_code}</p>
-                              </td>
-                              <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
-                                {formatStayDuration(stay.stay_start_date, stay.stay_end_date)}
-                              </td>
-                              <td className="px-6 py-5 text-sm text-slate-600">{stay.region_code}</td>
-                              <td className="px-6 py-5">
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 border border-slate-300">Cancelled by guest</span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Card>
-          </div>
+          <InvitationsTabContent
+            invitations={invitations}
+            stays={stays}
+            loadData={loadData}
+            notify={notify}
+            showVerifyQR={true}
+            onVerifyQR={(code) => { setVerifyQRInviteId(code); setShowVerifyQRModal(true); }}
+            onCancelInvitation={async (id) => { await dashboardApi.cancelInvitation(id); notify('success', 'Invitation cancelled.'); loadData(); }}
+            introText="Invitations you've sent. Pending invitations are labeled as expired after 12 hours if not accepted."
+          />
         ) : activeTab === 'properties' ? (
           /* Properties tab: Active list + Inactive section */
           <div className="space-y-8">
@@ -1230,9 +918,9 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         ) : activeTab === 'billing' ? (
           <div className="space-y-6">
             {paymentReturnMessage && (
-              <div className="flex items-center justify-between gap-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
+              <div className={`flex items-center justify-between gap-4 p-4 rounded-xl text-sm ${paymentReturnIsError ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'}`}>
                 <span>{paymentReturnMessage}</span>
-                <button type="button" onClick={() => setPaymentReturnMessage(null)} className="text-emerald-600 hover:text-emerald-800 font-medium shrink-0" aria-label="Dismiss">Dismiss</button>
+                <button type="button" onClick={() => { setPaymentReturnMessage(null); setPaymentReturnIsError(false); }} className={paymentReturnIsError ? 'text-red-600 hover:text-red-800 font-medium shrink-0' : 'text-emerald-600 hover:text-emerald-800 font-medium shrink-0'} aria-label="Dismiss">Dismiss</button>
               </div>
             )}
             <Card className="p-6">
@@ -1281,9 +969,13 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                                     inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
                                     inv.status === 'open' ? 'bg-amber-100 text-amber-800' :
+                                    inv.status === 'past_due' ? 'bg-red-100 text-red-800' :
                                     inv.status === 'void' ? 'bg-slate-200 text-slate-600' :
                                     'bg-slate-100 text-slate-700'
-                                  }`}>{inv.status}</span>
+                                  }`}>{inv.status === 'past_due' ? 'Payment failed' : inv.status}</span>
+                                  {inv.status === 'past_due' && (
+                                    <p className="text-xs text-red-600 mt-1">Update your payment method and try again.</p>
+                                  )}
                                 </td>
                                 <td className="px-4 py-3">
                                   {inv.status === 'void' ? (
@@ -1723,7 +1415,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       {/* Remove property (soft-delete) confirmation modal */}
       {deleteConfirmProperty && (
         <>
-          <div className="fixed inset-0 bg-black/70 z-40" onClick={() => { setDeleteConfirmProperty(null); setDeleteError(null); }} />
+          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={() => { setDeleteConfirmProperty(null); setDeleteError(null); }} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <Card className="w-full max-w-md">
               <div className="p-6 border-b border-slate-200">
@@ -1764,7 +1456,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       {/* Revoke confirmation modal */}
       {revokeConfirmStay && (
         <>
-          <div className="fixed inset-0 bg-black/70 z-40" onClick={() => setRevokeConfirmStay(null)} />
+          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={() => setRevokeConfirmStay(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <Card className="w-full max-w-md">
               <div className="p-6 border-b border-slate-200">
@@ -1787,7 +1479,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       {/* Revoke success modal */}
       {revokeSuccessGuest && (
         <>
-          <div className="fixed inset-0 bg-black/70 z-40" onClick={() => setRevokeSuccessGuest(null)} />
+          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={() => setRevokeSuccessGuest(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <Card className="w-full max-w-md">
               <div className="p-6">
@@ -1802,7 +1494,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       {/* Initiate Removal modal */}
       {packetModalStay && (
         <>
-          <div className="fixed inset-0 bg-black/70 z-40" onClick={() => !removalLoading && setPacketModalStay(null)} />
+          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={() => !removalLoading && setPacketModalStay(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <Card className="w-full max-w-lg">
               <div className="p-6 border-b border-slate-200 flex items-center justify-between">
@@ -1849,7 +1541,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       {/* Full log message modal */}
       {logMessageModalEntry && (
         <>
-          <div className="fixed inset-0 bg-black/70 z-40" onClick={() => setLogMessageModalEntry(null)} aria-hidden="true" />
+          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={() => setLogMessageModalEntry(null)} aria-hidden="true" />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="log-message-title">
             <Card className="w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
               <div className="p-4 border-b border-slate-200 flex items-center justify-between">
@@ -1929,146 +1621,24 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       <InviteRoleChoiceModal
         open={showInviteRoleChoice}
         onClose={() => setShowInviteRoleChoice(false)}
-        onSelectTenant={() => {
-          const firstId = properties[0]?.id ?? null;
-          setInviteTenantPropertyId(firstId);
-          setInviteTenantUnitId(null);
-          setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
-          if (firstId) {
-            propertiesApi.getUnits(firstId).then((u) => {
-              setInviteTenantUnits(u.filter((x) => x.id >= 0));
-              setInviteTenantUnitId(u[0]?.id ?? 0);
-            }).catch(() => setInviteTenantUnits([]));
-          } else {
-            setInviteTenantUnits([]);
-          }
-          setShowInviteTenantModal(true);
-        }}
+        onSelectTenant={() => setShowInviteTenantModal(true)}
         onSelectGuest={() => setShowInviteModal(true)}
       />
 
-      {showInviteTenantModal && (
-        <Modal open onClose={() => { setShowInviteTenantModal(false); setInviteTenantPropertyId(null); setInviteTenantUnits([]); setInviteTenantUnitId(null); setInviteTenantLink(null); }} title="Invite tenant" className="max-w-lg">
-          <div className="p-6 space-y-4">
-            {inviteTenantLink ? (
-              <>
-                <p className="text-sm text-slate-600">Share this link with the tenant to complete registration.</p>
-                <div className="bg-slate-100 border border-slate-200 rounded-xl p-4 text-sm text-slate-800 break-all font-mono">{inviteTenantLink}</div>
-                <div className="flex gap-3">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={async () => {
-                      const ok = await copyToClipboard(inviteTenantLink);
-                      if (ok) notify('success', 'Link copied to clipboard.');
-                      else notify('error', 'Copy failed. Please copy the link manually.');
-                    }}
-                  >
-                    Copy link
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    onClick={() => {
-                      setShowInviteTenantModal(false);
-                      setInviteTenantPropertyId(null);
-                      setInviteTenantUnits([]);
-                      setInviteTenantUnitId(null);
-                      setInviteTenantLink(null);
-                      setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
-                    }}
-                  >
-                    Done
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Property</label>
-                  <select
-                    value={inviteTenantPropertyId ?? ''}
-                    onChange={(e) => {
-                      const pid = Number(e.target.value) || null;
-                      setInviteTenantPropertyId(pid);
-                      setInviteTenantUnitId(null);
-                      if (pid) propertiesApi.getUnits(pid).then((u) => { setInviteTenantUnits(u.filter((x) => x.id >= 0)); setInviteTenantUnitId(u[0]?.id ?? 0); }).catch(() => setInviteTenantUnits([]));
-                      else setInviteTenantUnits([]);
-                    }}
-                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900"
-                  >
-                    <option value="">Select property</option>
-                    {properties.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name || p.street || `Property ${p.id}`}</option>
-                    ))}
-                  </select>
-                </div>
-                {inviteTenantUnits.length > 0 && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit</label>
-                    <select
-                      value={inviteTenantUnitId ?? ''}
-                      onChange={(e) => setInviteTenantUnitId(Number(e.target.value) || null)}
-                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900"
-                    >
-                      <option value="">Select unit</option>
-                      {inviteTenantUnits.map((u) => (
-                        <option key={u.id} value={u.id}>Unit {u.unit_label}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {inviteTenantPropertyId && inviteTenantUnits.length === 0 && inviteTenantUnitId === null && (
-                  <p className="text-sm text-slate-600">Single-unit property — invitation will be for the whole property.</p>
-                )}
-                <Input name="tenant_name" label="Tenant name" value={inviteTenantForm.tenant_name} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, tenant_name: e.target.value })} placeholder="Full name" required />
-                <Input name="tenant_email" label="Tenant email" type="email" value={inviteTenantForm.tenant_email} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, tenant_email: e.target.value })} placeholder="email@example.com" />
-                <Input name="lease_start_date" label="Lease start" type="date" min={getTodayLocal()} value={inviteTenantForm.lease_start_date} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, lease_start_date: e.target.value })} required />
-                <Input name="lease_end_date" label="Lease end" type="date" min={inviteTenantForm.lease_start_date || getTodayLocal()} value={inviteTenantForm.lease_end_date} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, lease_end_date: e.target.value })} required />
-                <div className="flex gap-3 pt-2">
-                  <Button variant="outline" onClick={() => { setShowInviteTenantModal(false); setInviteTenantPropertyId(null); setInviteTenantUnits([]); setInviteTenantUnitId(null); }} className="flex-1">Cancel</Button>
-                  <Button
-                    onClick={async () => {
-                      if (!inviteTenantPropertyId || !inviteTenantForm.tenant_name.trim() || !inviteTenantForm.lease_start_date || !inviteTenantForm.lease_end_date) {
-                        notify('error', 'Please fill in property, tenant name, and lease dates.');
-                        return;
-                      }
-                      if (inviteTenantForm.lease_start_date < getTodayLocal()) {
-                        notify('error', 'Lease start date cannot be in the past.');
-                        return;
-                      }
-                      setInviteTenantSubmitting(true);
-                      try {
-                        const unitId = inviteTenantUnitId ?? 0;
-                        const res = unitId > 0
-                          ? await propertiesApi.inviteTenant(unitId, inviteTenantForm)
-                          : await propertiesApi.inviteTenantForProperty(inviteTenantPropertyId, inviteTenantForm);
-                        const code = res?.invitation_code;
-                        if (code) {
-                          const base = typeof window !== 'undefined' ? window.location.origin : '';
-                          setInviteTenantLink(`${base}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${code}`);
-                          notify('success', 'Tenant invitation created. Share the invite link with the tenant.');
-                          setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
-                          loadData();
-                        } else {
-                          notify('error', 'We couldn\'t create a valid invitation link. Please try again.');
-                        }
-                      } catch (e) {
-                        notify('error', toUserFriendlyInvitationError((e as Error)?.message ?? 'Failed to create invitation.'));
-                      } finally {
-                        setInviteTenantSubmitting(false);
-                      }
-                    }}
-                    disabled={inviteTenantSubmitting || !inviteTenantForm.tenant_name.trim() || !inviteTenantForm.lease_start_date || !inviteTenantForm.lease_end_date || !inviteTenantPropertyId}
-                    className="flex-1"
-                  >
-                    {inviteTenantSubmitting ? 'Creating…' : 'Create invitation'}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </Modal>
-      )}
+      <InviteTenantModal
+        open={showInviteTenantModal}
+        onClose={() => setShowInviteTenantModal(false)}
+        properties={properties.map((p) => ({ id: p.id, name: p.name, street: p.street, address: p.address }))}
+        getUnits={(propertyId) => propertiesApi.getUnits(propertyId).then((u) => u.filter((x) => x.id >= 0))}
+        createInvitation={async (params) => {
+          const unitId = params.unitId ?? 0;
+          return unitId > 0
+            ? propertiesApi.inviteTenant(unitId, { tenant_name: params.tenant_name, tenant_email: params.tenant_email, lease_start_date: params.lease_start_date, lease_end_date: params.lease_end_date })
+            : propertiesApi.inviteTenantForProperty(params.propertyId, { tenant_name: params.tenant_name, tenant_email: params.tenant_email, lease_start_date: params.lease_start_date, lease_end_date: params.lease_end_date });
+        }}
+        notify={notify}
+        onSuccess={loadData}
+      />
 
       <InviteGuestModal
         open={showInviteModal}

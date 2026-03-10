@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Input, Button, ErrorModal } from '../../components/UI';
 import { HeroBackground } from '../../components/HeroBackground';
+import { AuthCardLayout, AuthBullet } from '../../components/AuthCardLayout';
 import { authApi, authApiGuest, invitationsApi } from '../../services/api';
 import AgreementSignModal, { type GuestInviteFormData } from '../../components/AgreementSignModal';
 
@@ -55,6 +56,10 @@ const GuestLogin: React.FC<GuestLoginProps> = ({ inviteCode: inviteCodeFromUrl, 
       showError('Please enter your email and password.');
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showError('Please enter a valid email address.');
+      return;
+    }
     if (inviteCode && inviteCheck?.valid === false) {
       showError(
         inviteCheck?.expired ? 'This invitation has expired and cannot be used. Ask your host for a new invitation.'
@@ -94,22 +99,16 @@ const GuestLogin: React.FC<GuestLoginProps> = ({ inviteCode: inviteCodeFromUrl, 
 
   return (
     <HeroBackground className="flex-grow">
-      <div className="w-full max-w-5xl flex rounded-xl overflow-hidden border border-gray-200/60 bg-white/40 backdrop-blur-sm min-h-[520px] shadow-xl">
-        {/* Left: Info */}
-        <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-100/40 via-blue-50/40 to-sky-100/40 p-10 flex-col justify-center border-r border-blue-200/40">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-3">Guest login</h2>
-          <p className="text-gray-600 text-sm mb-8">Access your stays and invitations.</p>
-          <ul className="space-y-3 text-sm text-gray-600">
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> View approved stays
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Accept invitations
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Stay documentation
-            </li>
-          </ul>
+      <AuthCardLayout
+        leftPanel={
+          <>
+            <h2 className="text-2xl font-semibold text-slate-900 mb-3">Guest login</h2>
+            <p className="text-slate-600 text-sm mb-8">Access your stays and invitations.</p>
+            <ul className="space-y-3">
+              <AuthBullet>View approved stays</AuthBullet>
+              <AuthBullet>Accept invitations</AuthBullet>
+              <AuthBullet>Stay documentation</AuthBullet>
+            </ul>
           {inviteCode && inviteCheck && !inviteCheck.loading && !inviteCheck.valid && (
             <div className="mt-8 p-4 rounded-lg bg-amber-50 border border-amber-300/80">
               <p className="text-sm text-amber-800 font-medium">
@@ -127,13 +126,12 @@ const GuestLogin: React.FC<GuestLoginProps> = ({ inviteCode: inviteCodeFromUrl, 
               <p className="text-sm text-gray-600">Checking invitation…</p>
             </div>
           )}
-        </div>
-
-        {/* Right: Form */}
-        <div className="w-full lg:w-1/2 bg-white/40 backdrop-blur-sm p-8 md:p-10 flex flex-col justify-center">
+          </>
+        }
+      >
           <div className="max-w-sm mx-auto w-full">
-            <h1 className="text-xl font-semibold text-gray-900 mb-1 lg:hidden">Guest login</h1>
-            <p className="text-gray-600 text-sm mb-6">
+            <h1 className="text-xl font-semibold text-slate-900 mb-1 lg:hidden">Guest login</h1>
+            <p className="text-slate-600 text-sm mb-6">
               {inviteCode ? 'Sign in to continue. You’ll sign the agreement on your dashboard.' : 'Enter your credentials.'}
             </p>
 
@@ -167,7 +165,7 @@ const GuestLogin: React.FC<GuestLoginProps> = ({ inviteCode: inviteCodeFromUrl, 
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-[34px] text-gray-400 hover:text-blue-700 transition-colors"
+                  className="absolute right-3 top-[34px] text-slate-400 hover:text-[#6B90F2] transition-colors"
                 >
                   {showPassword ? (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" /></svg>
@@ -178,20 +176,20 @@ const GuestLogin: React.FC<GuestLoginProps> = ({ inviteCode: inviteCodeFromUrl, 
               </div>
 
               <div className="flex justify-end text-sm">
-                <button type="button" onClick={() => navigate('forgot-password/guest')} className="text-blue-700 hover:text-blue-800 font-medium">Forgot password?</button>
+                <button type="button" onClick={() => navigate('forgot-password/guest')} className="text-[#6B90F2] hover:text-[#5a7ed9] font-medium">Forgot password?</button>
               </div>
 
               <Button type="submit" className="w-full py-2.5">Sign in</Button>
             </form>
 
-            <div className="mt-8 space-y-2 text-center text-gray-500 text-sm">
+            <div className="mt-8 space-y-2 text-center text-slate-500 text-sm">
               {inviteCode && inviteCheck?.valid === true && (
                 <p>
                   First time?{' '}
                   <button
                     type="button"
                     onClick={() => navigate(`register-from-invite/${inviteCode}`)}
-                    className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2"
+                    className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2"
                   >
                     Create account & accept invitation
                   </button>
@@ -200,17 +198,16 @@ const GuestLogin: React.FC<GuestLoginProps> = ({ inviteCode: inviteCodeFromUrl, 
               {inviteCode && (!inviteCheck || inviteCheck.valid !== true) && (
                 <p>
                   First time?{' '}
-                  <button type="button" onClick={() => navigate(`register-from-invite/${inviteCode}`)} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">Create account</button>
+                  <button type="button" onClick={() => navigate(`register-from-invite/${inviteCode}`)} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">Create account</button>
                 </p>
               )}
               <p>
-                Don't have an account?{' '}
-                <button type="button" onClick={() => navigate('guest-signup')} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">Guest Signup</button>
+                Don&apos;t have an account?{' '}
+                <button type="button" onClick={() => navigate('guest-signup')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">Guest Signup</button>
               </p>
             </div>
           </div>
-        </div>
-      </div>
+      </AuthCardLayout>
 
       {inviteCode && (
         <AgreementSignModal

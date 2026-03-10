@@ -74,6 +74,7 @@ from app.services.notifications import (
     send_guest_signup_welcome_email,
     send_guest_stay_added_email,
     send_manager_welcome_email,
+    send_tenant_guest_accepted_invite,
 )
 from app.dependencies import get_current_user, require_owner, require_guest, require_guest_or_tenant, get_pending_owner
 from app.models.guest import GuestProfile
@@ -526,7 +527,8 @@ def _complete_pending_owner(db: Session, pending: PendingRegistration) -> User:
 
 
 def _complete_pending_tenant(db: Session, pending: PendingRegistration) -> User:
-    """Create User with role=tenant from pending; create TenantAssignment from invitation code in extra_data. No GuestProfile."""
+    """Create User with role=tenant from pending. If user pre-signed during registration (RegisterFromInvite flow),
+    accept the invitation directly. Otherwise create a GuestPendingInvite so the user signs on the dashboard."""
     user = User(
         email=pending.email,
         hashed_password=pending.hashed_password,
@@ -544,6 +546,8 @@ def _complete_pending_tenant(db: Session, pending: PendingRegistration) -> User:
     db.flush()
     extra = pending.extra_data or {}
     code = (extra.get("invitation_code") or "").strip().upper()
+
+    # Find the tenant invitation (any token_state; token_state is BURNED from creation for tenant invites)
     inv = None
     if code:
         inv = (
@@ -552,35 +556,69 @@ def _complete_pending_tenant(db: Session, pending: PendingRegistration) -> User:
                 Invitation.invitation_code == code,
                 Invitation.status.in_(["pending", "ongoing"]),
                 Invitation.unit_id.isnot(None),
+                Invitation.invitation_kind == "tenant",
             )
             .first()
         )
-        if inv and (getattr(inv, "token_state", None) or "").upper() != "BURNED":
-            inv = None
-        if inv and (getattr(inv, "invitation_kind", None) or "").strip().lower() != "tenant":
-            inv = None
+
     if inv:
-        ta = TenantAssignment(
-            unit_id=inv.unit_id,
-            user_id=user.id,
-            start_date=inv.stay_start_date,
-            end_date=inv.stay_end_date,
-            invited_by_user_id=getattr(inv, "invited_by_user_id", None),
-        )
-        db.add(ta)
-        db.flush()
-        inv.status = "accepted"
-        create_ledger_event(
-            db,
-            ACTION_TENANT_ACCEPTED,
-            target_object_type="TenantAssignment",
-            target_object_id=ta.id,
-            property_id=inv.property_id,
-            unit_id=inv.unit_id,
-            invitation_id=inv.id,
-            actor_user_id=user.id,
-            meta={"invitation_code": code, "unit_id": inv.unit_id, "tenant_email": user.email},
-        )
+        # Check if the user pre-signed the agreement during registration (RegisterFromInvite flow).
+        # agreement_signature_id=0 or missing means no pre-sign; user must sign on dashboard.
+        sig_id = extra.get("agreement_signature_id")
+        sig = None
+        if sig_id and int(sig_id) > 0:
+            sig = db.query(AgreementSignature).filter(AgreementSignature.id == int(sig_id)).first()
+            if sig and (sig.invitation_code or "").strip().upper() != code:
+                sig = None
+            if sig and (sig.guest_email or "").strip().lower() != (pending.email or "").strip().lower():
+                sig = None
+            if sig and sig.used_by_user_id is not None:
+                sig = None
+            # For in-app signatures, all acks must be set. For Dropbox, signed_pdf_bytes must be present.
+            if sig:
+                if getattr(sig, "dropbox_sign_request_id", None):
+                    if not getattr(sig, "signed_pdf_bytes", None):
+                        sig = None  # Dropbox signing not yet complete; defer to dashboard
+                else:
+                    if not (sig.acks_read and sig.acks_temporary and sig.acks_vacate and sig.acks_electronic):
+                        sig = None
+
+        if sig:
+            # Pre-signed: create TenantAssignment and accept invite directly (no dashboard signing needed)
+            ta = TenantAssignment(
+                unit_id=inv.unit_id,
+                user_id=user.id,
+                start_date=inv.stay_start_date,
+                end_date=inv.stay_end_date,
+                invited_by_user_id=getattr(inv, "invited_by_user_id", None),
+            )
+            db.add(ta)
+            db.flush()
+            inv.status = "accepted"
+            inv.token_state = "BURNED"
+            sig.used_by_user_id = user.id
+            sig.used_at = datetime.now(timezone.utc)
+            create_ledger_event(
+                db,
+                ACTION_TENANT_ACCEPTED,
+                target_object_type="TenantAssignment",
+                target_object_id=ta.id,
+                property_id=inv.property_id,
+                unit_id=inv.unit_id,
+                invitation_id=inv.id,
+                actor_user_id=user.id,
+                meta={"invitation_code": code, "unit_id": inv.unit_id, "tenant_email": user.email, "signature_id": sig.id},
+            )
+        else:
+            # No valid pre-signed agreement: create GuestPendingInvite so the user signs on the dashboard.
+            # The invitation status stays "pending" so the signing modal and acceptInvite can run normally.
+            existing_pi = db.query(GuestPendingInvite).filter(
+                GuestPendingInvite.user_id == user.id,
+                GuestPendingInvite.invitation_id == inv.id,
+            ).first()
+            if not existing_pi:
+                db.add(GuestPendingInvite(user_id=user.id, invitation_id=inv.id))
+
     db.delete(pending)
     db.commit()
     db.refresh(user)
@@ -703,6 +741,14 @@ def _complete_pending_guest(
         prop = db.query(Property).filter(Property.id == inv.property_id).first()
         property_name = (prop.name if prop else None) or (f"{prop.city}, {prop.state}".strip(", ") if prop and (prop.city or prop.state) else None) or "the property"
         send_guest_welcome_email(user.email, user.full_name, property_name=property_name, stay_end_date=str(inv.stay_end_date))
+        if getattr(inv, "invited_by_user_id", None):
+            invited_by_user = db.query(User).filter(User.id == inv.invited_by_user_id).first()
+            if invited_by_user and invited_by_user.role == UserRole.tenant and (invited_by_user.email or "").strip():
+                guest_name = (user.full_name or "").strip() or (user.email or "Guest").strip() or "Guest"
+                try:
+                    send_tenant_guest_accepted_invite(invited_by_user.email.strip(), guest_name, property_name)
+                except Exception:
+                    pass
     elif code and inv:
         pending_inv = GuestPendingInvite(user_id=user.id, invitation_id=inv.id)
         db.add(pending_inv)
@@ -1391,7 +1437,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
             )
             .first()
         )
-        if not inv or (getattr(inv, "token_state", None) or "").upper() != "BURNED":
+        if not inv:
             create_log(
                 db,
                 CATEGORY_FAILED_ATTEMPT,
@@ -1475,31 +1521,10 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
         )
         db.add(profile)
     if target_role == UserRole.tenant and code and inv:
-        ta = TenantAssignment(
-            unit_id=inv.unit_id,
-            user_id=user.id,
-            start_date=inv.stay_start_date,
-            end_date=inv.stay_end_date,
-            invited_by_user_id=getattr(inv, "invited_by_user_id", None),
-        )
-        db.add(ta)
-        db.flush()
-        inv.status = "accepted"
-        ip = request.client.host if request.client else None
-        ua = (request.headers.get("user-agent") or "").strip() or None
-        create_ledger_event(
-            db,
-            ACTION_TENANT_ACCEPTED,
-            target_object_type="TenantAssignment",
-            target_object_id=ta.id,
-            property_id=inv.property_id,
-            unit_id=inv.unit_id,
-            invitation_id=inv.id,
-            actor_user_id=user.id,
-            meta={"invitation_code": code, "unit_id": inv.unit_id, "tenant_email": user.email},
-            ip_address=ip,
-            user_agent=ua,
-        )
+        # Do not create TenantAssignment here. Tenant must sign the agreement on the dashboard
+        # and then accept the invite (accept_invite) to create the assignment.
+        pending = GuestPendingInvite(user_id=user.id, invitation_id=inv.id)
+        db.add(pending)
     db.commit()
 
     # Full accept path (guests only): code + valid signature -> create stay, mark inv accepted, token BURNED
@@ -1576,6 +1601,14 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
             property_name=property_name,
             stay_end_date=str(inv.stay_end_date),
         )
+        if getattr(inv, "invited_by_user_id", None):
+            invited_by_user = db.query(User).filter(User.id == inv.invited_by_user_id).first()
+            if invited_by_user and invited_by_user.role == UserRole.tenant and (invited_by_user.email or "").strip():
+                guest_name = (user.full_name or "").strip() or (user.email or "Guest").strip() or "Guest"
+                try:
+                    send_tenant_guest_accepted_invite(invited_by_user.email.strip(), guest_name, property_name)
+                except Exception:
+                    pass
     elif target_role == UserRole.guest and code and inv:
         # Invite provided but not signed: add to pending so dashboard shows agreement modal
         pending = GuestPendingInvite(user_id=user.id, invitation_id=inv.id)
@@ -1732,13 +1765,26 @@ def accept_invite(
         db.commit()
         raise HTTPException(status_code=400, detail="All agreement acknowledgments must be accepted")
 
-    # Idempotent: if this invite was already accepted by this user (stay exists), return success without creating duplicate
+    # Idempotent: if this invite was already accepted by this user (stay exists), return success without creating duplicate.
+    # Still clean up any leftover GuestPendingInvite and mark the signature as used so the dashboard
+    # does not keep triggering accept_invite in an infinite loop.
     existing_stay = (
         db.query(Stay)
         .filter(Stay.guest_id == current_user.id, Stay.invitation_id == inv.id)
         .first()
     )
     if existing_stay:
+        if sig.used_by_user_id is None:
+            sig.used_by_user_id = current_user.id
+            sig.used_at = datetime.now(timezone.utc)
+        # Ensure invitation is fully marked so guestPendingInvites stops returning it
+        inv.status = "accepted"
+        inv.token_state = "BURNED"
+        db.query(GuestPendingInvite).filter(
+            GuestPendingInvite.user_id == current_user.id,
+            GuestPendingInvite.invitation_id == inv.id,
+        ).delete(synchronize_session="fetch")
+        db.commit()
         return {"status": "success", "message": "Invitation already accepted."}
 
     # Reject if this invite overlaps any existing stay for this guest
@@ -1750,6 +1796,83 @@ def accept_invite(
                 status_code=400,
                 detail="This invitation overlaps with an existing stay. Only one stay can be accepted at a time.",
             )
+
+    inv_kind = (getattr(inv, "invitation_kind", None) or "").strip().lower()
+    if inv_kind == "tenant" and current_user.role == UserRole.tenant:
+        # Tenant accepting a tenant invitation: create TenantAssignment (no Stay)
+        existing_ta = (
+            db.query(TenantAssignment)
+            .filter(
+                TenantAssignment.user_id == current_user.id,
+                TenantAssignment.unit_id == inv.unit_id,
+            )
+            .first()
+        )
+        if existing_ta:
+            if sig.used_by_user_id is None:
+                sig.used_by_user_id = current_user.id
+                sig.used_at = datetime.now(timezone.utc)
+            # Ensure invitation is fully marked so guestPendingInvites stops returning it
+            inv.status = "accepted"
+            inv.token_state = "BURNED"
+            db.query(GuestPendingInvite).filter(
+                GuestPendingInvite.user_id == current_user.id,
+                GuestPendingInvite.invitation_id == inv.id,
+            ).delete(synchronize_session="fetch")
+            db.commit()
+            return {"status": "success", "message": "Invitation already accepted."}
+        ta = TenantAssignment(
+            unit_id=inv.unit_id,
+            user_id=current_user.id,
+            start_date=inv.stay_start_date,
+            end_date=None,
+            invited_by_user_id=getattr(inv, "invited_by_user_id", None),
+        )
+        db.add(ta)
+        db.flush()
+        inv.status = "accepted"
+        prev_token_state = getattr(inv, "token_state", None) or "STAGED"
+        inv.token_state = "BURNED"
+        if sig.used_by_user_id is None:
+            sig.used_by_user_id = current_user.id
+            sig.used_at = datetime.now(timezone.utc)
+        db.query(GuestPendingInvite).filter(
+            GuestPendingInvite.user_id == current_user.id,
+            GuestPendingInvite.invitation_id == inv.id,
+        ).delete(synchronize_session="fetch")
+        db.commit()
+        db.refresh(ta)
+        ip = request.client.host if request.client else None
+        ua = (request.headers.get("user-agent") or "").strip() or None
+        create_log(
+            db,
+            CATEGORY_STATUS_CHANGE,
+            "Tenant invitation accepted",
+            f"Invite ID {code} token_state {prev_token_state} -> BURNED; TenantAssignment {ta.id} created for unit {inv.unit_id}.",
+            property_id=inv.property_id,
+            stay_id=None,
+            invitation_id=inv.id,
+            actor_user_id=current_user.id,
+            actor_email=current_user.email,
+            ip_address=ip,
+            user_agent=ua,
+            meta={"invitation_code": code, "token_state_previous": prev_token_state, "token_state_new": "BURNED", "signature_id": sig.id, "tenant_assignment_id": ta.id},
+        )
+        create_ledger_event(
+            db,
+            ACTION_TENANT_ACCEPTED,
+            target_object_type="TenantAssignment",
+            target_object_id=ta.id,
+            property_id=inv.property_id,
+            stay_id=None,
+            invitation_id=inv.id,
+            actor_user_id=current_user.id,
+            meta={"invitation_code": code, "token_state_previous": prev_token_state, "token_state_new": "BURNED", "signature_id": sig.id},
+            ip_address=ip,
+            user_agent=ua,
+        )
+        db.commit()
+        return {"status": "success", "message": "Invitation accepted"}
 
     duration = (inv.stay_end_date - inv.stay_start_date).days
     if duration <= 0:
@@ -1838,5 +1961,13 @@ def accept_invite(
         property_name=property_name,
         stay_end_date=str(inv.stay_end_date),
     )
+    if getattr(inv, "invited_by_user_id", None):
+        invited_by_user = db.query(User).filter(User.id == inv.invited_by_user_id).first()
+        if invited_by_user and invited_by_user.role == UserRole.tenant and (invited_by_user.email or "").strip():
+            guest_name = (current_user.full_name or "").strip() or (current_user.email or "Guest").strip() or "Guest"
+            try:
+                send_tenant_guest_accepted_invite(invited_by_user.email.strip(), guest_name, property_name)
+            except Exception:
+                pass
     # DMS is turned on 2 min after guest checks in (see guest_check_in), not at accept
     return {"status": "success", "message": "Invitation accepted"}

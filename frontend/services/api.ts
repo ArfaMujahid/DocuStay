@@ -737,6 +737,7 @@ export const dashboardApi = {
   ownerInvitations: () => request<OwnerInvitationView[]>("/dashboard/owner/invitations"),
   managerPersonalModeUnits: () => request<{ unit_ids: number[] }>("/dashboard/manager/personal-mode-units"),
   managerStays: () => request<OwnerStayView[]>("/dashboard/manager/stays"),
+  managerInvitations: () => request<OwnerInvitationView[]>("/dashboard/manager/invitations"),
   managerLogs: (params?: { from_ts?: string; to_ts?: string; category?: string; search?: string; property_id?: number }) => {
     const sp = new URLSearchParams();
     if (params?.from_ts) sp.set("from_ts", params.from_ts);
@@ -1409,6 +1410,8 @@ export interface InvitationDetails {
   expired?: boolean;
   /** True when the invitation link was already used (guest accepted; one-time use). */
   used?: boolean;
+  /** True when the invitation was already accepted (e.g. auto-accepted at email verification for a pre-signed tenant invite). Stay may already be on dashboard. */
+  already_accepted?: boolean;
   /** From DB: 'guest' | 'tenant'. Enforced so guest links cannot be used for tenant signup and vice versa. */
   invitation_kind?: 'guest' | 'tenant';
   property_name?: string | null;

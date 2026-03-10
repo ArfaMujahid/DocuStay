@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Input, Button, ErrorModal } from '../../components/UI';
 import { HeroBackground } from '../../components/HeroBackground';
+import { AuthCardLayout, AuthBullet } from '../../components/AuthCardLayout';
 import { authApi } from '../../services/api';
 
 interface AdminLoginProps {
@@ -48,29 +49,22 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, setLoading, notify, na
 
   return (
     <HeroBackground className="flex-grow">
-      <div className="w-full max-w-5xl flex rounded-xl overflow-hidden border border-gray-200/60 bg-white/40 backdrop-blur-sm min-h-[520px] shadow-xl">
-        {/* Left: Simple info */}
-        <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-100/40 via-blue-50/40 to-sky-100/40 p-10 flex-col justify-center border-r border-blue-200/40">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-3">Admin login</h2>
-          <p className="text-gray-600 text-sm mb-8">Internal access to users, event ledger, and platform data.</p>
-          <ul className="space-y-3 text-sm text-gray-600">
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Users & roles
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Event ledger
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Properties, stays & invitations
-            </li>
-          </ul>
-        </div>
-
-        {/* Right: Form */}
-        <div className="w-full lg:w-1/2 bg-white/40 backdrop-blur-sm p-8 md:p-10 flex flex-col justify-center">
+      <AuthCardLayout
+        leftPanel={
+          <>
+            <h2 className="text-2xl font-semibold text-slate-900 mb-3">Admin login</h2>
+            <p className="text-slate-600 text-sm mb-8">Internal access to users, event ledger, and platform data.</p>
+            <ul className="space-y-3">
+              <AuthBullet>Users & roles</AuthBullet>
+              <AuthBullet>Event ledger</AuthBullet>
+              <AuthBullet>Properties, stays & invitations</AuthBullet>
+            </ul>
+          </>
+        }
+      >
           <div className="max-w-sm mx-auto w-full">
-            <h1 className="text-xl font-semibold text-gray-900 mb-1 lg:hidden">Admin login</h1>
-            <p className="text-gray-600 text-sm mb-6">Sign in with an admin account.</p>
+            <h1 className="text-xl font-semibold text-slate-900 mb-1 lg:hidden">Admin login</h1>
+            <p className="text-slate-600 text-sm mb-6">Sign in with an admin account.</p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
               <Input
@@ -95,7 +89,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, setLoading, notify, na
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-3 top-[34px] text-slate-400 hover:text-slate-600 transition-colors"
                 >
                   {showPassword ? (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path></svg>
@@ -108,14 +102,13 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, setLoading, notify, na
               <Button type="submit" className="w-full py-2.5">Sign in</Button>
             </form>
 
-            <div className="mt-8 text-center text-gray-500 text-sm">
-              <button type="button" onClick={() => navigate('login')} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">
+            <div className="mt-8 text-center text-slate-500 text-sm">
+              <button type="button" onClick={() => navigate('login')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">
                 Back to main login
               </button>
             </div>
           </div>
-        </div>
-      </div>
+      </AuthCardLayout>
 
       <ErrorModal
         open={errorModal.open}

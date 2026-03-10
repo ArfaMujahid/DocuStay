@@ -502,7 +502,7 @@ export const AdminDashboard: React.FC<{
       {/* Full log message modal */}
       {logMessageModalEntry && (
         <>
-          <div className="fixed inset-0 bg-black/70 z-40" onClick={() => setLogMessageModalEntry(null)} aria-hidden="true" />
+          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={() => setLogMessageModalEntry(null)} aria-hidden="true" />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="admin-log-message-title">
             <Card className="w-full max-w-lg max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
               <div className="p-4 border-b border-slate-200 flex items-center justify-between">

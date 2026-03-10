@@ -51,7 +51,7 @@ from app.services.event_ledger import (
 )
 from app.services.invitation_cleanup import get_invitation_expire_cutoff
 from app.services.billing import sync_subscription_quantities
-from app.services.notifications import send_vacate_12h_notice, send_owner_guest_checkout_email, send_guest_checkout_confirmation_email, send_owner_guest_cancelled_stay_email, send_removal_notice_to_guest, send_removal_confirmation_to_owner
+from app.services.notifications import send_vacate_12h_notice, send_owner_guest_checkout_email, send_guest_checkout_confirmation_email, send_owner_guest_cancelled_stay_email, send_removal_notice_to_guest, send_removal_confirmation_to_owner, send_dead_mans_switch_enabled_notification
 from app.schemas.jle import JLEInput
 from app.dependencies import get_current_user, require_owner, require_owner_onboarding_complete, require_guest, require_tenant, require_guest_or_tenant, require_owner_or_manager, require_property_manager, require_property_manager_identity_verified
 from app.models.audit_log import AuditLog
@@ -115,16 +115,19 @@ def guest_pending_invites(
                 .order_by(AgreementSignature.signed_at.desc())
                 .first()
             )
-            if sig and getattr(sig, "dropbox_sign_request_id", None):
-                if not getattr(sig, "signed_pdf_bytes", None):
-                    pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
-                    if pdf_bytes:
-                        sig.signed_pdf_bytes = pdf_bytes
-                        db.commit()
-                        db.refresh(sig)
-                if not getattr(sig, "signed_pdf_bytes", None):
-                    needs_dropbox = True
-                    pending_sig_id = sig.id
+            if sig:
+                if getattr(sig, "dropbox_sign_request_id", None):
+                    if not getattr(sig, "signed_pdf_bytes", None):
+                        pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
+                        if pdf_bytes:
+                            sig.signed_pdf_bytes = pdf_bytes
+                            db.commit()
+                            db.refresh(sig)
+                    if not getattr(sig, "signed_pdf_bytes", None):
+                        needs_dropbox = True
+                        pending_sig_id = sig.id
+                    elif getattr(sig, "used_by_user_id", None) is None:
+                        accept_now_sig_id = sig.id
                 elif getattr(sig, "signed_pdf_bytes", None) and getattr(sig, "used_by_user_id", None) is None:
                     accept_now_sig_id = sig.id
         out.append(
@@ -228,16 +231,19 @@ def guest_add_pending_invite(
                 .order_by(AgreementSignature.signed_at.desc())
                 .first()
             )
-            if sig and getattr(sig, "dropbox_sign_request_id", None):
-                if not getattr(sig, "signed_pdf_bytes", None):
-                    pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
-                    if pdf_bytes:
-                        sig.signed_pdf_bytes = pdf_bytes
-                        db.commit()
-                        db.refresh(sig)
-                if not getattr(sig, "signed_pdf_bytes", None):
-                    needs_dropbox, pending_sig_id = True, sig.id
-                elif getattr(sig, "signed_pdf_bytes", None):
+            if sig:
+                if getattr(sig, "dropbox_sign_request_id", None):
+                    if not getattr(sig, "signed_pdf_bytes", None):
+                        pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
+                        if pdf_bytes:
+                            sig.signed_pdf_bytes = pdf_bytes
+                            db.commit()
+                            db.refresh(sig)
+                    if not getattr(sig, "signed_pdf_bytes", None):
+                        needs_dropbox, pending_sig_id = True, sig.id
+                    elif getattr(sig, "used_by_user_id", None) is None:
+                        accept_now_sig_id = sig.id
+                elif getattr(sig, "signed_pdf_bytes", None) and getattr(sig, "used_by_user_id", None) is None:
                     accept_now_sig_id = sig.id
         unit_label_val = None
         if getattr(inv, "unit_id", None):
@@ -268,6 +274,37 @@ def guest_add_pending_invite(
             unit_label_val = unit_row.unit_label
     owner = db.query(User).filter(User.id == inv.owner_id).first()
     host_name = (owner.full_name if owner else None) or (owner.email if owner else "")
+    # Check for an existing completed signature so the frontend can accept directly without re-signing
+    needs_dropbox = False
+    pending_sig_id = None
+    accept_now_sig_id = None
+    guest_email = (current_user.email or "").strip().lower()
+    if guest_email:
+        sig = (
+            db.query(AgreementSignature)
+            .filter(
+                AgreementSignature.invitation_code == inv.invitation_code,
+                AgreementSignature.guest_email == guest_email,
+                AgreementSignature.used_by_user_id.is_(None),
+            )
+            .order_by(AgreementSignature.signed_at.desc())
+            .first()
+        )
+        if sig:
+            if getattr(sig, "dropbox_sign_request_id", None):
+                if not getattr(sig, "signed_pdf_bytes", None):
+                    pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
+                    if pdf_bytes:
+                        sig.signed_pdf_bytes = pdf_bytes
+                        db.commit()
+                        db.refresh(sig)
+                if not getattr(sig, "signed_pdf_bytes", None):
+                    needs_dropbox = True
+                    pending_sig_id = sig.id
+                elif getattr(sig, "used_by_user_id", None) is None:
+                    accept_now_sig_id = sig.id
+            elif getattr(sig, "signed_pdf_bytes", None) and getattr(sig, "used_by_user_id", None) is None:
+                accept_now_sig_id = sig.id
     return GuestPendingInviteView(
         invitation_code=inv.invitation_code,
         property_name=property_name,
@@ -276,9 +313,9 @@ def guest_add_pending_invite(
         stay_end_date=inv.stay_end_date,
         host_name=host_name,
         region_code=inv.region_code,
-        needs_dropbox_signature=False,
-        pending_signature_id=None,
-        accept_now_signature_id=None,
+        needs_dropbox_signature=needs_dropbox,
+        pending_signature_id=pending_sig_id,
+        accept_now_signature_id=accept_now_sig_id,
     )
 
 
@@ -289,7 +326,12 @@ def owner_invitations(
 ):
     """Owner view: all invitations (pending, accepted, cancelled) with property name. Pending invites older than the configured window (12h or 5m in test_mode) are marked is_expired."""
     invs = db.query(Invitation).filter(Invitation.owner_id == current_user.id).order_by(Invitation.created_at.desc()).all()
-    threshold = get_invitation_expire_cutoff()
+    return _invitations_to_owner_views(invs, db, get_invitation_expire_cutoff)
+
+
+def _invitations_to_owner_views(invs: list, db: Session, get_invitation_expire_cutoff_fn) -> list:
+    """Build OwnerInvitationView list from invitation list. Shared by owner and manager."""
+    threshold = get_invitation_expire_cutoff_fn()
     out = []
     for inv in invs:
         prop = db.query(Property).filter(Property.id == inv.property_id).first()
@@ -302,7 +344,6 @@ def owner_invitations(
                 and inv.created_at < threshold
             )
         )
-        # Display status: ongoing when unit is occupied (stay exists, or CSV bulk-upload BURNED invite); else pending/cancelled/expired. We do not auto-set invitation.status to accepted when stay is created; this is display-only.
         has_stay = db.query(Stay).filter(Stay.invitation_id == inv.id).first() is not None
         token_state = (getattr(inv, "token_state", None) or "STAGED").upper()
         if inv.status == "cancelled":
@@ -331,6 +372,24 @@ def owner_invitations(
             )
         )
     return out
+
+
+@router.get("/manager/invitations", response_model=list[OwnerInvitationView])
+def manager_invitations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_property_manager_identity_verified),
+):
+    """Manager view: invitations for assigned properties. Same schema as owner invitations."""
+    property_ids = _manager_property_ids(db, current_user.id)
+    if not property_ids:
+        return []
+    invs = (
+        db.query(Invitation)
+        .filter(Invitation.property_id.in_(property_ids))
+        .order_by(Invitation.created_at.desc())
+        .all()
+    )
+    return _invitations_to_owner_views(invs, db, get_invitation_expire_cutoff)
 
 
 @router.post("/owner/invitations/{invitation_id}/cancel")
@@ -1679,11 +1738,15 @@ def tenant_unit(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_tenant),
 ):
-    """Return the tenant's assigned unit, plus invitation info and live_slug for the Current stay card (match guest dashboard)."""
+    """Return the tenant's assigned unit, plus invitation info and live_slug for the Current stay card (match guest dashboard). Only ongoing assignments (end_date is None or end_date >= today)."""
+    today = date.today()
     ta = (
         db.query(TenantAssignment)
         .join(Unit)
-        .filter(TenantAssignment.user_id == current_user.id)
+        .filter(
+            TenantAssignment.user_id == current_user.id,
+            (TenantAssignment.end_date.is_(None)) | (TenantAssignment.end_date >= today),
+        )
         .order_by(TenantAssignment.start_date.desc())
         .first()
     )
@@ -2042,6 +2105,20 @@ def tenant_create_invitation(
             ip_address=ip,
             user_agent=ua,
         )
+        property_name = (prop.name or "").strip() or (f"{getattr(prop, 'city', '')}, {getattr(prop, 'state', '')}".strip(", ")) or f"Property {prop.id}"
+        owner_profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
+        owner_user = db.query(User).filter(User.id == owner_profile.user_id).first() if owner_profile else None
+        owner_email = (owner_user.email or "").strip() if owner_user else ""
+        manager_emails = [
+            (u.email or "").strip()
+            for a in db.query(PropertyManagerAssignment).filter(PropertyManagerAssignment.property_id == prop.id).all()
+            for u in [db.query(User).filter(User.id == a.user_id).first()]
+            if u and (u.email or "").strip()
+        ]
+        try:
+            send_dead_mans_switch_enabled_notification(owner_email, manager_emails, property_name, guest_name, str(end))
+        except Exception as e:
+            logger.warning("DMS enabled notification failed: %s", e)
         db.commit()
         return {"invitation_code": code}
     except HTTPException:

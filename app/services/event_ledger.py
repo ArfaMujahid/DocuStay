@@ -68,6 +68,7 @@ ACTION_VACANT_MONITORING_NO_RESPONSE = "VacantMonitoringNoResponse"
 ACTION_CONFIRMED_STILL_VACANT = "ConfirmedStillVacant"
 ACTION_BILLING_INVOICE_PAID = "BillingInvoicePaid"
 ACTION_BILLING_INVOICE_CREATED = "BillingInvoiceCreated"
+ACTION_BILLING_INVOICE_PAYMENT_FAILED = "BillingInvoicePaymentFailed"
 ACTION_AGREEMENT_SIGNED = "AgreementSigned"
 ACTION_MASTER_POA_SIGNED = "MasterPOASigned"
 ACTION_AGREEMENT_SIGN_FAILED = "AgreementSignFailed"
@@ -146,6 +147,7 @@ _ACTION_DISPLAY: dict[str, tuple[str, str]] = {
     ACTION_CONFIRMED_STILL_VACANT: ("status_change", "Owner confirmed still vacant"),
     ACTION_BILLING_INVOICE_PAID: ("billing", "Invoice paid"),
     ACTION_BILLING_INVOICE_CREATED: ("billing", "Onboarding invoice created"),
+    ACTION_BILLING_INVOICE_PAYMENT_FAILED: ("billing", "Payment failed"),
     ACTION_AGREEMENT_SIGNED: ("guest_signature", "Agreement signed"),
     ACTION_MASTER_POA_SIGNED: ("status_change", "Master POA signed"),
     ACTION_AGREEMENT_SIGN_FAILED: ("failed_attempt", "Agreement sign failed"),

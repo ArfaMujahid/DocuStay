@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Input, Button, ErrorModal } from '../../components/UI';
 import { HeroBackground } from '../../components/HeroBackground';
+import { AuthCardLayout, AuthBullet } from '../../components/AuthCardLayout';
 import { authApi } from '../../services/api';
 
 export type ForgotPasswordRole = 'owner' | 'guest';
@@ -51,38 +52,31 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ role, setLoading, notif
 
   return (
     <HeroBackground className="flex-grow">
-      <div className="w-full max-w-5xl flex rounded-xl overflow-hidden border border-gray-200/60 bg-white/40 backdrop-blur-sm min-h-[420px] shadow-xl">
-        <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-100/40 via-blue-50/40 to-sky-100/40 p-10 flex-col justify-center border-r border-blue-200/40">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-3">{title} – Forgot password</h2>
-          <p className="text-gray-600 text-sm mb-8">{subtitle}</p>
-          <ul className="space-y-3 text-sm text-gray-600">
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Check your email for the reset link
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Link expires in 1 hour
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Use the same sign-in page you started from
-            </li>
+      <AuthCardLayout minHeight="420px" leftPanel={
+        <>
+          <h2 className="text-2xl font-semibold text-slate-900 mb-3">{title} – Forgot password</h2>
+          <p className="text-slate-600 text-sm mb-8">{subtitle}</p>
+          <ul className="space-y-3">
+            <AuthBullet>Check your email for the reset link</AuthBullet>
+            <AuthBullet>Link expires in 1 hour</AuthBullet>
+            <AuthBullet>Use the same sign-in page you started from</AuthBullet>
           </ul>
-        </div>
-
-        <div className="w-full lg:w-1/2 bg-white/40 backdrop-blur-sm p-8 md:p-10 flex flex-col justify-center">
+        </>
+      }>
           <div className="max-w-sm mx-auto w-full">
-            <h1 className="text-xl font-semibold text-gray-900 mb-1 lg:hidden">{title} – Forgot password</h1>
-            <p className="text-gray-600 text-sm mb-6">{subtitle}</p>
+            <h1 className="text-xl font-semibold text-slate-900 mb-1 lg:hidden">{title} – Forgot password</h1>
+            <p className="text-slate-600 text-sm mb-6">{subtitle}</p>
 
             {submitted ? (
               <div className="space-y-4">
-                <p className="text-gray-700 text-sm">
+                <p className="text-slate-700 text-sm">
                   You will receive a password reset link shortly on <strong>{email}</strong>. Check your inbox and spam folder.
                 </p>
-                <p className="text-gray-600 text-sm">
+                <p className="text-slate-600 text-sm">
                   <button
                     type="button"
                     onClick={() => navigate(signInView)}
-                    className="text-blue-700 font-medium hover:text-blue-800 underline underline-offset-2"
+                    className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] underline underline-offset-2"
                   >
                     Back to {isOwner ? 'Owner' : 'Guest'} sign in
                   </button>
@@ -100,11 +94,11 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ role, setLoading, notif
                   required
                 />
                 <Button type="submit" className="w-full py-2.5">Send reset link</Button>
-                <p className="text-center text-sm text-gray-500">
+                <p className="text-center text-sm text-slate-500">
                   <button
                     type="button"
                     onClick={() => navigate(signInView)}
-                    className="text-blue-700 hover:text-blue-800 underline underline-offset-2"
+                    className="text-[#6B90F2] hover:text-[#5a7ed9] underline underline-offset-2"
                   >
                     Back to sign in
                   </button>
@@ -112,8 +106,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ role, setLoading, notif
               </form>
             )}
           </div>
-        </div>
-      </div>
+      </AuthCardLayout>
 
       <ErrorModal
         open={errorModal.open}

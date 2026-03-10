@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
     stripe_identity_flow_id: str = ""
+    stripe_identity_flow_id_manager: str = ""  # Property manager Stripe Identity flow (optional; falls back to stripe_identity_flow_id)
     stripe_identity_return_url: str = ""
     stripe_webhook_secret: str = ""  # Webhook signing secret (whsec_...) for billing events
     # When True, do not self-heal onboarding_invoice_paid_at when listing billing (so you can re-test payment flow after running set_onboarding_invoice_unpaid.py)

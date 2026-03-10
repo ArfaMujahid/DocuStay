@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { flushSync } from 'react-dom';
-import { Card, Button, Modal, Input } from '../../components/UI';
+import { Card, Button, Modal } from '../../components/UI';
 import { InviteRoleChoiceModal } from '../../components/InviteRoleChoiceModal';
+import { InviteTenantModal } from '../../components/InviteTenantModal';
+import { InviteGuestModal } from '../../components/InviteGuestModal';
 import { UserSession } from '../../types';
-import { dashboardApi, invitationsApi, getContextMode, setContextMode, APP_ORIGIN } from '../../services/api';
-import { getTodayLocal } from '../../utils/dateUtils';
-import { toUserFriendlyInvitationError } from '../../utils/invitationErrors';
+import { dashboardApi, getContextMode, setContextMode, type OwnerInvitationView } from '../../services/api';
 import { ModeSwitcher } from '../../components/ModeSwitcher';
 import Settings from '../Settings/Settings';
 import HelpCenter from '../Support/HelpCenter';
+import { InvitationsTabContent } from '../../components/InvitationsTabContent';
 
 interface PropertySummary {
   id: number;
@@ -39,19 +40,20 @@ const ManagerDashboard: React.FC<{
   type ManagerTab = 'properties' | 'guests' | 'invitations' | 'logs' | 'billing' | 'settings' | 'help';
   const [activeTab, setActiveTab] = useState<ManagerTab>('properties');
   const [stays, setStays] = useState<any[]>([]);
+  const [invitations, setInvitations] = useState<OwnerInvitationView[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [billing, setBilling] = useState<any>(null);
   const [personalModeUnits, setPersonalModeUnits] = useState<number[]>([]);
   const [contextMode, setContextModeState] = useState<'business' | 'personal'>(() => getContextMode());
   const [inviteRoleChoiceUnit, setInviteRoleChoiceUnit] = useState<{ unitId: number; unitLabel: string } | null>(null);
+  const [showSelectPropertyUnitModal, setShowSelectPropertyUnitModal] = useState(false);
+  const [inviteSelectPropertyId, setInviteSelectPropertyId] = useState<number | null>(null);
+  const [inviteSelectUnits, setInviteSelectUnits] = useState<UnitSummary[]>([]);
+  const [inviteSelectUnitId, setInviteSelectUnitId] = useState<number | null>(null);
+  const [inviteSelectUnitsLoading, setInviteSelectUnitsLoading] = useState(false);
   const [inviteTenantModal, setInviteTenantModal] = useState<{ unitId: number; unitLabel: string } | null>(null);
-  const [inviteTenantForm, setInviteTenantForm] = useState({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
-  const [inviteTenantSubmitting, setInviteTenantSubmitting] = useState(false);
   const [inviteGuestOpen, setInviteGuestOpen] = useState(false);
-  const [inviteGuestForm, setInviteGuestForm] = useState({ unit_id: 0, guest_name: '', checkin_date: '', checkout_date: '' });
-  const [inviteGuestSubmitting, setInviteGuestSubmitting] = useState(false);
-  const [inviteGuestLink, setInviteGuestLink] = useState('');
-  const [inviteTenantLink, setInviteTenantLink] = useState('');
+  const [inviteGuestUnitId, setInviteGuestUnitId] = useState<number | null>(null);
 
   const setLoadingWrapper = (x: boolean) => {
     setLoadingState(x);
@@ -78,10 +80,28 @@ const ManagerDashboard: React.FC<{
     };
     load();
   }, []);
-
   useEffect(() => {
-    if (activeTab === 'guests' || activeTab === 'invitations') dashboardApi.managerStays().then(setStays).catch(() => setStays([]));
-  }, [activeTab]);
+    try {
+      const tab = typeof window !== 'undefined' ? sessionStorage.getItem('manager_initial_tab') : null;
+      if (tab === 'guests' || tab === 'invitations') {
+        sessionStorage.removeItem('manager_initial_tab');
+        setActiveTab(tab);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadInvitationsAndStays = useCallback(() => {
+    Promise.all([
+      dashboardApi.managerStays().catch(() => []),
+      dashboardApi.managerInvitations().catch(() => []),
+    ]).then(([staysData, invitationsData]) => {
+      setStays(staysData || []);
+      setInvitations(invitationsData || []);
+    });
+  }, []);
+  useEffect(() => {
+    if (activeTab === 'guests' || activeTab === 'invitations') loadInvitationsAndStays();
+  }, [activeTab, loadInvitationsAndStays]);
   useEffect(() => {
     if (contextMode === 'personal' && (activeTab === 'billing' || activeTab === 'logs')) setActiveTab('properties');
   }, [contextMode, activeTab]);
@@ -92,6 +112,22 @@ const ManagerDashboard: React.FC<{
     if (activeTab === 'billing') dashboardApi.managerBilling().then(setBilling).catch(() => setBilling(null));
   }, [activeTab]);
 
+  useEffect(() => {
+    if (!showSelectPropertyUnitModal || !inviteSelectPropertyId) {
+      setInviteSelectUnits([]);
+      setInviteSelectUnitId(null);
+      return;
+    }
+    setInviteSelectUnitsLoading(true);
+    dashboardApi.managerUnits(inviteSelectPropertyId)
+      .then((u) => {
+        setInviteSelectUnits(u || []);
+        setInviteSelectUnitId((u && u[0]?.id) ?? null);
+      })
+      .catch(() => setInviteSelectUnits([]))
+      .finally(() => setInviteSelectUnitsLoading(false));
+  }, [showSelectPropertyUnitModal, inviteSelectPropertyId]);
+
   const handleContextModeChange = useCallback((mode: 'business' | 'personal') => {
     setContextMode(mode);
     flushSync(() => {
@@ -99,64 +135,6 @@ const ManagerDashboard: React.FC<{
       if (mode === 'personal' && (activeTab === 'billing' || activeTab === 'logs')) setActiveTab('properties');
     });
   }, [activeTab]);
-
-  const handleInviteGuest = async () => {
-    if (!inviteGuestForm.unit_id || !inviteGuestForm.guest_name || !inviteGuestForm.checkin_date || !inviteGuestForm.checkout_date) {
-      notify('error', 'Please fill all fields');
-      return;
-    }
-    if (inviteGuestForm.checkin_date < getTodayLocal()) {
-      notify('error', 'Check-in date cannot be in the past.');
-      return;
-    }
-    setInviteGuestSubmitting(true);
-    try {
-      const res = await invitationsApi.create({
-        unit_id: inviteGuestForm.unit_id,
-        guest_name: inviteGuestForm.guest_name,
-        checkin_date: inviteGuestForm.checkin_date,
-        checkout_date: inviteGuestForm.checkout_date,
-      });
-      if (res.status !== 'success' || !res.data?.invitation_code) {
-        notify('error', res.message ?? 'We couldn\'t create a valid invitation link. Please try again.');
-        return;
-      }
-      const code = res.data.invitation_code;
-      const base = APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '');
-      setInviteGuestLink(`${base}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${code}`);
-      notify('success', 'Invitation created.');
-    } catch (err) {
-      notify('error', toUserFriendlyInvitationError((err as Error)?.message ?? 'Failed to create invitation'));
-    } finally {
-      setInviteGuestSubmitting(false);
-    }
-  };
-
-  const handleInviteTenant = async () => {
-    if (!inviteTenantModal) return;
-    const { tenant_name, tenant_email, lease_start_date, lease_end_date } = inviteTenantForm;
-    if (!tenant_name.trim()) { notify('error', 'Tenant name is required'); return; }
-    if (!lease_start_date || !lease_end_date) { notify('error', 'Lease dates are required'); return; }
-    if (lease_start_date < getTodayLocal()) { notify('error', 'Lease start date cannot be in the past.'); return; }
-    setInviteTenantSubmitting(true);
-    try {
-      const res = await dashboardApi.managerInviteTenant(inviteTenantModal.unitId, {
-        tenant_name: tenant_name.trim(),
-        tenant_email: tenant_email.trim(),
-        lease_start_date,
-        lease_end_date,
-      });
-      const base = typeof window !== 'undefined' ? window.location.origin : '';
-      const link = `${base}${window.location.pathname}#invite/${res.invitation_code}`;
-      setInviteTenantLink(link);
-      notify('success', 'Tenant invitation created. Share the invite link with the tenant.');
-      setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
-    } catch (e) {
-      notify('error', (e as Error)?.message || 'Failed to create invitation');
-    } finally {
-      setInviteTenantSubmitting(false);
-    }
-  };
 
   const loadUnits = async (propertyId: number) => {
     if (expandedPropertyId === propertyId) {
@@ -261,6 +239,20 @@ const ManagerDashboard: React.FC<{
                   {activeTab === 'properties' ? 'Properties assigned to you.' : activeTab === 'guests' ? 'Guests currently staying at managed properties and their stay details.' : activeTab === 'invitations' ? 'Pending invitations for properties you manage.' : activeTab === 'logs' ? 'Event ledger for managed properties.' : 'Billing visibility for the properties you manage.'}
                 </p>
               </div>
+              {(activeTab === 'properties' || activeTab === 'guests' || activeTab === 'invitations') && properties.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setInviteSelectPropertyId(properties[0]?.id ?? null);
+                    setInviteSelectUnitId(null);
+                    setShowSelectPropertyUnitModal(true);
+                  }}
+                  className="px-6 flex items-center gap-2 shrink-0"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
+                  Invite
+                </Button>
+              )}
             </header>
 
       {activeTab === 'guests' && (
@@ -283,39 +275,19 @@ const ManagerDashboard: React.FC<{
       )}
 
       {activeTab === 'invitations' && (
-        <Card className="p-6">
-          <h2 className="font-semibold text-gray-900 mb-4">Invitations</h2>
-          <p className="text-slate-500 text-sm mb-4">Pending invitations for properties you manage. Invitations expire if not accepted within the configured window.</p>
-          {stays.filter((s: any) => s.invitation_only || (s.token_state || '').toUpperCase() === 'STAGED').length === 0 ? (
-            <p className="text-slate-500 text-sm">No pending invitations.</p>
-          ) : (
-            <ul className="space-y-2">
-              {stays.filter((s: any) => s.invitation_only || (s.token_state || '').toUpperCase() === 'STAGED').map((s: any, idx: number) => {
-                const inviteCode = s.invite_id || s.invitation_code || '';
-                const inviteUrl = inviteCode ? `${typeof window !== 'undefined' ? window.location.origin : ''}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inviteCode}` : '';
-                return (
-                  <li key={s.invite_id || s.stay_id || idx} className="flex justify-between items-center gap-4 py-2 border-b border-slate-100 last:border-0 flex-wrap">
-                    <span className="text-sm min-w-0 flex-1">{s.guest_name || '—'} · {s.property_name} · {s.stay_start_date} – {s.stay_end_date}</span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {inviteUrl ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            navigator.clipboard.writeText(inviteUrl).then(() => notify('success', 'Invitation link copied to clipboard.')).catch(() => notify('error', 'Could not copy.'));
-                          }}
-                        >
-                          Copy link
-                        </Button>
-                      ) : null}
-                      <span className="text-xs text-slate-500">{(s.token_state || '').toUpperCase() || 'Pending'}</span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Card>
+        <InvitationsTabContent
+          invitations={invitations}
+          stays={stays}
+          loadData={loadInvitationsAndStays}
+          notify={notify}
+          showVerifyQR={false}
+          onCancelInvitation={async (id) => {
+            await dashboardApi.cancelInvitation(id);
+            notify('success', 'Invitation cancelled.');
+            loadInvitationsAndStays();
+          }}
+          introText="Pending invitations for properties you manage. Invitations expire if not accepted within the configured window."
+        />
       )}
 
       {activeTab === 'logs' && (
@@ -457,6 +429,66 @@ const ManagerDashboard: React.FC<{
         </div>
       ))}
 
+      {showSelectPropertyUnitModal && (
+        <Modal
+          open
+          onClose={() => { setShowSelectPropertyUnitModal(false); setInviteSelectPropertyId(null); setInviteSelectUnitId(null); }}
+          title="Select property and unit"
+          className="max-w-md"
+        >
+          <div className="p-6 space-y-4">
+            <label className="block text-sm font-medium text-slate-700">Property</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900"
+              value={inviteSelectPropertyId ?? ''}
+              onChange={(e) => {
+                const id = Number(e.target.value) || null;
+                setInviteSelectPropertyId(id);
+                setInviteSelectUnitId(null);
+              }}
+            >
+              <option value="">Select property</option>
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>{p.name || p.address || `Property #${p.id}`}</option>
+              ))}
+            </select>
+            <label className="block text-sm font-medium text-slate-700">Unit</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900"
+              value={inviteSelectUnitId ?? ''}
+              onChange={(e) => setInviteSelectUnitId(Number(e.target.value) || null)}
+              disabled={inviteSelectUnitsLoading || !inviteSelectPropertyId}
+            >
+              <option value="">Select unit</option>
+              {inviteSelectUnits.filter((u) => u.id > 0).map((u) => (
+                <option key={u.id} value={u.id}>Unit {u.unit_label}</option>
+              ))}
+            </select>
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" onClick={() => { setShowSelectPropertyUnitModal(false); setInviteSelectPropertyId(null); setInviteSelectUnitId(null); }} className="flex-1">Cancel</Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  const unitId = inviteSelectUnitId ?? inviteSelectUnits[0]?.id;
+                  const unit = inviteSelectUnits.find((u) => u.id === unitId);
+                  if (unitId && unit) {
+                    setInviteRoleChoiceUnit({ unitId, unitLabel: unit.unit_label });
+                    setShowSelectPropertyUnitModal(false);
+                    setInviteSelectPropertyId(null);
+                    setInviteSelectUnitId(null);
+                  } else {
+                    notify('error', 'Please select a property and unit.');
+                  }
+                }}
+                disabled={!inviteSelectUnitId && inviteSelectUnits.length === 0}
+              >
+                Continue
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       <InviteRoleChoiceModal
         open={!!inviteRoleChoiceUnit}
         onClose={() => setInviteRoleChoiceUnit(null)}
@@ -464,73 +496,48 @@ const ManagerDashboard: React.FC<{
         onSelectTenant={() => {
           if (inviteRoleChoiceUnit) {
             setInviteTenantModal({ unitId: inviteRoleChoiceUnit.unitId, unitLabel: inviteRoleChoiceUnit.unitLabel });
-            setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
           }
           setInviteRoleChoiceUnit(null);
         }}
         onSelectGuest={() => {
-          if (inviteRoleChoiceUnit?.unitId) {
-            setInviteGuestForm({ unit_id: inviteRoleChoiceUnit.unitId, guest_name: '', checkin_date: '', checkout_date: '' });
-          }
-          setInviteGuestLink('');
+          if (inviteRoleChoiceUnit?.unitId) setInviteGuestUnitId(inviteRoleChoiceUnit.unitId);
           setInviteGuestOpen(true);
           setInviteRoleChoiceUnit(null);
         }}
       />
 
-      {inviteTenantModal && (
-        <Modal open={!!inviteTenantModal} onClose={() => { setInviteTenantModal(null); setInviteTenantLink(''); }} title="Invite tenant" className="max-w-lg">
-          <div className="p-6 space-y-4">
-            {inviteTenantLink ? (
-              <>
-                <p className="text-sm text-slate-600">Share this link with the tenant to complete registration.</p>
-                <div className="bg-slate-100 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 break-all font-mono">{inviteTenantLink}</div>
-                <div className="flex gap-3">
-                  <Button variant="outline" className="flex-1" onClick={() => { navigator.clipboard.writeText(inviteTenantLink); notify('success', 'Link copied.'); }}>Copy link</Button>
-                  <Button className="flex-1" onClick={() => { setInviteTenantModal(null); setInviteTenantLink(''); }}>Done</Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-slate-600">Unit {inviteTenantModal.unitLabel}. The tenant will receive an invite link to register.</p>
-                <Input name="tenant_name" label="Tenant name" value={inviteTenantForm.tenant_name} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, tenant_name: e.target.value })} placeholder="Full name" required />
-                <Input name="tenant_email" label="Tenant email" type="email" value={inviteTenantForm.tenant_email} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, tenant_email: e.target.value })} placeholder="email@example.com" />
-                <Input name="lease_start_date" label="Lease start" type="date" min={getTodayLocal()} value={inviteTenantForm.lease_start_date} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, lease_start_date: e.target.value })} required />
-                <Input name="lease_end_date" label="Lease end" type="date" min={inviteTenantForm.lease_start_date || getTodayLocal()} value={inviteTenantForm.lease_end_date} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, lease_end_date: e.target.value })} required />
-                <div className="flex gap-3 pt-2">
-                  <Button variant="outline" onClick={() => { setInviteTenantModal(null); setInviteTenantLink(''); }} className="flex-1">Cancel</Button>
-                  <Button onClick={handleInviteTenant} disabled={inviteTenantSubmitting} className="flex-1">{inviteTenantSubmitting ? 'Creating…' : 'Create invitation'}</Button>
-                </div>
-              </>
-            )}
-          </div>
-        </Modal>
-      )}
+      <InviteTenantModal
+        open={!!inviteTenantModal}
+        onClose={() => setInviteTenantModal(null)}
+        properties={properties.map((p) => ({ id: p.id, name: p.name, address: p.address }))}
+        getUnits={(id) => dashboardApi.managerUnits(id).then((u) => (u || []).filter((x) => x.id >= 0).map((x) => ({ id: x.id, unit_label: x.unit_label })))}
+        preselectedUnit={inviteTenantModal ?? undefined}
+        createInvitation={(params) =>
+          dashboardApi.managerInviteTenant(params.unitId!, {
+            tenant_name: params.tenant_name,
+            tenant_email: params.tenant_email,
+            lease_start_date: params.lease_start_date,
+            lease_end_date: params.lease_end_date,
+          }).then((r) => ({ invitation_code: r.invitation_code }))
+        }
+        notify={notify}
+        onSuccess={loadInvitationsAndStays}
+      />
 
-      <Modal open={inviteGuestOpen} onClose={() => { setInviteGuestOpen(false); setInviteGuestLink(''); }} title="Invite guest" className="max-w-lg" disableBackdropClose={inviteGuestSubmitting || !!inviteGuestLink}>
-        <div className="p-6">
-          {inviteGuestLink ? (
-            <div className="space-y-4">
-              <p className="text-sm text-slate-600">Share this link with your guest.</p>
-              <div className="bg-slate-100 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 break-all">{inviteGuestLink}</div>
-              <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => { navigator.clipboard.writeText(inviteGuestLink); notify('success', 'Link copied.'); }}>Copy link</Button>
-                <Button className="flex-1" onClick={() => { setInviteGuestOpen(false); setInviteGuestLink(''); }}>Done</Button>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={(e) => { e.preventDefault(); handleInviteGuest(); }} className="space-y-4">
-              <Input name="guest_name" label="Guest name" value={inviteGuestForm.guest_name} onChange={(e) => setInviteGuestForm({ ...inviteGuestForm, guest_name: e.target.value })} placeholder="Full name" required />
-              <Input name="checkin_date" label="Check-in" type="date" min={getTodayLocal()} value={inviteGuestForm.checkin_date} onChange={(e) => setInviteGuestForm({ ...inviteGuestForm, checkin_date: e.target.value })} required />
-              <Input name="checkout_date" label="Check-out" type="date" min={inviteGuestForm.checkin_date || getTodayLocal()} value={inviteGuestForm.checkout_date} onChange={(e) => setInviteGuestForm({ ...inviteGuestForm, checkout_date: e.target.value })} required />
-              <div className="flex gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setInviteGuestOpen(false)} className="flex-1">Cancel</Button>
-                <Button type="submit" disabled={inviteGuestSubmitting} className="flex-1">{inviteGuestSubmitting ? 'Creating…' : 'Create invitation'}</Button>
-              </div>
-            </form>
-          )}
-        </div>
-      </Modal>
+      <InviteGuestModal
+        open={inviteGuestOpen}
+        onClose={() => {
+          setInviteGuestOpen(false);
+          setInviteGuestUnitId(null);
+        }}
+        user={user}
+        setLoading={setLoadingWrapper}
+        notify={notify}
+        onSuccess={loadInvitationsAndStays}
+        propertiesLoader={() => dashboardApi.managerProperties()}
+        unitsLoader={(id) => dashboardApi.managerUnits(id)}
+        unitId={inviteGuestUnitId}
+      />
           </>
         )}
       </main>

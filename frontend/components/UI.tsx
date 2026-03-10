@@ -19,7 +19,7 @@ export const Button: React.FC<{
   const baseStyles = "px-4 py-2.5 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white disabled:opacity-50 disabled:cursor-not-allowed";
   
   const variants = {
-    primary: "bg-blue-700 hover:bg-blue-800 text-white focus:ring-blue-600",
+    primary: "bg-[#6B90F2] hover:bg-[#5a7ed9] text-white focus:ring-[#6B90F2]",
     secondary: "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 focus:ring-blue-500",
     outline: "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-400",
     danger: "bg-red-600 hover:bg-red-700 text-white focus:ring-red-500",
@@ -51,11 +51,13 @@ export const Input: React.FC<{
   required?: boolean;
   className?: string;
   disabled?: boolean;
+  readOnly?: boolean;
   min?: string;
   max?: string;
-}> = ({ label, name, type = 'text', value, onChange, onKeyDown, error, placeholder, options, required, className, disabled, min, max }) => (
-  <div className={`mb-4 ${className}`}>
-    <label htmlFor={name} className="block text-sm font-medium text-gray-700 mb-1.5">
+  minLength?: number;
+}> = ({ label, name, type = 'text', value, onChange, onKeyDown, error, placeholder, options, required, className, disabled, readOnly, min, max, minLength }) => (
+  <div className={`mb-4 min-w-0 ${className}`}>
+    <label htmlFor={name} className="block text-sm font-medium text-slate-700 mb-1.5">
       {label} {required && <span className="text-red-500">*</span>}
     </label>
     {options ? (
@@ -65,7 +67,7 @@ export const Input: React.FC<{
         value={value}
         onChange={onChange}
         disabled={disabled}
-        className={`w-full px-4 py-2.5 bg-white border rounded-lg text-gray-900 placeholder-gray-400 appearance-none focus:ring-2 focus:ring-blue-500 focus:border-blue-600 outline-none transition-colors ${error ? 'border-red-500' : 'border-gray-300'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        className={`w-full px-4 py-2.5 bg-white border rounded-lg text-gray-900 placeholder-gray-400 appearance-none focus:ring-2 focus:ring-[#6B90F2] focus:border-[#6B90F2] outline-none transition-colors ${error ? 'border-red-500' : 'border-slate-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         <option value="" className="bg-white text-gray-900">Select {label}</option>
         {options.map(opt => <option key={opt.value} value={opt.value} className="bg-white text-gray-900">{opt.label}</option>)}
@@ -80,9 +82,11 @@ export const Input: React.FC<{
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         disabled={disabled}
+        readOnly={readOnly}
         min={min}
         max={max}
-        className={`w-full px-4 py-2.5 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-600 outline-none transition-colors ${error ? 'border-red-500' : 'border-gray-300'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        minLength={minLength}
+        className={`w-full px-4 py-2.5 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#6B90F2] focus:border-[#6B90F2] outline-none transition-colors ${error ? 'border-red-500' : 'border-slate-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${readOnly ? 'bg-slate-50 cursor-default' : ''}`}
       />
     )}
     {error && (
@@ -116,7 +120,7 @@ export const Modal: React.FC<{
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-[100]">
-      <div className="absolute inset-0 bg-black/20" onClick={disableBackdropClose ? undefined : onClose} aria-hidden="true" />
+      <div className="absolute inset-0 bg-slate-900/60" onClick={disableBackdropClose ? undefined : onClose} aria-hidden="true" />
       <div className="absolute inset-0 p-4 flex items-center justify-center pointer-events-none">
         <div className={`w-full max-w-4xl bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden pointer-events-auto ${className || ""}`} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
@@ -155,7 +159,7 @@ export const ErrorModal: React.FC<{
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-[60]">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-slate-900/60" onClick={onClose} aria-hidden />
       <div className="absolute inset-0 p-4 flex items-center justify-center">
         <div
           className="w-full max-w-md bg-white border border-red-200 rounded-xl shadow-lg overflow-hidden"

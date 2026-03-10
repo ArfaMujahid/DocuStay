@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { flushSync } from 'react-dom';
-import { Card, Button, Modal, Input } from '../../components/UI';
+import { Card, Button, Modal } from '../../components/UI';
 import { InviteRoleChoiceModal } from '../../components/InviteRoleChoiceModal';
+import { InviteTenantModal } from '../../components/InviteTenantModal';
+import { InviteGuestModal } from '../../components/InviteGuestModal';
 import { UserSession } from '../../types';
-import { dashboardApi, getContextMode, setContextMode, invitationsApi, APP_ORIGIN } from '../../services/api';
+import { dashboardApi, getContextMode, setContextMode } from '../../services/api';
 import { ModeSwitcher } from '../../components/ModeSwitcher';
 import Settings from '../Settings/Settings';
 import HelpCenter from '../Support/HelpCenter';
 import { JURISDICTION_RULES } from '../../services/jleService';
-import { getTodayLocal } from '../../utils/dateUtils';
 import type { OwnerStayView, OwnerAuditLogEntry, BillingResponse } from '../../services/api';
 
 type ManagerPropertySummary = {
@@ -33,7 +34,7 @@ const ManagerPropertyDetail: React.FC<{
   navigate: (v: string) => void;
   setLoading?: (l: boolean) => void;
   notify?: (t: 'success' | 'error', m: string) => void;
-}> = ({ propertyId, user, navigate, setLoading: setGlobalLoading = () => {}, notify = () => {} }) => {
+}> = ({ propertyId, user, navigate, setLoading: setGlobalLoading = (_l: boolean) => {}, notify = (_t: 'success' | 'error', _m: string) => {} }) => {
   const id = Number(propertyId);
   const [property, setProperty] = useState<ManagerPropertySummary | null>(null);
   const [units, setUnits] = useState<UnitSummary[]>([]);
@@ -48,8 +49,6 @@ const ManagerPropertyDetail: React.FC<{
   const [propertyLogsLoading, setPropertyLogsLoading] = useState(false);
   const [inviteRoleChoiceUnit, setInviteRoleChoiceUnit] = useState<{ unitId: number; unitLabel: string } | null>(null);
   const [inviteTenantModal, setInviteTenantModal] = useState<{ unitId: number; unitLabel: string } | null>(null);
-  const [inviteTenantForm, setInviteTenantForm] = useState({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
-  const [inviteTenantSubmitting, setInviteTenantSubmitting] = useState(false);
   const [presence, setPresence] = useState<'present' | 'away'>('present');
   const [presenceAwayStartedAt, setPresenceAwayStartedAt] = useState<string | null>(null);
   const [presenceGuestsAuthorized, setPresenceGuestsAuthorized] = useState(false);
@@ -58,9 +57,7 @@ const ManagerPropertyDetail: React.FC<{
   const [presenceAwayGuestsAuthorized, setPresenceAwayGuestsAuthorized] = useState(false);
   const [contextMode, setContextModeState] = useState<'business' | 'personal'>(() => getContextMode());
   const [inviteGuestOpen, setInviteGuestOpen] = useState(false);
-  const [inviteGuestForm, setInviteGuestForm] = useState({ unit_id: 0, guest_name: '', checkin_date: '', checkout_date: '' });
-  const [inviteGuestSubmitting, setInviteGuestSubmitting] = useState(false);
-  const [inviteGuestLink, setInviteGuestLink] = useState('');
+  const [inviteGuestUnitId, setInviteGuestUnitId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     if (!id || isNaN(id)) {
@@ -138,62 +135,6 @@ const ManagerPropertyDetail: React.FC<{
   const hasPersonalModeUnitHere = units.some((u) => u.id > 0 && personalModeUnits.includes(u.id));
   const personalModeUnitId = hasPersonalModeUnitHere ? personalModeUnits.find((uid) => units.some((u) => u.id === uid)) ?? null : null;
 
-  const handleInviteTenant = async () => {
-    if (!inviteTenantModal) return;
-    const { tenant_name, tenant_email, lease_start_date, lease_end_date } = inviteTenantForm;
-    if (!tenant_name.trim()) { notify('error', 'Tenant name is required'); return; }
-    if (!lease_start_date || !lease_end_date) { notify('error', 'Lease dates are required'); return; }
-    if (lease_start_date < getTodayLocal()) { notify('error', 'Lease start date cannot be in the past.'); return; }
-    setInviteTenantSubmitting(true);
-    try {
-      await dashboardApi.managerInviteTenant(inviteTenantModal.unitId, {
-        tenant_name: tenant_name.trim(),
-        tenant_email: tenant_email.trim(),
-        lease_start_date,
-        lease_end_date,
-      });
-      notify('success', 'Invitation created. Share the invite link with the tenant.');
-      setInviteTenantModal(null);
-      setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
-      loadData();
-    } catch (e) {
-      notify('error', (e as Error)?.message ?? 'Failed to create invitation');
-    } finally {
-      setInviteTenantSubmitting(false);
-    }
-  };
-
-  const handleInviteGuest = async () => {
-    const { unit_id, guest_name, checkin_date, checkout_date } = inviteGuestForm;
-    if (!unit_id || unit_id <= 0) { notify('error', 'Please select a unit.'); return; }
-    if (!guest_name.trim()) { notify('error', 'Guest name is required.'); return; }
-    if (!checkin_date || !checkout_date) { notify('error', 'Check-in and check-out dates are required.'); return; }
-    if (new Date(checkout_date) <= new Date(checkin_date)) { notify('error', 'Check-out must be after check-in.'); return; }
-    if (checkin_date < getTodayLocal()) { notify('error', 'Check-in date cannot be in the past.'); return; }
-    setInviteGuestSubmitting(true);
-    setInviteGuestLink('');
-    try {
-      const result = await invitationsApi.create({
-        unit_id,
-        guest_name: guest_name.trim(),
-        checkin_date,
-        checkout_date,
-      });
-      if (result.status === 'success' && result.data?.invitation_code) {
-        const base = APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '');
-        setInviteGuestLink(`${base}${window.location.pathname}#invite/${result.data.invitation_code}`);
-        notify('success', 'Invitation link generated. Share it with your guest.');
-        loadData();
-      } else {
-        notify('error', result.message || 'Invitation failed.');
-      }
-    } catch (e) {
-      notify('error', (e as Error)?.message ?? 'Invitation failed.');
-    } finally {
-      setInviteGuestSubmitting(false);
-    }
-  };
-
   const statusBadge = (status: string) => {
     const s = (status || '').toLowerCase();
     const cls = s === 'occupied' ? 'bg-emerald-100 text-emerald-700' : s === 'vacant' ? 'bg-sky-100 text-sky-700' : s === 'unconfirmed' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600';
@@ -242,6 +183,14 @@ const ManagerPropertyDetail: React.FC<{
   const regionKey = property?.region_code === 'NYC' ? 'NY' : (property?.region_code || 'FL');
   const jurisdictionInfo = JURISDICTION_RULES[regionKey as keyof typeof JURISDICTION_RULES] ?? JURISDICTION_RULES.FL;
 
+  // In personal mode use the same sidebar as ManagerDashboard: Properties, Guests, Invitations, Settings, Help Center, Mode (no Overview/Documentation/Event ledger)
+  const sidebarNavPersonal: { id: Section | 'properties' | 'guests' | 'invitations'; label: string; icon: string }[] = [
+    { id: 'properties', label: 'Properties', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
+    { id: 'guests', label: 'Guests', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
+    { id: 'invitations', label: 'Invitations', icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+    { id: 'settings', label: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
+    { id: 'help', label: 'Help Center', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+  ];
   const sidebarNavBase: { id: Section | 'properties'; label: string; icon: string }[] = [
     { id: 'properties', label: 'Properties', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
     { id: 'overview', label: 'Overview', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
@@ -252,7 +201,7 @@ const ManagerPropertyDetail: React.FC<{
     { id: 'settings', label: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
     { id: 'help', label: 'Help Center', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
   ];
-  const sidebarNav = sidebarNavBase;
+  const sidebarNav = contextMode === 'personal' ? sidebarNavPersonal : sidebarNavBase;
 
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
@@ -261,8 +210,17 @@ const ManagerPropertyDetail: React.FC<{
           {sidebarNav.map((item) => (
             <button
               key={item.id}
-              onClick={() => item.id === 'properties' ? navigate('manager-dashboard') : setActiveSection(item.id as Section)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${item.id !== 'properties' && activeSection === item.id ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
+              onClick={() => {
+                if (item.id === 'properties') {
+                  navigate('manager-dashboard');
+                } else if (contextMode === 'personal' && (item.id === 'guests' || item.id === 'invitations')) {
+                  try { sessionStorage.setItem('manager_initial_tab', item.id); } catch { /* ignore */ }
+                  navigate('manager-dashboard');
+                } else {
+                  setActiveSection(item.id as Section);
+                }
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${item.id !== 'properties' && item.id !== 'guests' && item.id !== 'invitations' && activeSection === item.id ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} /></svg>
               {item.label}
@@ -284,6 +242,82 @@ const ManagerPropertyDetail: React.FC<{
           <div className="w-full"><Settings user={user} navigate={navigate} embedded /></div>
         ) : activeSection === 'help' ? (
           <div className="w-full"><HelpCenter navigate={navigate} embedded /></div>
+        ) : contextMode === 'personal' ? (
+          <>
+            <header className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-8">
+              <div>
+                <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight">Properties</h1>
+                <p className="text-slate-600 mt-1">Properties assigned to you. View details to see units, occupancy, event ledger, and billing for each property.</p>
+              </div>
+            </header>
+            <div className="space-y-6">
+              <Card className="p-6 border border-slate-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                  <button
+                    type="button"
+                    onClick={() => navigate('manager-dashboard')}
+                    className="min-w-0 flex-1 text-left hover:opacity-90 transition-opacity"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                      <h3 className="text-lg font-bold text-slate-800 truncate">{displayName}</h3>
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase ${
+                        displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
+                        displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
+                          displayStatus === 'VACANT' ? 'bg-slate-400' :
+                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                        }`} />
+                        {displayStatus}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-600 mt-1 truncate">{property.address || '—'}</p>
+                    <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-500">
+                      <span>{property.occupied_count}/{property.unit_count} units occupied</span>
+                      {isOccupied && activeStay && (
+                        <span>Current guest: <span className="font-medium text-slate-700">{activeStay.guest_name}</span></span>
+                      )}
+                    </div>
+                    <span className="inline-block mt-2 text-xs font-medium text-blue-400">View details →</span>
+                  </button>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <Button variant="outline" onClick={() => handleContextModeChange('business')} className="px-4">
+                      View details (Business Mode)
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-6 pt-6 border-t border-slate-200 rounded-xl bg-slate-50/80 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Occupancy status</p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${
+                      displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
+                      displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                      displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                      'bg-slate-100 text-slate-600'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${
+                        displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
+                        displayStatus === 'VACANT' ? 'bg-slate-400' :
+                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                      }`} />
+                      {displayStatus}
+                    </span>
+                    {isOccupied && activeStay && (
+                      <span className="text-sm text-slate-600">
+                        Lease end: <span className="font-medium text-slate-800">{activeStay.stay_end_date}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </div>
+            <p className="text-slate-500 text-sm mt-6">
+              Switch to <strong>Business Mode</strong> to see full property details, event ledger, and documentation.
+            </p>
+          </>
         ) : (
     <>
       <header className="mb-8">
@@ -680,105 +714,53 @@ const ManagerPropertyDetail: React.FC<{
         onSelectTenant={() => {
           if (inviteRoleChoiceUnit) {
             setInviteTenantModal({ unitId: inviteRoleChoiceUnit.unitId, unitLabel: inviteRoleChoiceUnit.unitLabel });
-            setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
           }
           setInviteRoleChoiceUnit(null);
         }}
         onSelectGuest={() => {
           if (inviteRoleChoiceUnit?.unitId && inviteRoleChoiceUnit.unitId > 0) {
-            setInviteGuestForm({ unit_id: inviteRoleChoiceUnit.unitId, guest_name: '', checkin_date: '', checkout_date: '' });
+            setInviteGuestUnitId(inviteRoleChoiceUnit.unitId);
           } else {
-            const firstUnit = units.filter((u) => u.id > 0)[0];
-            setInviteGuestForm({ unit_id: firstUnit?.id ?? 0, guest_name: '', checkin_date: '', checkout_date: '' });
+            setInviteGuestUnitId(null);
           }
-          setInviteGuestLink('');
           setInviteGuestOpen(true);
           setInviteRoleChoiceUnit(null);
         }}
       />
 
-      {inviteTenantModal && (
-        <Modal open={!!inviteTenantModal} onClose={() => setInviteTenantModal(null)} title="Invite tenant" className="max-w-lg">
-          <div className="p-6 space-y-4">
-            {inviteTenantModal.unitId > 0 ? (
-              <p className="text-sm text-slate-600">Unit {inviteTenantModal.unitLabel}. The tenant will receive an invite link to register.</p>
-            ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit</label>
-                <select
-                  id="invite-tenant-unit-select"
-                  className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900"
-                  onChange={(e) => {
-                    const uid = Number(e.target.value);
-                    const u = units.find((x) => x.id === uid);
-                    if (u) setInviteTenantModal({ unitId: u.id, unitLabel: u.unit_label });
-                  }}
-                >
-                  <option value="">Select unit</option>
-                  {units.filter((u) => u.id > 0).map((u) => (
-                    <option key={u.id} value={u.id}>Unit {u.unit_label}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <Input name="tenant_name" label="Tenant name" value={inviteTenantForm.tenant_name} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, tenant_name: e.target.value })} placeholder="Full name" required />
-            <Input name="tenant_email" label="Tenant email" type="email" value={inviteTenantForm.tenant_email} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, tenant_email: e.target.value })} placeholder="email@example.com" />
-            <Input name="lease_start_date" label="Lease start" type="date" min={getTodayLocal()} value={inviteTenantForm.lease_start_date} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, lease_start_date: e.target.value })} required />
-            <Input name="lease_end_date" label="Lease end" type="date" min={inviteTenantForm.lease_start_date || getTodayLocal()} value={inviteTenantForm.lease_end_date} onChange={(e) => setInviteTenantForm({ ...inviteTenantForm, lease_end_date: e.target.value })} required />
-            <div className="flex gap-3 pt-2">
-              <Button variant="outline" onClick={() => setInviteTenantModal(null)} className="flex-1">Cancel</Button>
-              <Button onClick={handleInviteTenant} disabled={inviteTenantSubmitting || inviteTenantModal.unitId === 0} className="flex-1">{inviteTenantSubmitting ? 'Creating…' : 'Create invitation'}</Button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      <InviteTenantModal
+        open={!!inviteTenantModal}
+        onClose={() => setInviteTenantModal(null)}
+        properties={property ? [{ id: property.id, name: property.name, address: property.address }] : []}
+        getUnits={() => Promise.resolve((units || []).filter((u) => u.id >= 0).map((u) => ({ id: u.id, unit_label: u.unit_label })))}
+        preselectedUnit={inviteTenantModal ?? undefined}
+        createInvitation={(params) =>
+          dashboardApi.managerInviteTenant(params.unitId!, {
+            tenant_name: params.tenant_name,
+            tenant_email: params.tenant_email,
+            lease_start_date: params.lease_start_date,
+            lease_end_date: params.lease_end_date,
+          }).then((r) => ({ invitation_code: r.invitation_code }))
+        }
+        notify={notify}
+        onSuccess={loadData}
+      />
 
-      <Modal
+      <InviteGuestModal
         open={inviteGuestOpen}
-        onClose={() => { setInviteGuestOpen(false); setInviteGuestLink(''); }}
-        title="Invite a guest"
-        className="max-w-lg"
-        disableBackdropClose={inviteGuestSubmitting || !!inviteGuestLink}
-      >
-        <div className="p-6">
-          {inviteGuestLink ? (
-            <div className="space-y-4">
-              <p className="text-sm text-slate-600">Share this link with your guest. They will sign in or create an account, then sign the agreement.</p>
-              <div className="bg-slate-100 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 break-all">{inviteGuestLink}</div>
-              <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => { navigator.clipboard.writeText(inviteGuestLink); notify('success', 'Link copied.'); }}>Copy link</Button>
-                <Button className="flex-1" onClick={() => { setInviteGuestOpen(false); setInviteGuestLink(''); }}>Done</Button>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={(e) => { e.preventDefault(); handleInviteGuest(); }} className="space-y-4">
-              {units.filter((u) => u.id > 0).length > 1 ? (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Unit</label>
-                  <select
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900"
-                    value={inviteGuestForm.unit_id || ''}
-                    onChange={(e) => setInviteGuestForm({ ...inviteGuestForm, unit_id: Number(e.target.value) })}
-                    required
-                  >
-                    <option value="">Select unit</option>
-                    {units.filter((u) => u.id > 0).map((u) => (
-                      <option key={u.id} value={u.id}>Unit {u.unit_label}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-              <Input name="guest_name" label="Guest name" value={inviteGuestForm.guest_name} onChange={(e) => setInviteGuestForm({ ...inviteGuestForm, guest_name: e.target.value })} placeholder="Full name" required />
-              <Input name="checkin_date" label="Check-in" type="date" min={getTodayLocal()} value={inviteGuestForm.checkin_date} onChange={(e) => setInviteGuestForm({ ...inviteGuestForm, checkin_date: e.target.value })} required />
-              <Input name="checkout_date" label="Check-out" type="date" min={inviteGuestForm.checkin_date || getTodayLocal()} value={inviteGuestForm.checkout_date} onChange={(e) => setInviteGuestForm({ ...inviteGuestForm, checkout_date: e.target.value })} required />
-              <div className="flex gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setInviteGuestOpen(false)} className="flex-1">Cancel</Button>
-                <Button type="submit" disabled={inviteGuestSubmitting} className="flex-1">{inviteGuestSubmitting ? 'Creating…' : 'Create invitation'}</Button>
-              </div>
-            </form>
-          )}
-        </div>
-      </Modal>
+        onClose={() => {
+          setInviteGuestOpen(false);
+          setInviteGuestUnitId(null);
+        }}
+        user={user}
+        setLoading={(x) => { setGlobalLoading(x); }}
+        notify={notify}
+        onSuccess={loadData}
+        initialPropertyId={property?.id ?? null}
+        unitId={inviteGuestUnitId}
+        propertiesLoader={() => dashboardApi.managerProperties()}
+        unitsLoader={(pid) => dashboardApi.managerUnits(pid)}
+      />
     </>
         )}
       </main>

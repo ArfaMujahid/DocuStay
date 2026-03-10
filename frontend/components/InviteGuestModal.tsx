@@ -25,6 +25,10 @@ interface InviteGuestModalProps {
   tenantStayEndDate?: string | null;
   /** When provided, on success we call this with the link and close the modal instead of showing link in-place. Use for parent to show link in a separate modal. */
   onLinkGenerated?: (link: string) => void;
+  /** When provided (e.g. manager), load properties via this instead of propertiesApi.list() */
+  propertiesLoader?: () => Promise<Array<{ id: number; name?: string | null; street?: string; city?: string; state?: string; is_multi_unit?: boolean }>>;
+  /** When provided (e.g. manager), load units via this instead of propertiesApi.getUnits(propertyId) */
+  unitsLoader?: (propertyId: number) => Promise<Array<{ id: number; unit_label: string }>>;
 }
 
 export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
@@ -41,6 +45,8 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
   tenantStayStartDate = null,
   tenantStayEndDate = null,
   onLinkGenerated,
+  propertiesLoader,
+  unitsLoader,
 }) => {
   const [formData, setFormData] = useState({ guest_name: '', checkin_date: '', checkout_date: '' });
   const [inviteLink, setInviteLink] = useState('');
@@ -79,20 +85,45 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
       setPropertyId(initialPropertyId);
     }
     setPropertiesLoading(true);
-    propertiesApi
-      .list()
-      .then((list) => {
-        // Exclude primary residence: can't invite guests to live in owner's primary residence
-        const inviteable = list.filter((p) => !p.owner_occupied);
-        setProperties(inviteable);
-        if (inviteable.length > 0) {
-          const preferred =
-            initialPropertyId != null && inviteable.some((p) => p.id === initialPropertyId)
-              ? initialPropertyId
-              : inviteable[0].id;
-          setPropertyId(preferred);
-        } else if (initialPropertyId != null) {
-          // List empty but we came from a property page: fetch this property only if not primary residence
+    const loadProps = propertiesLoader
+      ? propertiesLoader().then((list) => {
+          const arr = list || [];
+          setProperties(arr);
+          if (arr.length > 0) {
+            const preferred =
+              initialPropertyId != null && arr.some((p) => p.id === initialPropertyId)
+                ? initialPropertyId
+                : arr[0].id;
+            setPropertyId(preferred);
+          } else {
+            setPropertyId(null);
+          }
+        })
+      : propertiesApi.list().then((list) => {
+          const inviteable = list.filter((p) => !p.owner_occupied);
+          setProperties(inviteable);
+          if (inviteable.length > 0) {
+            const preferred =
+              initialPropertyId != null && inviteable.some((p) => p.id === initialPropertyId)
+                ? initialPropertyId
+                : inviteable[0].id;
+            setPropertyId(preferred);
+          } else if (initialPropertyId != null) {
+            return propertiesApi.get(initialPropertyId).then((prop) => {
+              if (!prop.owner_occupied) {
+                setProperties([prop]);
+                setPropertyId(prop.id);
+              } else {
+                setPropertyId(null);
+              }
+            });
+          } else {
+            setPropertyId(null);
+          }
+        });
+    loadProps
+      .catch(() => {
+        if (initialPropertyId != null && !propertiesLoader) {
           propertiesApi
             .get(initialPropertyId)
             .then((prop) => {
@@ -103,35 +134,16 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
                 setPropertyId(null);
               }
             })
-            .catch(() => setPropertyId(null))
-            .finally(() => setPropertiesLoading(false));
-          return;
+            .catch(() => setPropertyId(null));
         } else {
+          setProperties([]);
           setPropertyId(null);
         }
-        setPropertiesLoading(false);
       })
-      .catch(() => {
-        if (initialPropertyId != null) {
-          propertiesApi
-            .get(initialPropertyId)
-            .then((prop) => {
-              if (!prop.owner_occupied) {
-                setProperties([prop]);
-                setPropertyId(prop.id);
-              } else {
-                setPropertyId(null);
-              }
-            })
-            .catch(() => setPropertyId(null))
-            .finally(() => setPropertiesLoading(false));
-        } else {
-          setPropertiesLoading(false);
-        }
-      });
-  }, [open, initialPropertyId, unitId]);
+      .finally(() => setPropertiesLoading(false));
+  }, [open, initialPropertyId, unitId, propertiesLoader]);
 
-  // When property changes, fetch units if multi-unit
+  // When property changes, fetch units (multi-unit for owner, or when unitsLoader provided for manager)
   useEffect(() => {
     if (unitId != null || !propertyId) {
       setUnits([]);
@@ -139,16 +151,19 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
       return;
     }
     const prop = properties.find((p) => p.id === propertyId);
-    if (!prop?.is_multi_unit) {
+    const shouldLoadUnits = unitsLoader ? true : !!prop?.is_multi_unit;
+    if (!shouldLoadUnits) {
       setUnits([]);
       setSelectedUnitId(null);
       return;
     }
     setUnitsLoading(true);
-    propertiesApi
-      .getUnits(propertyId)
+    const load = unitsLoader
+      ? unitsLoader(propertyId)
+      : propertiesApi.getUnits(propertyId);
+    load
       .then((list) => {
-        const withRealIds = list.filter((u) => u.id > 0);
+        const withRealIds = (list || []).filter((u) => u.id > 0);
         setUnits(withRealIds);
         setSelectedUnitId(withRealIds.length > 0 ? withRealIds[0].id : null);
       })
@@ -157,7 +172,7 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
         setSelectedUnitId(null);
       })
       .finally(() => setUnitsLoading(false));
-  }, [propertyId, unitId, properties]);
+  }, [propertyId, unitId, properties, unitsLoader]);
 
   const selectedProperty = properties.find((p) => p.id === propertyId);
 
@@ -197,7 +212,7 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
     setSubmitting(true);
     try {
       const isTenant = (user?.user_type ?? '').toUpperCase() === 'TENANT';
-      const effectiveUnitId = unitId ?? (prop?.is_multi_unit && selectedUnitId && selectedUnitId > 0 ? selectedUnitId : undefined);
+      const effectiveUnitId = unitId ?? (selectedUnitId && selectedUnitId > 0 ? selectedUnitId : undefined);
       if (isTenant && !effectiveUnitId) {
         notify('error', 'Could not determine your assigned unit for this invitation.');
         setSubmitting(false);
@@ -315,7 +330,7 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
                   ) : (
                     <p className="text-sm text-slate-700 font-medium">{selectedProperty?.name || [selectedProperty?.street, selectedProperty?.city].filter(Boolean).join(', ') || 'Property'}</p>
                   )}
-                  {selectedProperty?.is_multi_unit && (
+                  {(selectedProperty?.is_multi_unit || (unitsLoader && units.length > 0)) && (
                     <div className="mt-4">
                       <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Unit</label>
                       {unitsLoading ? (

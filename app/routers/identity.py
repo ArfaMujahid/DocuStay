@@ -1,15 +1,20 @@
 """Stripe Identity verification for owner/manager onboarding."""
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.dependencies import get_current_user, require_owner_or_manager
 from app.config import get_settings
 
 router = APIRouter(prefix="/auth/identity", tags=["identity"])
+
+
+class VerificationSessionRequest(BaseModel):
+    """Optional return_url so frontend can use owner vs manager landing paths (e.g. .../identity-complete vs .../identity-complete/manager)."""
+    return_url: str | None = None
 
 
 class VerificationSessionResponse(BaseModel):
@@ -32,10 +37,11 @@ def _stripe_configured() -> bool:
 
 @router.post("/verification-session", response_model=VerificationSessionResponse)
 def create_verification_session(
+    data: VerificationSessionRequest | None = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_owner_or_manager),
 ):
-    """Create a Stripe Identity VerificationSession for owner or property manager. Returns client_secret for frontend to open Stripe's verification flow."""
+    """Create a Stripe Identity VerificationSession for owner or property manager. Optional return_url from frontend (e.g. .../identity-complete/manager for manager)."""
     if not _stripe_configured():
         raise HTTPException(
             status_code=503,
@@ -49,11 +55,19 @@ def create_verification_session(
     stripe.api_key = settings.stripe_secret_key
 
     return_url = (settings.stripe_identity_return_url or "").strip()
+    if data and data.return_url:
+        candidate = (data.return_url or "").strip()
+        if candidate.startswith("http://") or candidate.startswith("https://"):
+            return_url = candidate
     if not return_url:
         raise HTTPException(status_code=503, detail="STRIPE_IDENTITY_RETURN_URL is not set.")
 
     try:
-        flow_id = (settings.stripe_identity_flow_id or "").strip()
+        flow_id = (
+            (settings.stripe_identity_flow_id_manager or "").strip()
+            if current_user.role == UserRole.property_manager
+            else (settings.stripe_identity_flow_id or "").strip()
+        )
         if flow_id:
             create_params = {
                 "verification_flow": flow_id,

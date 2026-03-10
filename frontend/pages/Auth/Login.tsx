@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Input, Button, ErrorModal } from '../../components/UI';
+import { Input, Button, ErrorModal } from '../../components/UI';
 import { HeroBackground } from '../../components/HeroBackground';
+import { AuthCardLayout, AuthBullet } from '../../components/AuthCardLayout';
 import { authApi, invitationsApi } from '../../services/api';
 import { PENDING_INVITE_STORAGE_KEY } from '../Guest/GuestLogin';
 
@@ -55,6 +56,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate, in
       showError('Please enter your email and password.');
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showError('Please enter a valid email address.');
+      return;
+    }
     if (formData.role === 'tenant' && inviteCode && inviteCheck?.valid === false) {
       showError(
         inviteCheck?.expired ? 'This invitation has expired and cannot be used. Ask your host for a new invitation.'
@@ -85,43 +90,28 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate, in
     }
   };
 
+  const roleTitle = formData.role === 'owner' ? 'Owner login' : formData.role === 'property_manager' ? 'Property Manager login' : formData.role === 'tenant' ? 'Tenant login' : 'Guest login';
+
   return (
     <HeroBackground className="flex-grow">
-      <div className="w-full max-w-5xl flex rounded-xl overflow-hidden border border-gray-200/60 bg-white/40 backdrop-blur-sm min-h-[520px] shadow-xl">
-        {/* Left: Simple info */}
-        <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-100/40 via-blue-50/40 to-sky-100/40 p-10 flex-col justify-center border-r border-blue-200/40">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-3">
-            {formData.role === 'owner' && 'Owner login'}
-            {formData.role === 'property_manager' && 'Property Manager login'}
-            {formData.role === 'tenant' && 'Tenant login'}
-            {formData.role === 'guest' && 'Guest login'}
-          </h2>
-          <p className="text-gray-600 text-sm mb-8">
-            {formData.role === 'guest' ? 'Access your stays and invitations.' : 'Manage properties, invitations, and stays in one place.'}
-          </p>
-          <ul className="space-y-3 text-sm text-gray-600">
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Jurisdiction-aware agreements
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Guest verification
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" /> Stay documentation
-            </li>
-          </ul>
-        </div>
-
-        {/* Right: Form */}
-        <div className="w-full lg:w-1/2 bg-white/40 backdrop-blur-sm p-8 md:p-10 flex flex-col justify-center">
+      <AuthCardLayout
+        leftPanel={
+          <>
+            <h2 className="text-2xl font-semibold text-slate-900 mb-3">{roleTitle}</h2>
+            <p className="text-slate-600 text-sm mb-8">
+              {formData.role === 'guest' ? 'Access your stays and invitations.' : 'Manage properties, invitations, and stays in one place.'}
+            </p>
+            <ul className="space-y-3">
+              <AuthBullet>Jurisdiction-aware agreements</AuthBullet>
+              <AuthBullet>Guest verification</AuthBullet>
+              <AuthBullet>Stay documentation</AuthBullet>
+            </ul>
+          </>
+        }
+      >
           <div className="max-w-sm mx-auto w-full">
-            <h1 className="text-xl font-semibold text-gray-900 mb-1 lg:hidden">
-              {formData.role === 'owner' && 'Owner login'}
-              {formData.role === 'property_manager' && 'Property Manager login'}
-              {formData.role === 'tenant' && 'Tenant login'}
-              {formData.role === 'guest' && 'Guest login'}
-            </h1>
-            <p className="text-gray-600 text-sm mb-6">Sign in to your account.</p>
+            <h1 className="text-xl font-semibold text-slate-900 mb-1 lg:hidden">{roleTitle}</h1>
+            <p className="text-slate-600 text-sm mb-6">Sign in to your account.</p>
             
             <form onSubmit={handleSubmit} className="space-y-6">
               <Input
@@ -167,7 +157,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate, in
                 <button 
                   type="button" 
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-3 top-[34px] text-slate-400 hover:text-slate-600 transition-colors"
                 >
                   {showPassword ? (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path></svg>
@@ -178,21 +168,21 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate, in
               </div>
               
               <div className="flex items-center justify-between text-sm">
-                <label className="flex items-center gap-2 cursor-pointer text-gray-600">
-                  <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-400" />
+                <label className="flex items-center gap-2 cursor-pointer text-slate-600">
+                  <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-[#6B90F2] focus:ring-[#6B90F2]" />
                   Remember me
                 </label>
-                <button type="button" onClick={() => navigate('forgot-password/owner')} className="text-blue-700 hover:text-blue-800 font-medium">Forgot password?</button>
+                <button type="button" onClick={() => navigate('forgot-password/owner')} className="text-[#6B90F2] hover:text-[#5a7ed9] font-medium">Forgot password?</button>
               </div>
               
               <Button type="submit" className="w-full py-2.5">Sign in</Button>
             </form>
 
-            <div className="mt-8 space-y-2 text-center text-gray-500 text-sm">
+            <div className="mt-8 space-y-2 text-center text-slate-500 text-sm">
               {(formData.role === 'owner') && (
                 <p>
-                  Don't have an account?{' '}
-                  <button type="button" onClick={() => navigate('register')} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">
+                  Don&apos;t have an account?{' '}
+                  <button type="button" onClick={() => navigate('register')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">
                     Register as Owner
                   </button>
                 </p>
@@ -204,20 +194,19 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate, in
               )}
               {formData.role === 'tenant' && (
                 <p>
-                  Don't have an account?{' '}
-                  <button type="button" onClick={() => navigate('guest-signup/tenant')} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">Register as Tenant</button>
+                  Don&apos;t have an account?{' '}
+                  <button type="button" onClick={() => navigate('guest-signup/tenant')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">Register as Tenant</button>
                 </p>
               )}
               {formData.role === 'guest' && (
                 <p>
-                  Don't have an account?{' '}
-                  <button type="button" onClick={() => navigate('guest-signup')} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">Guest Signup</button>
+                  Don&apos;t have an account?{' '}
+                  <button type="button" onClick={() => navigate('guest-signup')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">Guest Signup</button>
                 </p>
               )}
             </div>
           </div>
-        </div>
-      </div>
+      </AuthCardLayout>
 
       <ErrorModal
         open={errorModal.open}

@@ -606,6 +606,69 @@ def send_vacant_monitoring_flipped(
     return send_email(owner_email, subject, html)
 
 
+def send_shield_mode_turned_on_notification(
+    owner_email: str,
+    manager_emails: list[str],
+    property_name: str,
+    *,
+    turned_on_by: str = "property owner",
+) -> None:
+    """Notify property owner and all assigned managers when Shield Mode is turned on for a property (by owner or manager)."""
+    subject = f"[DocuStay] Shield Mode turned on – {property_name}"
+    html = f"""
+    <p>Hello,</p>
+    <p><strong>Shield Mode has been turned on</strong> for <strong>{property_name}</strong> by the {turned_on_by}.</p>
+    <p>DocuStay is now actively monitoring this property. You can turn it off anytime in your dashboard.</p>
+    <p>— DocuStay</p>
+    """
+    seen = set()
+    for email in ([owner_email] + list(manager_emails)):
+        e = (email or "").strip().lower()
+        if e and e not in seen:
+            seen.add(e)
+            send_email(e, subject, html)
+
+
+def send_dead_mans_switch_enabled_notification(
+    owner_email: str,
+    manager_emails: list[str],
+    property_name: str,
+    guest_name: str,
+    stay_end_date: str,
+) -> None:
+    """Notify property owner and assigned managers when Dead Man's Switch is enabled for a stay at the property."""
+    subject = f"[DocuStay] Dead Man's Switch enabled – {property_name}"
+    html = f"""
+    <p>Hello,</p>
+    <p><strong>Dead Man's Switch</strong> has been enabled for a guest stay at <strong>{property_name}</strong>.</p>
+    <p>Guest: <strong>{guest_name}</strong>. Stay end date: <strong>{stay_end_date}</strong>.</p>
+    <p>You will receive alerts 48 hours before the stay end date and on the end date. If no response is received within 48 hours after the end date, the system will set the property to vacant and activate Shield Mode.</p>
+    <p>— DocuStay</p>
+    """
+    seen = set()
+    for email in ([owner_email] + list(manager_emails)):
+        e = (email or "").strip().lower()
+        if e and e not in seen:
+            seen.add(e)
+            send_email(e, subject, html)
+
+
+def send_tenant_guest_accepted_invite(
+    tenant_email: str,
+    guest_name: str,
+    property_name: str,
+) -> bool:
+    """Notify tenant when a guest accepts an invitation they created."""
+    subject = f"[DocuStay] Guest accepted your invitation – {property_name}"
+    html = f"""
+    <p>Hello,</p>
+    <p><strong>{guest_name}</strong> has accepted your invitation for <strong>{property_name}</strong>.</p>
+    <p>The stay is now active. You can view details in your DocuStay dashboard.</p>
+    <p>— DocuStay</p>
+    """
+    return send_email(tenant_email, subject, html)
+
+
 def send_sms(to_phone: str, body: str) -> bool:
     """Optional SMS via Twilio."""
     if not settings.twilio_account_sid or not settings.twilio_auth_token:

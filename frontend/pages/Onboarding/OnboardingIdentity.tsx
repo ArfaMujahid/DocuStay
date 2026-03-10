@@ -5,15 +5,18 @@ import { getOwnerSignupErrorFriendly } from "../../utils/ownerSignupErrors";
 
 const getToken = () => (typeof window !== "undefined" ? localStorage.getItem("docustay_token") : null);
 
+/** Return path after Stripe (no leading slash). Owner: 'onboarding/identity-complete'. Manager: 'onboarding/identity-complete/manager'. */
 interface Props {
   isPendingOwner?: boolean;
+  /** Used when !isPendingOwner to tell backend where to redirect (owner vs manager landing). */
+  identityReturnPath?: string;
   navigate: (v: string) => void;
   setLoading: (l: boolean) => void;
   notify: (t: "success" | "error", m: string) => void;
 }
 
 /** Redirect to Stripe Identity. For new signup (pending) use pending-owner session; for existing owner use identity session. Run only once per mount to avoid duplicate API calls. */
-export default function OnboardingIdentity({ isPendingOwner, navigate, setLoading, notify }: Props) {
+export default function OnboardingIdentity({ isPendingOwner, identityReturnPath, navigate, setLoading, notify }: Props) {
   const [error, setError] = useState<string | null>(null);
   const sessionStartedRef = useRef(false);
 
@@ -39,17 +42,21 @@ export default function OnboardingIdentity({ isPendingOwner, navigate, setLoadin
     const headers: HeadersInit = { "Content-Type": "application/json", Accept: "application/json" };
     if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
 
+    const origin = APP_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "");
     const search = typeof window !== "undefined" ? window.location.search : "";
     const hash = typeof window !== "undefined" ? window.location.hash : "";
     const searchParams = new URLSearchParams(search + (hash.includes("?") ? hash.slice(hash.indexOf("?")) : ""));
     const forceNewSession = searchParams.get("new") === "1";
 
+    const ownerReturnPath = "onboarding/identity-complete";
     const body = isPendingOwner
       ? JSON.stringify({
-          return_url: `${APP_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "")}/onboarding/identity-complete`,
+          return_url: `${origin}/${ownerReturnPath}`,
           force_new_session: forceNewSession,
         })
-      : undefined;
+      : JSON.stringify({
+          return_url: `${origin}/${identityReturnPath || ownerReturnPath}`,
+        });
 
     const promise = fetch(`${API_URL}${path}`, { method: "POST", headers, body }).then(async (r) => {
       const text = await r.text();

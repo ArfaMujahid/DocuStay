@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Input, Button, ErrorModal } from '../../components/UI';
+import { Input, Button, ErrorModal } from '../../components/UI';
 import { HeroBackground } from '../../components/HeroBackground';
-import { authApiGuest } from '../../services/api';
+import { AuthCardLayout, AuthBullet } from '../../components/AuthCardLayout';
+import { authApiGuest, invitationsApi } from '../../services/api';
 import { STATE_OPTIONS } from '../../services/jleService';
 import { validatePhone, sanitizePhoneInput } from '../../utils/validatePhone';
 import AgreementSignModal, { type GuestInviteFormData } from '../../components/AgreementSignModal';
@@ -81,10 +82,40 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
       showError('Please fill in all required fields and accept all acknowledgments and agreements before continuing.');
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      showError('Please enter a valid email address.');
+      return;
+    }
+    if (formData.password.length < 8) {
+      showError('Password must be at least 8 characters.');
+      return;
+    }
+    if (formData.password !== formData.confirm_password) {
+      showError('Passwords do not match.');
+      return;
+    }
     const phoneCheck = validatePhone(formData.phone);
     if (!phoneCheck.valid) {
       showError(phoneCheck.error ?? 'Invalid phone number.');
       return;
+    }
+    if (inviteCode && inviteCode.length >= 5) {
+      try {
+        const inviteDetails = await invitationsApi.getDetails(inviteCode);
+        if (!inviteDetails.valid) {
+          showError(
+            inviteDetails.expired
+              ? 'This invitation has expired. Ask your host for a new invitation.'
+              : inviteDetails.used
+                ? 'This invitation link has already been used.'
+                : 'This invitation link is invalid.'
+          );
+          return;
+        }
+      } catch {
+        showError('This invitation link could not be verified. Please check the link or sign up without it.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -140,41 +171,78 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
 
   return (
     <HeroBackground className="flex-grow flex flex-col items-center py-8">
-      <div className="w-full max-w-4xl rounded-xl overflow-hidden shadow-xl border border-gray-200/60 bg-white/40 backdrop-blur-sm">
-          <div className="border-b border-gray-200/50 bg-white/30 px-8 py-6">
-            <h1 className="text-xl font-semibold text-gray-900">Tenant / Guest Signup</h1>
-            <p className="text-gray-600 text-sm mt-1">Create your account.</p>
-          </div>
-
-          <div className="p-8 md:p-10 bg-gradient-to-b from-blue-100/35 via-blue-50/30 to-sky-100/25">
-            <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-x-10 gap-y-6">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Sign up as</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="role"
-                      value="tenant"
-                      checked={role === 'tenant'}
-                      onChange={() => setRole('tenant')}
-                      className="w-4 h-4 text-blue-700 focus:ring-blue-600"
-                    />
-                    <span className="font-medium text-gray-900">Tenant</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="role"
-                      value="guest"
-                      checked={role === 'guest'}
-                      onChange={() => setRole('guest')}
-                      className="w-4 h-4 text-blue-700 focus:ring-blue-600"
-                    />
-                    <span className="font-medium text-gray-900">Guest</span>
-                  </label>
-                </div>
+      <AuthCardLayout maxWidth="7xl" minHeight="640px" leftPanel={
+        <>
+          <h2 className="text-2xl font-semibold text-slate-900 mb-3">Tenant / Guest Signup</h2>
+          <p className="text-slate-600 text-sm mb-8">Create your account to access stays and invitations.</p>
+          <ul className="space-y-3">
+            <AuthBullet>Sign up as Guest or Tenant</AuthBullet>
+            <AuthBullet>Add permanent residence details</AuthBullet>
+            <AuthBullet>Accept stay acknowledgments</AuthBullet>
+          </ul>
+        </>
+      }>
+          <div className="mb-8">
+            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight lg:hidden">Tenant / Guest Signup</h1>
+            <p className="text-slate-600 mt-1 text-base">Create your account to get started.</p>
+            <div className="mt-6">
+              <span className="block text-sm font-medium text-slate-700 mb-3">Sign up as</span>
+              <div className="grid grid-cols-2 gap-4">
+                <label
+                  className={`relative flex cursor-pointer flex-col items-center rounded-2xl border p-5 text-center transition-all duration-300 focus-within:ring-2 focus-within:ring-[#6B90F2]/40 focus-within:ring-offset-2 ${
+                    role === 'tenant'
+                      ? 'border-[#6B90F2]/40 bg-gradient-to-b from-[#6B90F2]/10 to-[#6B90F2]/5 shadow-[0_0_0_1px_rgba(107,144,242,0.12)]'
+                      : 'border-slate-200/90 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="role"
+                    value="tenant"
+                    checked={role === 'tenant'}
+                    onChange={() => setRole('tenant')}
+                    className="sr-only"
+                  />
+                  {role === 'tenant' && (
+                    <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[#6B90F2]/20">
+                      <svg className="h-3 w-3 text-[#6B90F2]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                  )}
+                  <span className={`text-lg font-semibold ${role === 'tenant' ? 'text-[#6B90F2]' : 'text-slate-700'}`}>Tenant</span>
+                  <span className={`mt-1 text-xs ${role === 'tenant' ? 'text-slate-600' : 'text-slate-500'}`}>Renting a property</span>
+                </label>
+                <label
+                  className={`relative flex cursor-pointer flex-col items-center rounded-2xl border p-5 text-center transition-all duration-300 focus-within:ring-2 focus-within:ring-[#6B90F2]/40 focus-within:ring-offset-2 ${
+                    role === 'guest'
+                      ? 'border-[#6B90F2]/40 bg-gradient-to-b from-[#6B90F2]/10 to-[#6B90F2]/5 shadow-[0_0_0_1px_rgba(107,144,242,0.12)]'
+                      : 'border-slate-200/90 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="role"
+                    value="guest"
+                    checked={role === 'guest'}
+                    onChange={() => setRole('guest')}
+                    className="sr-only"
+                  />
+                  {role === 'guest' && (
+                    <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[#6B90F2]/20">
+                      <svg className="h-3 w-3 text-[#6B90F2]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                  )}
+                  <span className={`text-lg font-semibold ${role === 'guest' ? 'text-[#6B90F2]' : 'text-slate-700'}`}>Guest</span>
+                  <span className={`mt-1 text-xs ${role === 'guest' ? 'text-slate-600' : 'text-slate-500'}`}>Short-term stay</span>
+                </label>
               </div>
+            </div>
+          </div>
+          <div className="p-0">
+            <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-x-10 gap-y-6">
               <div className="md:col-span-2">
                 <Input
                   label="Invitation link (optional, for guests)"
@@ -203,8 +271,8 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
                 )}
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-medium">1</span>
+                <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-[#6B90F2]/20 text-[#6B90F2] flex items-center justify-center text-xs font-medium">1</span>
                   Guest Profile
                 </h3>
                 <div className="space-y-4">
@@ -219,11 +287,11 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-medium">2</span>
+                <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-[#6B90F2]/20 text-[#6B90F2] flex items-center justify-center text-xs font-medium">2</span>
                   Permanent Residence
                 </h3>
-                <p className="text-xs text-gray-500 mb-4">Required to confirm you have a primary residence elsewhere.</p>
+                <p className="text-xs text-slate-500 mb-4">Required to confirm you have a primary residence elsewhere.</p>
                 <div className="space-y-4">
                   <Input label="Street Address" name="permanent_address" value={formData.permanent_address} onChange={e => setFormData({ ...formData, permanent_address: e.target.value })} placeholder="Your actual home address" required />
                   <div className="grid grid-cols-2 gap-4">
@@ -235,8 +303,8 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
               </div>
 
               <div className="md:col-span-2 mt-8">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-medium">3</span>
+                <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-[#6B90F2]/20 text-[#6B90F2] flex items-center justify-center text-xs font-medium">3</span>
                   Stay acknowledgments
                 </h3>
                 <div className="grid md:grid-cols-3 gap-4 mb-6">
@@ -245,11 +313,11 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
                     { name: 'no_tenancy_acknowledged', label: 'Temporary stay', desc: 'I acknowledge this stay is temporary and does not grant tenancy.' },
                     { name: 'vacate_acknowledged', label: 'Agreement to Vacate', desc: 'I agree to vacate by the scheduled checkout date.' },
                   ].map(ack => (
-                    <div key={ack.name} className={`p-4 rounded-lg border ${formData[ack.name as keyof typeof formData] ? 'bg-white border-gray-400' : 'bg-white border-gray-200'}`}>
+                    <div key={ack.name} className={`p-4 rounded-lg border ${formData[ack.name as keyof typeof formData] ? 'bg-slate-50 border-slate-300' : 'bg-white border-slate-200'}`}>
                       <label className="flex flex-col gap-2 cursor-pointer h-full">
                         <div className="flex justify-between items-start">
-                          <span className="text-sm font-medium text-gray-900">{ack.label}</span>
-                          <input type="checkbox" name={ack.name} checked={!!formData[ack.name as keyof typeof formData]} onChange={handleCheckboxChange} className="w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-400 shrink-0 mt-0.5" required />
+                          <span className="text-sm font-medium text-slate-900">{ack.label}</span>
+                          <input type="checkbox" name={ack.name} checked={!!formData[ack.name as keyof typeof formData]} onChange={handleCheckboxChange} className="w-5 h-5 rounded border-slate-300 text-[#6B90F2] focus:ring-[#6B90F2] shrink-0 mt-0.5" required />
                         </div>
                         <p className="text-xs text-gray-500 leading-relaxed">{ack.desc}</p>
                       </label>
@@ -262,13 +330,13 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
                   <label className="flex items-start gap-4 cursor-pointer p-4 rounded-xl border border-slate-200 bg-white/80 hover:border-slate-300 hover:bg-white transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 focus-within:border-blue-400">
                     <input type="checkbox" name="terms_agreed" checked={formData.terms_agreed} onChange={handleCheckboxChange} className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 shrink-0 mt-0.5 accent-blue-600" required />
                     <span className="text-sm text-slate-700 leading-relaxed">
-                      I agree to the <a href="#" className="text-blue-600 font-semibold hover:text-blue-700 hover:underline underline-offset-2 transition-colors">Terms of Service</a>.
+                      I agree to the <a href="#" className="text-[#6B90F2] font-semibold hover:text-[#5a7ed9] hover:underline underline-offset-2 transition-colors">Terms of Service</a>.
                     </span>
                   </label>
                   <label className="flex items-start gap-4 cursor-pointer p-4 rounded-xl border border-slate-200 bg-white/80 hover:border-slate-300 hover:bg-white transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 focus-within:border-blue-400">
                     <input type="checkbox" name="privacy_agreed" checked={formData.privacy_agreed} onChange={handleCheckboxChange} className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 shrink-0 mt-0.5 accent-blue-600" required />
                     <span className="text-sm text-slate-700 leading-relaxed">
-                      I agree to the <a href="#" className="text-blue-600 font-semibold hover:text-blue-700 hover:underline underline-offset-2 transition-colors">Privacy Policy</a>.
+                      I agree to the <a href="#" className="text-[#6B90F2] font-semibold hover:text-[#5a7ed9] hover:underline underline-offset-2 transition-colors">Privacy Policy</a>.
                     </span>
                   </label>
                 </div>
@@ -277,19 +345,19 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
                   <Button type="submit" className="w-full md:min-w-[200px] py-3">
                     Create Guest Account
                   </Button>
-                  <p className="mt-4 text-center text-gray-500 text-sm">
+                  <p className="mt-4 text-center text-slate-500 text-sm">
                     Already have an account?{' '}
                     {role === 'tenant' ? (
-                      <button type="button" onClick={() => navigate('login/tenant')} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">Tenant login</button>
+                      <button type="button" onClick={() => navigate('login/tenant')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">Tenant login</button>
                     ) : (
-                      <button type="button" onClick={() => navigate('guest-login')} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">Guest login</button>
+                      <button type="button" onClick={() => navigate('guest-login')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">Guest login</button>
                     )}
                   </p>
                 </div>
               </div>
             </form>
           </div>
-        </div>
+      </AuthCardLayout>
 
       {inviteAcceptCode && (
         <AgreementSignModal

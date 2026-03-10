@@ -182,6 +182,21 @@ export default function AgreementSignModal(props: {
     return () => clearInterval(t);
   }, [open, signatureIdToPoll]);
 
+  // When the agreement is already fully signed via Dropbox (PDF available) and we are in
+  // inviteAcceptMode, auto-trigger onSigned so the invite gets accepted without re-signing.
+  useEffect(() => {
+    if (
+      open &&
+      inviteAcceptMode &&
+      doc?.already_signed &&
+      doc?.has_dropbox_signed_pdf &&
+      doc?.signature_id != null
+    ) {
+      onSignedRef.current(doc.signature_id);
+      onClose();
+    }
+  }, [open, inviteAcceptMode, doc?.already_signed, doc?.has_dropbox_signed_pdf, doc?.signature_id, onClose]);
+
   /** Fetch invite details when in invite-accept mode step 1. Only reset to step 1 when modal opens or code changes (not on every re-render) to avoid reverting to "Accept invitation" after e.g. Sign with Dropbox error. */
   useEffect(() => {
     if (!open || !inviteAcceptMode || !normalizedCode) {
@@ -336,8 +351,13 @@ export default function AgreementSignModal(props: {
         setPendingSignUrl(res.sign_url);
         window.open(res.sign_url, "_blank", "noopener");
         notify("success", "Complete signing in the new tab. This will close automatically when you're done.");
+      } else if (res.signature_id != null) {
+        // Dropbox will send a signing link by email — keep polling so we can auto-accept once complete.
+        setPendingDropboxSignatureId(res.signature_id);
+        setPendingSignUrl(null);
+        notify("success", "Agreement sent to Dropbox Sign. Check your email to complete signing. This will update automatically when done.");
       } else {
-        notify("success", "Agreement sent to Dropbox Sign. Check your email to complete signing.");
+        notify("success", "Agreement sent. Check your email to complete signing.");
         onClose();
       }
     } catch (e) {

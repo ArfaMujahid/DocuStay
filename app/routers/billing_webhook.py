@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models.owner import OwnerProfile
 from app.models.user import User
 from app.services.audit_log import create_log, CATEGORY_BILLING
-from app.services.event_ledger import create_ledger_event, ACTION_BILLING_INVOICE_PAID
+from app.services.event_ledger import create_ledger_event, ACTION_BILLING_INVOICE_PAID, ACTION_BILLING_INVOICE_PAYMENT_FAILED
 
 logger = logging.getLogger(__name__)
 
@@ -90,5 +90,44 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         else:
             db.commit()
         logger.info("Logged invoice.paid for profile_id=%s invoice=%s", profile_id, inv.id)
+
+    elif event.type == "invoice.payment_failed":
+        inv = event.data.object
+        meta = getattr(inv, "metadata", None) or {}
+        profile_id_str = meta.get("owner_profile_id")
+        if not profile_id_str:
+            logger.warning("invoice.payment_failed missing owner_profile_id in metadata: %s", inv.id)
+            return {"received": True}
+        try:
+            profile_id = int(profile_id_str)
+        except (TypeError, ValueError):
+            logger.warning("invoice.payment_failed invalid owner_profile_id: %s", profile_id_str)
+            return {"received": True}
+        profile = db.query(OwnerProfile).filter(OwnerProfile.id == profile_id).first()
+        if not profile:
+            logger.warning("invoice.payment_failed profile_id=%s not found", profile_id)
+            return {"received": True}
+        user = db.query(User).filter(User.id == profile.user_id).first()
+        amount_due = getattr(inv, "amount_due", 0) or getattr(inv, "amount_remaining", 0) or 0
+        currency = (getattr(inv, "currency", None) or "usd").upper()
+        attempt_count = getattr(inv, "attempt_count", None)
+        create_log(
+            db,
+            CATEGORY_BILLING,
+            "Payment failed",
+            f"Invoice {getattr(inv, 'number', inv.id)} payment failed. Amount due: ${amount_due / 100:.2f} {currency}. Please update your payment method.",
+            property_id=None,
+            actor_user_id=user.id if user else None,
+            actor_email=user.email if user else None,
+            meta={"stripe_invoice_id": inv.id, "amount_due_cents": amount_due, "currency": currency, "attempt_count": attempt_count},
+        )
+        create_ledger_event(
+            db,
+            ACTION_BILLING_INVOICE_PAYMENT_FAILED,
+            actor_user_id=user.id if user else None,
+            meta={"stripe_invoice_id": inv.id, "amount_due_cents": amount_due, "currency": currency, "invoice_number": getattr(inv, "number", str(inv.id))},
+        )
+        db.commit()
+        logger.info("Logged invoice.payment_failed for profile_id=%s invoice=%s", profile_id, inv.id)
 
     return {"received": True}

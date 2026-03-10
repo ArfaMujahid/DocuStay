@@ -5,7 +5,7 @@ import AgreementSignModal, { type PrefilledGuestInfo } from '../../components/Ag
 import PendingSignatureModal from '../../components/PendingSignatureModal';
 import HelpCenter from '../Support/HelpCenter';
 import { UserSession } from '../../types';
-import { dashboardApi, authApi, agreementsApi, APP_ORIGIN } from '../../services/api';
+import { dashboardApi, authApi, agreementsApi, invitationsApi, APP_ORIGIN } from '../../services/api';
 import type { OwnerInvitationView, OwnerAuditLogEntry, GuestPendingInviteView, GuestStayView } from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
 import { PENDING_INVITE_STORAGE_KEY } from '../Guest/GuestLogin';
@@ -131,6 +131,8 @@ const TenantDashboard: React.FC<{
   const [cancellingGuestStay, setCancellingGuestStay] = useState(false);
   const [generatedInviteLink, setGeneratedInviteLink] = useState<string | null>(null);
   const acceptFailedRef = useRef<Set<string>>(new Set());
+  // Tracks keys currently being accepted or already accepted this session to prevent double-firing
+  const acceptInFlightRef = useRef<Set<string>>(new Set());
 
   const openAgreementModal = useCallback((code: string) => {
     // Clear any stale Dropbox redirect state so we don't accept an invite from a previous attempt
@@ -234,17 +236,24 @@ const TenantDashboard: React.FC<{
         if (typeof sid !== 'number') return false;
         const key = `${inv.invitation_code}:${sid}`;
         if (acceptFailedRef.current.has(key)) return false;
+        if (acceptInFlightRef.current.has(key)) return false;
         return true;
       }
     );
     if (toAccept.length === 0) return;
+    // Mark in-flight before firing so re-renders triggered by loadData don't double-fire
+    toAccept.forEach((inv) => acceptInFlightRef.current.add(`${inv.invitation_code}:${inv.accept_now_signature_id}`));
     Promise.all(
       toAccept.map((inv) => authApi.acceptInvite(inv.invitation_code, inv.accept_now_signature_id))
     ).then(() => {
       loadData();
       notify('success', 'Your stay is confirmed. It will appear in your dashboard.');
     }).catch((e) => {
-      toAccept.forEach((inv) => acceptFailedRef.current.add(`${inv.invitation_code}:${inv.accept_now_signature_id}`));
+      toAccept.forEach((inv) => {
+        const key = `${inv.invitation_code}:${inv.accept_now_signature_id}`;
+        acceptInFlightRef.current.delete(key);
+        acceptFailedRef.current.add(key);
+      });
       notify('error', (e as Error)?.message ?? 'Could not confirm your stay.');
       loadData();
     });
@@ -295,19 +304,68 @@ const TenantDashboard: React.FC<{
     return () => clearInterval(t);
   }, [pendingSignatureModalInvite, loadData, notify]);
 
-  // Process invite code stored during login/signup (same as GuestDashboard)
+  // Process invite code stored during login/signup (e.g. after email verification).
+  // Flow: 1) validate link  2) if already_accepted → silently refresh (stay was auto-accepted at verification)
+  //        3) if valid → add pending invite then open signing modal
+  //        4) if genuinely invalid → show clear error
   useEffect(() => {
     const code = sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY);
     if (!code) return;
     sessionStorage.removeItem(PENDING_INVITE_STORAGE_KEY);
-    dashboardApi.guestAddPendingInvite(code)
-      .then(() => {
-        loadData();
-        openAgreementModal(code);
+
+    invitationsApi.getDetails(code)
+      .then((details) => {
+        if (details.already_accepted) {
+          // Invitation was accepted at email-verification time (pre-signed RegisterFromInvite flow).
+          // The stay is already on the dashboard; just refresh silently.
+          loadData();
+          return;
+        }
+        if (!details.valid) {
+          // Genuinely invalid or expired invitation.
+          loadData();
+          const msg = details.expired
+            ? 'This invitation has expired. Please ask your host for a new invitation.'
+            : details.used
+              ? 'This invitation link has already been used.'
+              : 'This invitation link is invalid or could not be found.';
+          notify('error', msg);
+          return;
+        }
+        // Valid invitation: add to pending list.
+        // If the signature is already complete (accept_now_signature_id set), skip the modal and accept directly.
+        dashboardApi.guestAddPendingInvite(code)
+          .then(async (pendingView) => {
+            if (pendingView?.accept_now_signature_id) {
+              // Signature already completed — accept the invite immediately without re-opening the modal.
+              try {
+                await authApi.acceptInvite(code, pendingView.accept_now_signature_id);
+                notify('success', 'Invitation accepted.');
+              } catch (acceptErr) {
+                const acceptMsg = (acceptErr as Error)?.message ?? '';
+                if (!acceptMsg.toLowerCase().includes('already')) {
+                  notify('error', acceptMsg || 'Could not accept invitation. Please try again.');
+                }
+              }
+              loadData();
+            } else {
+              loadData();
+              openAgreementModal(code);
+            }
+          })
+          .catch((e) => {
+            loadData();
+            const msg = (e as Error)?.message ?? '';
+            if (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('expired')) {
+              notify('error', 'Could not add this invitation. Please try pasting the link on your dashboard.');
+            } else {
+              notify('error', msg || 'Could not add this invitation. Please try again.');
+            }
+          });
       })
-      .catch((e) => {
+      .catch(() => {
         loadData();
-        notify('error', (e as Error)?.message ?? 'Invalid or expired invitation.');
+        notify('error', 'Could not verify this invitation link. Please try pasting it on your dashboard.');
       });
   }, [loadData, notify, openAgreementModal]);
 
@@ -440,7 +498,9 @@ const TenantDashboard: React.FC<{
       await dashboardApi.tenantEndAssignment();
       notify('success', 'Checkout complete. Your stay has ended and status has been updated.');
       setShowEndStayConfirm(false);
-      loadData();
+      setSelectedUnit(null);
+      setSelectedStay(null);
+      await loadData();
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not end stay.');
     } finally {
@@ -542,9 +602,14 @@ const TenantDashboard: React.FC<{
   const ongoingCount = unitCards.filter(() => isUnitOngoing).length + ongoingStays.length;
   const futureCount = unitCards.filter(() => isUnitFuture).length + futureStays.length;
   const completedCount = unitCards.filter(() => isUnitCompleted).length + completedStays.length;
-  const futureInvites = pendingInvites.filter((inv) =>
-    !stays.some((s) => datesOverlap(inv.stay_start_date, inv.stay_end_date, s.approved_stay_start_date, s.approved_stay_end_date))
-  );
+  // Exclude pending invites that are already covered by an accepted stay OR an active unit assignment.
+  // A tenant invite creates a TenantAssignment (not a Stay), so we must check unitData dates too.
+  const futureInvites = pendingInvites.filter((inv) => {
+    if (stays.some((s) => datesOverlap(inv.stay_start_date, inv.stay_end_date, s.approved_stay_start_date, s.approved_stay_end_date))) return false;
+    if (unitData?.stay_start_date && unitData?.stay_end_date &&
+        datesOverlap(inv.stay_start_date, inv.stay_end_date, unitData.stay_start_date, unitData.stay_end_date)) return false;
+    return true;
+  });
   const futureInvitesCount = futureInvites.length;
   const filteredStays: GuestStayView[] =
     stayFilter === 'all'

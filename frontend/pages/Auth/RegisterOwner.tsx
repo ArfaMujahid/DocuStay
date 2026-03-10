@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Input, Button, ErrorModal } from '../../components/UI';
 import { HeroBackground } from '../../components/HeroBackground';
+import { AuthCardLayout, AuthBullet } from '../../components/AuthCardLayout';
 import { authApi } from '../../services/api';
 import { getOwnerSignupErrorFriendly } from '../../utils/ownerSignupErrors';
 import { validatePhone, sanitizePhoneInput } from '../../utils/validatePhone';
@@ -47,6 +48,7 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
     if (!formData.first_name.trim()) newErrors.first_name = { error: 'First name is required.' };
     if (!formData.last_name.trim()) newErrors.last_name = { error: 'Last name is required.' };
     if (!formData.email.trim()) newErrors.email = { error: 'Email is required.' };
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) newErrors.email = { error: 'Please enter a valid email address.' };
     const phoneCheck = validatePhone(formData.phone);
     if (!phoneCheck.valid) newErrors.phone = { error: phoneCheck.error };
     if (!formData.password) newErrors.password = { error: 'Password is required.' };
@@ -85,8 +87,9 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
             userId: result.data.user_id,
             type: 'email',
             email: formData.email,
+            generatedAt: new Date().toISOString(),
           });
-          navigate('onboarding/identity-complete');
+          navigate('verify');
         } else if (result.data && 'access_token' in result.data) {
           onLogin?.(result.data as any);
         }
@@ -105,18 +108,27 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
 
   return (
     <HeroBackground className="flex-grow">
-      <div className="w-full max-w-5xl flex rounded-xl overflow-hidden border border-gray-200/60 bg-white/40 backdrop-blur-sm min-h-[520px] shadow-xl">
-        <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-100/40 via-blue-50/40 to-sky-100/40 p-10 flex-col justify-center border-r border-blue-200/40">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-3">Create Owner Account</h2>
-          <p className="text-gray-600 text-sm mb-8">
-            Register to manage your properties, invite guests, and document temporary stays.
-          </p>
-        </div>
-        <div className="w-full lg:w-1/2 bg-white/40 backdrop-blur-sm p-8 md:p-10 flex flex-col justify-center">
-          <div className="max-w-md mx-auto w-full">
-            <h1 className="text-xl font-semibold text-gray-900 mb-4">Create Owner Account</h1>
+      <AuthCardLayout
+        maxWidth="6xl"
+        minHeight="580px"
+        leftPanel={
+          <>
+            <h2 className="text-2xl font-semibold text-slate-900 mb-3">Create Owner Account</h2>
+            <p className="text-slate-600 text-sm mb-8">
+              Register to manage your properties, invite guests, and document temporary stays.
+            </p>
+            <ul className="space-y-3">
+              <AuthBullet>Add and manage properties</AuthBullet>
+              <AuthBullet>Invite guests and property managers</AuthBullet>
+              <AuthBullet>Document temporary stays</AuthBullet>
+            </ul>
+          </>
+        }
+      >
+          <div className="w-full max-w-3xl min-w-0">
+            <h1 className="text-xl font-semibold text-slate-900 mb-4">Create Owner Account</h1>
 
-            <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-x-6 gap-y-4">
+            <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-x-6 gap-y-4 min-w-0">
               <Input
                 label="First Name"
                 name="first_name"
@@ -204,15 +216,15 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
                 placeholder="Miami"
                 required
               />
-              <div className={`md:col-span-2 space-y-3 mt-2 p-4 rounded-lg bg-gradient-to-r from-blue-50 to-sky-50/80 border ${errors.terms?.error || errors.privacy?.error ? 'border-red-300' : 'border-blue-200'}`}>
+              <div className={`md:col-span-2 space-y-3 mt-2 p-4 rounded-lg bg-slate-50 border ${errors.terms?.error || errors.privacy?.error ? 'border-red-300' : 'border-slate-200'}`}>
                 <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" name="terms_agreed" checked={formData.terms_agreed} onChange={handleCheckboxChange} className="w-5 h-5 rounded border-gray-300 text-blue-700 focus:ring-blue-600 shrink-0 mt-0.5" />
-                  <span className="text-sm text-gray-600 leading-relaxed">I agree to the <a href="#" className="text-blue-700 font-medium hover:underline">Terms of Service</a> and the platform's documentation and authorization protocols for temporary stays.</span>
+                  <input type="checkbox" name="terms_agreed" checked={formData.terms_agreed} onChange={handleCheckboxChange} className="w-5 h-5 rounded border-slate-300 text-[#6B90F2] focus:ring-[#6B90F2] shrink-0 mt-0.5" />
+                  <span className="text-sm text-slate-600 leading-relaxed">I agree to the <a href="#" className="text-[#6B90F2] font-medium hover:underline">Terms of Service</a> and the platform&apos;s documentation and authorization protocols for temporary stays.</span>
                 </label>
                 {errors.terms?.error && <p className="text-xs text-red-500 pl-8">{errors.terms.error}</p>}
                 <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" name="privacy_agreed" checked={formData.privacy_agreed} onChange={handleCheckboxChange} className="w-5 h-5 rounded border-gray-300 text-blue-700 focus:ring-blue-600 shrink-0 mt-0.5" />
-                  <span className="text-sm text-gray-600">I agree to the processing of my data according to the <a href="#" className="text-blue-700 font-medium hover:underline">Privacy Policy</a>.</span>
+                  <input type="checkbox" name="privacy_agreed" checked={formData.privacy_agreed} onChange={handleCheckboxChange} className="w-5 h-5 rounded border-slate-300 text-[#6B90F2] focus:ring-[#6B90F2] shrink-0 mt-0.5" />
+                  <span className="text-sm text-slate-600">I agree to the processing of my data according to the <a href="#" className="text-[#6B90F2] font-medium hover:underline">Privacy Policy</a>.</span>
                 </label>
                 {errors.privacy?.error && <p className="text-xs text-red-500 pl-8">{errors.privacy.error}</p>}
               </div>
@@ -221,14 +233,13 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
                 <Button type="submit" className="w-full md:min-w-[200px] py-3">
                   Create Secure Account
                 </Button>
-                <p className="mt-4 text-center text-gray-500 text-sm">
-                  Already have an account? <button type="button" onClick={() => navigate('login')} className="text-blue-700 font-medium hover:text-blue-800 hover:underline underline-offset-2">Owner login</button>
+                <p className="mt-4 text-center text-slate-500 text-sm">
+                  Already have an account? <button type="button" onClick={() => navigate('login')} className="text-[#6B90F2] font-medium hover:text-[#5a7ed9] hover:underline underline-offset-2">Owner login</button>
                 </p>
               </div>
             </form>
           </div>
-        </div>
-      </div>
+      </AuthCardLayout>
 
       <ErrorModal
         open={errorModal.open}

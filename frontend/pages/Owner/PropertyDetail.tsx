@@ -1594,10 +1594,10 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                           const base = APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '');
                           setInviteTenantLink(`${base}${window.location.pathname}#invite/${code}`);
                           notify('success', 'Tenant invitation created. Share the invite link with the tenant.');
-                          setShowInviteTenantModal(false);
                           setInviteTenantUnitId(null);
                           setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
                           loadData();
+                          // Keep modal open so user can see and copy the invite link; they close it via "Done"
                         } else {
                           notify('error', 'We couldn\'t create a valid invitation link. Please try again.');
                         }

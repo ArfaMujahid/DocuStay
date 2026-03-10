@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState, UserType, AccountStatus } from './types';
 import { Card, Button, LoadingOverlay, ErrorModal } from './components/UI';
 import { authApi, setToken, toUserSession, type TokenResponse } from './services/api';
@@ -69,13 +69,15 @@ const App: React.FC = () => {
     const h = window.location.hash || '';
     return /[?&]session_id=/.test(s) || /[?&]session_id=/.test(h) || /session_id=/.test(h);
   };
+  const isManagerIdentityReturnPath = () =>
+    typeof window !== 'undefined' && window.location.pathname.includes('/onboarding/identity-complete/manager');
   const [view, setView] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
-    if (hasSessionIdInUrl()) return 'onboarding/identity-complete';
+    if (hasSessionIdInUrl()) return isManagerIdentityReturnPath() ? 'onboarding/identity-complete/manager' : 'onboarding/identity-complete';
     const hash = window.location.hash;
     if (hash) return hashToView(hash);
+    if (window.location.pathname === '/onboarding/identity-complete/manager') return 'onboarding/identity-complete/manager';
     if (window.location.pathname === '/onboarding/identity-complete' && !hash) {
-      // No session_id: POA return only when no Bearer token (owner). Manager with token stays on identity-complete to avoid POA mounting and pending-owner/me 401.
       if (!authApi.getToken()) return 'onboarding/poa';
       return 'onboarding/identity-complete';
     }
@@ -96,7 +98,15 @@ const App: React.FC = () => {
     const restoreSession = async () => {
       // Skip session restore on onboarding pages (they use pending-owner tokens) and on manager invite signup (no token yet; avoid 401 → #login).
       const currentView = hashToView(window.location.hash || '');
-      const isOnboardingPage = currentView.startsWith('onboarding/') || currentView === 'verify' || currentView === 'check';
+      const isIdentityCompleteReturn =
+        window.location.pathname === '/onboarding/identity-complete' ||
+        window.location.pathname.includes('/onboarding/identity-complete/manager') ||
+        hasSessionIdInUrl();
+      const isOnboardingPage =
+        currentView.startsWith('onboarding/') ||
+        currentView === 'verify' ||
+        currentView === 'check' ||
+        isIdentityCompleteReturn;
       const isManagerInviteSignup = currentView === 'register/manager' || currentView.startsWith('register/manager/');
       if (isOnboardingPage || isManagerInviteSignup) {
         setSessionRestoring(false);
@@ -187,7 +197,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const syncViewFromUrl = () => {
       if (hasSessionIdInUrl()) {
-        setView('onboarding/identity-complete');
+        setView(isManagerIdentityReturnPath() ? 'onboarding/identity-complete/manager' : 'onboarding/identity-complete');
         return;
       }
       const hash = window.location.hash;
@@ -206,8 +216,15 @@ const App: React.FC = () => {
         setView(viewName);
         return;
       }
+      if (window.location.pathname === '/onboarding/identity-complete/manager') {
+        setView('onboarding/identity-complete/manager');
+        if (!window.location.hash) {
+          const q = window.location.search ? window.location.search : '';
+          window.history.replaceState(null, '', window.location.pathname + q + '#onboarding/identity-complete/manager');
+        }
+        return;
+      }
       if (window.location.pathname === '/onboarding/identity-complete') {
-        // No hash and no session_id: usually Dropbox Sign return (POA flow). But if user has Bearer token (manager returning from Stripe with lost session_id), stay on identity-complete to avoid rendering POA and calling pending-owner/me (401 loop).
         if (!window.location.hash && !hasSessionIdInUrl() && !authApi.getToken()) {
           const q = window.location.search ? window.location.search : '';
           window.history.replaceState(null, '', window.location.pathname + q + '#onboarding/poa');
@@ -261,12 +278,16 @@ const App: React.FC = () => {
   const handleLogin = (userData: any) => {
     setState(prev => ({ ...prev, user: userData }));
     if (userData.user_type === UserType.PROPERTY_OWNER) {
-      if (!userData.identity_verified) navigate('onboarding/identity');
-      else if (!userData.poa_linked) navigate('onboarding/poa');
+      if (!userData.identity_verified) {
+        try { sessionStorage.setItem(IDENTITY_FLOW_KEY, 'owner'); } catch { /* ignore */ }
+        navigate('onboarding/identity');
+      } else if (!userData.poa_linked) navigate('onboarding/poa');
       else navigate('dashboard');
     } else if (userData.user_type === UserType.PROPERTY_MANAGER) {
-      if (!userData.identity_verified) navigate('onboarding/identity');
-      else navigate('manager-dashboard');
+      if (!userData.identity_verified) {
+        try { sessionStorage.setItem(IDENTITY_FLOW_KEY, 'manager'); } catch { /* ignore */ }
+        navigate('onboarding/identity');
+      } else navigate('manager-dashboard');
     } else if (userData.user_type === UserType.TENANT) {
       navigate('tenant-dashboard');
     } else if (userData.user_type === UserType.ADMIN) {
@@ -282,14 +303,14 @@ const App: React.FC = () => {
     navigate('');
   };
 
-  const showNotification = (type: 'success' | 'error', message: string) => {
+  const showNotification = useCallback((type: 'success' | 'error', message: string) => {
     if (type === 'error') {
       setErrorModal({ open: true, message });
       return;
     }
     setNotification({ type: 'success', message });
     setTimeout(() => setNotification(null), 5000);
-  };
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-blue-100/60 via-blue-50/30 to-sky-50/50 text-gray-800 overflow-x-hidden relative">
@@ -431,10 +452,12 @@ const App: React.FC = () => {
             onVerified={(user) => {
               clearPendingVerificationStorage();
               setState(prev => ({ ...prev, user }));
-              // Defer navigate so state is committed before we show onboarding/identity (avoids wrong isPendingOwner + duplicate calls).
               const next = user.user_type === UserType.PROPERTY_OWNER
                 ? (!user.identity_verified ? 'onboarding/identity' : !user.poa_linked ? 'onboarding/poa' : 'dashboard')
                 : user.user_type === UserType.TENANT ? 'tenant-dashboard' : 'guest-dashboard';
+              if (next === 'onboarding/identity') {
+                try { sessionStorage.setItem(IDENTITY_FLOW_KEY, 'owner'); } catch { /* ignore */ }
+              }
               setTimeout(() => navigate(next), 0);
             }}
           />
@@ -442,10 +465,17 @@ const App: React.FC = () => {
 
         {/* Owner onboarding: verify email first (register → verify), then Stripe identity, then POA. Show identity only with token or owner user so we don't call authApi.me() here. */}
         {view === 'onboarding/identity' && (state.user?.user_type === UserType.PROPERTY_OWNER || state.user?.user_type === UserType.PROPERTY_MANAGER || state.user?.user_id === '0' || authApi.getToken()) && (
-          <OnboardingIdentity isPendingOwner={!state.user || state.user?.user_id === '0'} navigate={navigate} setLoading={setLoading} notify={showNotification} />
+          <OnboardingIdentity
+            isPendingOwner={!state.user || state.user?.user_id === '0'}
+            identityReturnPath={state.user?.user_type === UserType.PROPERTY_MANAGER ? 'onboarding/identity-complete/manager' : 'onboarding/identity-complete'}
+            navigate={navigate}
+            setLoading={setLoading}
+            notify={showNotification}
+          />
         )}
-        {view === 'onboarding/identity-complete' && (
+        {(view === 'onboarding/identity-complete' || view === 'onboarding/identity-complete/manager') && (
           <OnboardingIdentityComplete
+            isManagerReturn={view === 'onboarding/identity-complete/manager'}
             navigate={navigate}
             setLoading={setLoading}
             notify={showNotification}

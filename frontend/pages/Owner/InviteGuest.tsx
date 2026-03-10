@@ -155,7 +155,7 @@ const InviteGuest: React.FC<{ user: UserSession | null, navigate: (v: string) =>
 
       {showInviteModal && (
         <>
-          <div className="fixed inset-0 bg-black/70 z-40" onClick={closeInviteModal}></div>
+          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={closeInviteModal}></div>
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <Card className="w-full max-w-xl">
               <div className="p-6 border-b border-gray-800 flex items-center justify-between bg-white/60 backdrop-blur-md">
