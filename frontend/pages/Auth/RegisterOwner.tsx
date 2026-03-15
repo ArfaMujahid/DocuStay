@@ -63,6 +63,7 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
       return;
     }
     setLoading(true);
+    setErrors({});
     try {
       const fullName = `${formData.first_name} ${formData.last_name}`.trim();
       const result = await authApi.register({
@@ -81,6 +82,15 @@ const RegisterOwner: React.FC<Props> = ({ setPendingVerification, onLogin, navig
         privacy_agreed: formData.privacy_agreed,
       });
       setLoading(false);
+      if (result.status === 'error') {
+        const apiMessage = (result.message && result.message.trim()) || "Registration failed. Please try again.";
+        const friendly = getOwnerSignupErrorFriendly(apiMessage);
+        notify('error', friendly.message);
+        if (result.validation && Object.keys(result.validation).length > 0) {
+          setErrors(result.validation);
+        }
+        return;
+      }
       if (result.status === 'success' && result.data) {
         if ('user_id' in result.data) {
           setPendingVerification({

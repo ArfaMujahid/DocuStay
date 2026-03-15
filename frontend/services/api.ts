@@ -269,7 +269,7 @@ export const authApi = {
         data: { user_id: String(body.user_id!) },
       };
     } catch (e: any) {
-      const msg = e?.message || "Registration failed";
+      const msg = (e?.message && String(e.message).trim()) || "Registration failed. Please try again.";
       const validation: Record<string, { error: string }> = {};
       if (msg.includes("Passwords")) validation.password_match = { error: "Passwords do not match" };
       if (msg.includes("agree")) {
