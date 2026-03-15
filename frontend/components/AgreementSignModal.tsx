@@ -72,7 +72,7 @@ function renderAgreementContent(content: string) {
     <Fragment key={i}>
       {i > 0 && <br />}
       {line.split(/\*\*(.+?)\*\*/g).map((seg, j) =>
-        j % 2 === 1 ? <strong key={j}>{seg}</strong> : seg
+        j % 2 === 1 ? <strong key={j} className="text-white font-semibold">{seg}</strong> : seg
       )}
     </Fragment>
   ));
@@ -400,7 +400,7 @@ export default function AgreementSignModal(props: {
   const renderStep1 = () => {
     if (inviteDetailsLoading) {
       return (
-        <div className="p-6 md:p-8 text-center text-slate-600">
+        <div className="p-6 md:p-8 text-center text-white/90">
           Loading invitation…
         </div>
       );
@@ -408,7 +408,7 @@ export default function AgreementSignModal(props: {
     if (inviteDetails && !inviteDetails.valid) {
       return (
         <div className="p-6 md:p-8 text-center">
-          <p className="text-slate-600 mb-4">
+          <p className="text-white/90 mb-4">
             {inviteDetails.expired ? "This invitation has expired." : inviteDetails.used ? "This invitation has already been used." : "This invitation could not be loaded."}
           </p>
           <Button variant="outline" onClick={onClose}>Close</Button>
@@ -419,39 +419,39 @@ export default function AgreementSignModal(props: {
     const isReadOnly = !!prefilledGuestInfo;
     return (
       <form
-        className="p-6 md:p-8 space-y-6 bg-slate-50/50 max-h-[85vh] overflow-y-auto"
+        className="p-6 md:p-8 space-y-6 bg-transparent max-h-[85vh] overflow-y-auto"
         onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
         noValidate
       >
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Property (reference only)</p>
-          <p className="text-slate-800 font-medium">{inviteDetails?.property_address || inviteDetails?.property_name || "—"}</p>
+        <div className="rounded-xl glass border border-white/10 p-5">
+          <p className="text-xs font-bold uppercase tracking-wider text-white/70 mb-1">Property (reference only)</p>
+          <p className="text-white font-medium">{inviteDetails?.property_address || inviteDetails?.property_name || "—"}</p>
           {inviteDetails?.stay_start_date && inviteDetails?.stay_end_date && (
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-sm text-white/80 mt-1">
               {formatInviteDate(inviteDetails.stay_start_date)} – {formatInviteDate(inviteDetails.stay_end_date)}
             </p>
           )}
         </div>
 
         {isReadOnly ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Your information (from your account)</p>
-            <p className="text-slate-800"><span className="text-slate-500 text-sm">Full name</span> {prefilledGuestInfo.full_name}</p>
-            <p className="text-slate-800"><span className="text-slate-500 text-sm">Email</span> {prefilledGuestInfo.email}</p>
-            <p className="text-slate-800"><span className="text-slate-500 text-sm">Phone</span> {prefilledGuestInfo.phone || "—"}</p>
-            <p className="text-slate-800"><span className="text-slate-500 text-sm">Permanent residence</span> {prefilledGuestInfo.permanent_address}</p>
+          <div className="rounded-xl glass border border-white/10 p-5 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-white/70">Your information (from your account)</p>
+            <p className="text-white/95"><span className="text-white/70 text-sm">Full name</span> {prefilledGuestInfo.full_name}</p>
+            <p className="text-white/95"><span className="text-white/70 text-sm">Email</span> {prefilledGuestInfo.email}</p>
+            <p className="text-white/95"><span className="text-white/70 text-sm">Phone</span> {prefilledGuestInfo.phone || "—"}</p>
+            <p className="text-white/95"><span className="text-white/70 text-sm">Permanent residence</span> {prefilledGuestInfo.permanent_address}</p>
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-6">
             <div className="space-y-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Your information</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-white/70">Your information</p>
               <Input label="Full name" value={d.full_name} onChange={(e) => setStep1FormData({ ...d, full_name: e.target.value })} required />
               <Input label="Email" type="email" value={d.email} onChange={(e) => setStep1FormData({ ...d, email: e.target.value })} required />
               <Input label="Phone" value={d.phone} onChange={(e) => setStep1FormData({ ...d, phone: sanitizePhoneInput(e.target.value) })} placeholder="+15551234567 or 5551234567" required />
             </div>
             {!(inviteDetails?.invitation_kind === "tenant" || inviteDetails?.is_tenant_invite) && (
             <div className="space-y-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Permanent residence</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-white/70">Permanent residence</p>
               <Input label="Street address" value={d.permanent_address} onChange={(e) => setStep1FormData({ ...d, permanent_address: e.target.value })} required />
               <div className="grid grid-cols-2 gap-3">
                 <Input label="City" value={d.permanent_city} onChange={(e) => setStep1FormData({ ...d, permanent_city: e.target.value })} required />
@@ -463,29 +463,29 @@ export default function AgreementSignModal(props: {
           </div>
         )}
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Agreements</p>
+        <div className="rounded-xl glass border border-white/10 p-5 space-y-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-white/70">Agreements</p>
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={d.terms_agreed}
               onChange={(e) => setStep1FormData({ ...d, terms_agreed: e.target.checked })}
-              className="mt-0.5 w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
+              className="mt-0.5 w-5 h-5 rounded border-white/30 bg-white/10 text-[hsl(265,89%,66%)] focus:ring-[hsl(265,89%,66%)] shrink-0 accent-[hsl(265,89%,66%)]"
             />
-            <span className="text-sm text-slate-700">I agree to the <a href="#terms" target="_blank" rel="noopener noreferrer" className="text-[#6B90F2] font-medium hover:underline" onClick={(e) => e.stopPropagation()}>Terms of Service</a>.</span>
+            <span className="text-sm text-white/95">I agree to the <a href="#terms" target="_blank" rel="noopener noreferrer" className="text-[hsl(265,89%,76%)] font-medium hover:underline" onClick={(e) => e.stopPropagation()}>Terms of Service</a>.</span>
           </label>
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={d.privacy_agreed}
               onChange={(e) => setStep1FormData({ ...d, privacy_agreed: e.target.checked })}
-              className="mt-0.5 w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
+              className="mt-0.5 w-5 h-5 rounded border-white/30 bg-white/10 text-[hsl(265,89%,66%)] focus:ring-[hsl(265,89%,66%)] shrink-0 accent-[hsl(265,89%,66%)]"
             />
-            <span className="text-sm text-slate-700">I agree to the <a href="#privacy" target="_blank" rel="noopener noreferrer" className="text-[#6B90F2] font-medium hover:underline" onClick={(e) => e.stopPropagation()}>Privacy Policy</a>.</span>
+            <span className="text-sm text-white/95">I agree to the <a href="#privacy" target="_blank" rel="noopener noreferrer" className="text-[hsl(265,89%,76%)] font-medium hover:underline" onClick={(e) => e.stopPropagation()}>Privacy Policy</a>.</span>
           </label>
         </div>
 
-        {step1Error && <p className="text-sm text-red-600 font-medium" role="alert">{step1Error}</p>}
+        {step1Error && <p className="text-sm text-red-300 font-medium" role="alert">{step1Error}</p>}
         <div className="flex gap-3">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
           <Button type="button" onClick={(e) => handleStep1Continue(e)}>
@@ -503,21 +503,21 @@ export default function AgreementSignModal(props: {
       {inviteAcceptMode && inviteStep === "details" ? (
         renderStep1()
       ) : (
-      <div className="p-6 md:p-8 space-y-6 bg-slate-50/50">
+      <div className="p-6 md:p-8 space-y-6 bg-transparent">
         {/* Meta row */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="space-y-1">
-            <p className="text-sm text-slate-600">
-              Invitation: <span className="font-semibold text-slate-800">{normalizedCode}</span>
+            <p className="text-sm text-white/90">
+              Invitation: <span className="font-semibold text-white">{normalizedCode}</span>
               {doc?.region_code ? (
-                <> · Region: <span className="font-semibold text-slate-800">{doc.region_code}</span></>
+                <> · Region: <span className="font-semibold text-white">{doc.region_code}</span></>
               ) : null}
             </p>
-            <p className="text-xs text-slate-500 italic">DocuStay is a documentation platform, not a law firm.</p>
+            <p className="text-xs text-white/70 italic">DocuStay is a documentation platform, not a law firm.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {doc?.document_id ? (
-              <span className="text-xs text-slate-500 font-mono">{doc.document_id}</span>
+              <span className="text-xs text-white/70 font-mono">{doc.document_id}</span>
             ) : null}
             {doc && !loading && (
               <a
@@ -530,7 +530,7 @@ export default function AgreementSignModal(props: {
                 })()}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-semibold text-blue-600 hover:text-blue-700 underline underline-offset-2"
+                className="text-sm font-semibold text-[hsl(265,89%,76%)] hover:text-[hsl(265,89%,86%)] underline underline-offset-2"
               >
                 View / Download PDF
               </a>
@@ -539,9 +539,9 @@ export default function AgreementSignModal(props: {
         </div>
 
         {doc?.already_signed && doc?.has_dropbox_signed_pdf && (
-          <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 flex flex-wrap items-center gap-3">
-            <span className="text-emerald-700 font-bold">✓ Signed</span>
-            <span className="text-slate-600 text-sm">
+          <div className="rounded-xl bg-emerald-500/20 border border-emerald-400/30 px-4 py-3 flex flex-wrap items-center gap-3">
+            <span className="text-emerald-200 font-bold">✓ Signed</span>
+            <span className="text-white/90 text-sm">
               {doc.signed_by} on {doc.signed_at ? new Date(doc.signed_at).toLocaleDateString() : ""}
             </span>
             {doc.signature_id != null && (
@@ -549,7 +549,7 @@ export default function AgreementSignModal(props: {
                 href={`${API_URL}/agreements/signature/${doc.signature_id}/signed-pdf`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-semibold text-blue-600 hover:text-blue-700 underline underline-offset-2"
+                className="text-sm font-semibold text-[hsl(265,89%,76%)] hover:text-[hsl(265,89%,86%)] underline underline-offset-2"
               >
                 Download signed PDF (Dropbox Sign)
               </a>
@@ -557,9 +557,9 @@ export default function AgreementSignModal(props: {
           </div>
         )}
         {doc?.already_signed && !doc?.has_dropbox_signed_pdf && (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex flex-wrap items-center gap-3">
-            <span className="text-amber-800 font-bold">Awaiting your signature in Dropbox</span>
-            <span className="text-slate-600 text-sm">
+          <div className="rounded-xl bg-amber-500/20 border border-amber-400/30 px-4 py-3 flex flex-wrap items-center gap-3">
+            <span className="text-amber-200 font-bold">Awaiting your signature in Dropbox</span>
+            <span className="text-white/90 text-sm">
               Complete signing in the link we sent you by email, or use the button below when you open this from the same session.
             </span>
           </div>
@@ -568,18 +568,18 @@ export default function AgreementSignModal(props: {
         <div className="grid lg:grid-cols-5 gap-6">
           {/* Agreement content – readable document area */}
           <div className="lg:col-span-3">
-            <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm flex flex-col max-h-[70vh]">
-              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Agreement</p>
+            <div className="border border-white/10 rounded-xl glass overflow-hidden shadow-sm flex flex-col max-h-[70vh]">
+              <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-2 shrink-0">
+                <p className="text-xs font-bold uppercase tracking-wider text-white/70">Agreement</p>
                 {doc?.property_address ? (
-                  <p className="text-xs text-slate-500 truncate max-w-[60%]" title={doc.property_address}>
+                  <p className="text-xs text-white/70 truncate max-w-[60%]" title={doc.property_address}>
                     {doc.property_address}
                   </p>
                 ) : null}
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto">
                 <div className="px-6 py-5 max-w-prose mx-auto">
-                  <div className="text-base text-slate-800 leading-loose tracking-normal selection:bg-blue-100">
+                  <div className="text-base md:text-lg text-white/95 leading-relaxed tracking-normal selection:bg-[hsl(265,89%,66%)]/30">
                     {loading
                       ? "Loading agreement…"
                       : loadError
@@ -601,8 +601,8 @@ export default function AgreementSignModal(props: {
 
           {/* Acknowledgments + Signature */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="border border-slate-200 rounded-xl bg-white p-5 space-y-4 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Acknowledgments</p>
+            <div className="border border-white/10 rounded-xl glass p-5 space-y-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-white/70">Acknowledgments</p>
               {(
                 isTenantInvite
                   ? [
@@ -624,20 +624,20 @@ export default function AgreementSignModal(props: {
                       setAcks((p) => ({ ...p, [key]: e.target.checked }));
                       setSignError(null);
                     }}
-                    className="mt-0.5 w-5 h-5 rounded border-slate-300 bg-white text-blue-600 focus:ring-blue-500 shrink-0"
+                    className="mt-0.5 w-5 h-5 rounded border-white/30 bg-white/10 text-[hsl(265,89%,66%)] focus:ring-[hsl(265,89%,66%)] shrink-0 accent-[hsl(265,89%,66%)]"
                   />
-                  <span className="text-sm text-slate-700">{label}</span>
+                  <span className="text-sm text-white/95">{label}</span>
                 </label>
               ))}
             </div>
 
-            <div className="border border-slate-200 rounded-xl bg-white p-5 space-y-4 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Signature</p>
+            <div className="border border-white/10 rounded-xl glass p-5 space-y-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-white/70">Signature</p>
               {doc?.already_signed && doc?.has_dropbox_signed_pdf ? (
-                <p className="text-sm text-slate-600">This agreement is already signed. You can close this window.</p>
+                <p className="text-sm text-white/90">This agreement is already signed. You can close this window.</p>
               ) : signatureIdToPoll != null ? (
                 <div className="space-y-3">
-                  <p className="text-sm font-medium text-slate-700">
+                  <p className="text-sm font-medium text-white/90">
                     Complete signing in Dropbox. This modal will close automatically when we detect your signature.
                   </p>
                   {pendingSignUrl && (
@@ -649,7 +649,7 @@ export default function AgreementSignModal(props: {
                       Open Dropbox to sign
                     </Button>
                   )}
-                  <p className="text-xs text-slate-500">You can close this modal; your stay will stay in pending actions until signing is complete.</p>
+                  <p className="text-xs text-white/70">You can close this modal; your stay will stay in pending actions until signing is complete.</p>
                 </div>
               ) : (
                 <>
@@ -669,11 +669,11 @@ export default function AgreementSignModal(props: {
                     placeholder="e.g. 192.168.1.1"
                   />
                   {signError && (
-                    <p className="text-sm text-red-600 font-medium" role="alert">
+                    <p className="text-sm text-red-300 font-medium" role="alert">
                       {signError}
                     </p>
                   )}
-                  <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold">
+                  <p className="text-xs text-white/80 uppercase tracking-wide font-semibold">
                     By signing, you agree to the terms of this agreement.
                   </p>
                   <div className="flex flex-col gap-3 pt-1">
@@ -691,7 +691,7 @@ export default function AgreementSignModal(props: {
                         {signing ? "Sending…" : "Sign with Dropbox Sign"}
                       </Button>
                     </div>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <p className="text-xs text-white/70 leading-relaxed">
                       You will receive an email from Dropbox Sign with a link to sign. After signing there, you can download the signed PDF here.
                     </p>
                   </div>

@@ -23,12 +23,12 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
 
   if (contextMode === 'personal') {
     return (
-      <div className={inline ? '' : 'mb-4 p-3 rounded-xl bg-slate-100 border border-slate-200'}>
-        {!inline && <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Mode</p>}
+      <div className={inline ? '' : 'mb-4 p-3 rounded-xl bg-white/5 border border-white/10'}>
+        {!inline && <p className="text-xs font-semibold uppercase tracking-wider text-white/90 mb-2">Mode</p>}
         <button
           type="button"
           onClick={() => onContextModeChange('business')}
-          className={`w-full px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-600 transition-colors ${inline ? '' : 'flex-1'}`}
+          className={`w-full px-3 py-2 rounded-lg text-sm font-medium bg-[hsl(265,89%,66%)]/80 text-white hover:bg-[hsl(265,89%,66%)] transition-colors ${inline ? '' : 'flex-1'}`}
         >
           Back to Business Mode
         </button>
@@ -41,13 +41,13 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
   };
 
   return (
-    <div className={inline ? '' : 'mb-4 p-3 rounded-xl bg-slate-100 border border-slate-200'}>
-      {!inline && <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Mode</p>}
+    <div className={inline ? '' : 'mb-4 p-3 rounded-xl bg-white/5 border border-white/10'}>
+      {!inline && <p className="text-xs font-semibold uppercase tracking-wider text-white/90 mb-2">Mode</p>}
       <div className="flex gap-2">
         <button
           type="button"
           onClick={() => onContextModeChange('business')}
-          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-white`}
+          className="flex-1 px-3 py-2 rounded-lg text-sm font-medium bg-[hsl(265,89%,66%)]/80 text-white"
         >
           Business
         </button>
@@ -58,8 +58,8 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
             disabled={!canUsePersonal}
             className={`w-full px-3 py-2 rounded-lg text-sm font-medium ${
               canUsePersonal
-                ? 'bg-white text-slate-600 hover:bg-slate-50'
-                : 'bg-white/60 text-slate-400 cursor-not-allowed'
+                ? 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
+                : 'bg-white/5 text-white/60 cursor-not-allowed border border-white/5'
             }`}
             title={!canUsePersonal ? DISABLED_TOOLTIP : undefined}
           >
@@ -67,7 +67,7 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
           </button>
           {!canUsePersonal && (
             <span
-              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg min-w-64 max-w-80 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-[200]"
+              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-1.5 bg-[hsl(230,30%,10%)] border border-white/10 text-white text-xs rounded shadow-lg min-w-64 max-w-80 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-[200]"
               role="tooltip"
             >
               {DISABLED_TOOLTIP}

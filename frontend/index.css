@@ -1,19 +1,108 @@
 @import "tailwindcss";
 
-/* Base styles (no longer depend on CDN) */
+/* DocuStay – Cosmic / Starry theme */
+@theme {
+  /* Cosmic palette */
+  --color-cosmic-deep: hsl(230, 35%, 4%);
+  --color-cosmic-bg: hsl(230, 25%, 7%);
+  --color-cosmic-card: hsl(230, 30%, 10%);
+  --color-cosmic-border: hsl(230, 30%, 18%);
+  --color-cosmic-primary: hsl(265, 89%, 66%);
+  --color-cosmic-primary-hover: hsl(265, 75%, 58%);
+  --color-cosmic-accent: hsl(280, 80%, 60%);
+  --color-cosmic-cyan: hsl(185, 80%, 55%);
+  --color-cosmic-muted: hsl(220, 15%, 60%);
+  --color-cosmic-foreground: hsl(210, 40%, 98%);
+}
+
+/* Base styles – starry theme */
 html {
-  font-size: 80%;
+  font-size: 87.5%; /* Slightly larger base for big screens */
+}
+@media (min-width: 1280px) {
+  html {
+    font-size: 100%;
+  }
 }
 body {
   font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  background: linear-gradient(180deg, #dbeafe 0%, #eff6ff 35%, #e0f2fe 70%, #f0f9ff 100%);
-  color: #374151;
+  background: hsl(230, 35%, 4%);
+  color: hsl(210, 40%, 98%);
   min-height: 100vh;
 }
 ::selection {
-  background-color: rgba(29, 78, 216, 0.25);
-  color: #111827;
+  background-color: hsla(265, 89%, 66%, 0.3);
+  color: #fff;
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Keep dark theme on autofilled inputs (no white flash) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: hsl(210, 40%, 98%);
+  -webkit-box-shadow: 0 0 0 1000px hsl(230, 30%, 12%) inset;
+  box-shadow: 0 0 0 1000px hsl(230, 30%, 12%) inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Glass morphism for cards on starry background */
+.glass {
+  background: hsl(230 30% 10% / 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid hsl(230 30% 18% / 0.5);
+}
+.glass-light {
+  background: hsl(210 40% 98% / 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid hsl(210 40% 98% / 0.12);
+}
+
+/* Gradient text (cosmic) */
+.gradient-text {
+  background: linear-gradient(135deg, hsl(265, 89%, 66%), hsl(280, 80%, 60%), hsl(185, 80%, 55%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Animations */
+@keyframes cosmic-twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+@keyframes cosmic-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes cosmic-pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px hsl(265 89% 66% / 0.3), 0 0 40px hsl(265 89% 66% / 0.2);
+  }
+  50% {
+    box-shadow: 0 0 30px hsl(265 89% 66% / 0.5), 0 0 60px hsl(265 89% 66% / 0.3);
+  }
+}
+.animate-cosmic-twinkle {
+  animation: cosmic-twinkle 3s ease-in-out infinite;
+}
+.animate-cosmic-float {
+  animation: cosmic-float 6s ease-in-out infinite;
+}
+.animate-cosmic-pulse-glow {
+  animation: cosmic-pulse-glow 4s ease-in-out infinite;
+}
+
+/* Role accent utilities (for role-specific theming) */
+.role-owner-accent { --role-accent: hsl(265, 89%, 66%); }
+.role-manager-accent { --role-accent: hsl(220, 70%, 55%); }
+.role-tenant-accent { --role-accent: hsl(160, 60%, 45%); }
+.role-guest-accent { --role-accent: hsl(185, 80%, 55%); }
