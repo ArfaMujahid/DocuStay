@@ -18,9 +18,9 @@ const HIDDEN_LEDGER_TITLES = new Set([
 ]);
 
 const severityStyles: Record<string, string> = {
-  urgent: 'bg-red-50 border-red-200 text-red-800',
-  warning: 'bg-amber-50 border-amber-200 text-amber-800',
-  info: 'bg-sky-50 border-sky-200 text-sky-800',
+  urgent: 'bg-red-500/10 border-red-400/30 text-red-200',
+  warning: 'bg-amber-500/10 border-amber-400/30 text-amber-200',
+  info: 'bg-white/5 border-white/10 text-white',
 };
 
 function formatAlertTime(iso: string): string {
@@ -161,20 +161,20 @@ export const DashboardAlertsPanel: React.FC<DashboardAlertsPanelProps> = ({
 
   if (loading && items.length === 0) {
     return (
-      <div className={`rounded-xl border border-slate-200 bg-white p-4 ${className}`}>
-        <p className="text-slate-500 text-sm">Loading notifications…</p>
+      <div className={`rounded-xl glass border border-white/10 p-4 ${className}`}>
+        <p className="text-white/90 text-sm">Loading notifications…</p>
       </div>
     );
   }
 
   return (
-    <div className={`rounded-xl border border-slate-200 bg-white overflow-hidden ${className}`}>
+    <div className={`rounded-xl glass border border-white/10 overflow-hidden ${className}`}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-colors"
       >
-        <span className="font-semibold text-slate-800 flex items-center gap-2">
+        <span className="font-semibold text-white flex items-center gap-2">
           Notifications
           {!useLedger && unreadCount > 0 && (
             <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-xs font-bold">
@@ -183,7 +183,7 @@ export const DashboardAlertsPanel: React.FC<DashboardAlertsPanelProps> = ({
           )}
         </span>
         <svg
-          className={`w-5 h-5 text-slate-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          className={`w-5 h-5 text-white/85 transition-transform ${expanded ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -194,24 +194,24 @@ export const DashboardAlertsPanel: React.FC<DashboardAlertsPanelProps> = ({
       {expanded &&
         (useLedger ? (
           items.length === 0 ? (
-            <div className="border-t border-slate-200 px-4 py-6 text-center">
-              <p className="text-slate-500 text-sm">No recent activity.</p>
-              <p className="text-slate-400 text-xs mt-1">Event ledger updates will appear here.</p>
+            <div className="border-t border-white/10 px-4 py-6 text-center">
+              <p className="text-white/90 text-sm">No recent activity.</p>
+              <p className="text-white/75 text-xs mt-1">Event ledger updates will appear here.</p>
             </div>
           ) : (
-            <ul className="border-t border-slate-200 max-h-[320px] overflow-y-auto">
+            <ul className="border-t border-white/10 max-h-[320px] overflow-y-auto">
               {items.map((entry) => (
-                <li key={entry.id} className="border-b border-slate-100 last:border-b-0 px-4 py-3">
-                  <div className={`rounded-lg border p-3 ${severityStyles.info}`}>
+                <li key={entry.id} className="border-b border-white/5 last:border-b-0 px-4 py-3">
+                  <div className={`rounded-lg border border-white/10 p-3 bg-white/5 ${severityStyles.info}`}>
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm">{entry.title}</p>
-                      <p className="text-sm mt-1 opacity-90">{entry.message}</p>
+                      <p className="font-medium text-sm text-white">{entry.title}</p>
+                      <p className="text-sm mt-1 text-white/90">{entry.message}</p>
                       {(entry.property_name || entry.category) && (
-                        <p className="text-xs mt-1 opacity-75">
+                        <p className="text-xs mt-1 text-white/80">
                           {[entry.property_name, entry.category].filter(Boolean).join(' · ')}
                         </p>
                       )}
-                      <p className="text-xs mt-2 opacity-75">{formatAlertTime(entry.created_at)}</p>
+                      <p className="text-xs mt-2 text-white/75">{formatAlertTime(entry.created_at)}</p>
                     </div>
                   </div>
                 </li>
@@ -219,30 +219,30 @@ export const DashboardAlertsPanel: React.FC<DashboardAlertsPanelProps> = ({
             </ul>
           )
         ) : items.length === 0 ? (
-          <div className="border-t border-slate-200 px-4 py-6 text-center">
-            <p className="text-slate-500 text-sm">No new notifications.</p>
-            <p className="text-slate-400 text-xs mt-1">Status updates and alerts will appear here.</p>
+          <div className="border-t border-white/10 px-4 py-6 text-center">
+            <p className="text-white/90 text-sm">No new notifications.</p>
+            <p className="text-white/75 text-xs mt-1">Status updates and alerts will appear here.</p>
           </div>
         ) : (
-          <ul className="border-t border-slate-200 max-h-[320px] overflow-y-auto">
+          <ul className="border-t border-white/10 max-h-[320px] overflow-y-auto">
             {alerts.map((alert) => (
               <li
                 key={alert.id}
-                className={`border-b border-slate-100 last:border-b-0 px-4 py-3 ${!alert.read_at ? 'bg-slate-50/50' : ''}`}
+                className={`border-b border-white/5 last:border-b-0 px-4 py-3 ${!alert.read_at ? 'bg-white/5' : ''}`}
               >
                 <div className={`rounded-lg border p-3 ${severityStyles[alert.severity] || severityStyles.info}`}>
                   <div className="flex justify-between items-start gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm">{alert.title}</p>
-                      <p className="text-sm mt-1 opacity-90">{alert.message}</p>
-                      <p className="text-xs mt-2 opacity-75">{formatAlertTime(alert.created_at)}</p>
+                      <p className="text-sm mt-1 text-white/90">{alert.message}</p>
+                      <p className="text-xs mt-2 text-white/75">{formatAlertTime(alert.created_at)}</p>
                     </div>
                     {!alert.read_at && (
                       <button
                         type="button"
                         onClick={() => markRead(alert)}
                         disabled={markingId === alert.id}
-                        className="shrink-0 text-xs font-medium underline hover:no-underline disabled:opacity-50"
+                        className="shrink-0 text-xs font-medium text-[hsl(265,89%,66%)] hover:text-[hsl(265,89%,76%)] underline hover:no-underline disabled:opacity-50"
                       >
                         {markingId === alert.id ? '…' : 'Mark read'}
                       </button>

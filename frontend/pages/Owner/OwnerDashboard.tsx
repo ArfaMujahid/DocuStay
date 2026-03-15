@@ -301,8 +301,8 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
 
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
-      {/* Sidebar Navigation (fixed width so it does not shrink) */}
-      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 p-6">
+      {/* Sidebar Navigation – cosmic theme */}
+      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col glass border-r border-white/10 p-6">
         <div className="space-y-2 flex-shrink-0">
           {[
             { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -318,7 +318,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-[hsl(265,89%,66%)]/20 text-white border border-[hsl(265,89%,66%)]/40' : 'text-white/90 hover:text-white hover:bg-white/10'}`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon}></path></svg>
               {item.label}
@@ -329,7 +329,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         <div className="flex-grow min-h-0" />
 
         {/* Mode switcher at bottom */}
-        <div className="mt-6 pt-6 border-t border-slate-200 flex-shrink-0">
+        <div className="mt-6 pt-6 border-t border-white/10 flex-shrink-0">
           <ModeSwitcher
             contextMode={contextMode}
             personalModeUnits={personalModeUnits}
@@ -347,7 +347,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             id="mobile-tab-select"
             value={activeTab}
             onChange={(e) => setActiveTab(e.target.value)}
-            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full max-w-xs rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
           >
             <option value="dashboard">Dashboard</option>
             <option value="properties">My Properties</option>
@@ -364,10 +364,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         {activeTab !== 'settings' && activeTab !== 'help' && (
           <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
             <div>
-              <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight">
+              <h1 className="text-4xl font-extrabold text-white tracking-tight">
                 {activeTab === 'properties' ? 'My Properties' : activeTab === 'guests' ? 'Guests' : activeTab === 'tenants' ? 'Tenants' : activeTab === 'invitations' ? 'Invitations' : activeTab === 'billing' ? 'Billing' : activeTab === 'logs' ? 'Event ledger' : 'Overview'}
               </h1>
-              <p className="text-slate-600 mt-1">
+              <p className="text-white/90 mt-1">
                 {activeTab === 'properties' ? 'View, edit, or remove your registered properties.' : activeTab === 'guests' ? 'Guests currently staying at your properties and their stay details.' : activeTab === 'tenants' ? 'Tenants assigned to your properties and their lease details.' : activeTab === 'invitations' ? (contextMode === 'business' ? 'Tenant invitations you have sent.' : 'Pending invitations waiting for guests to accept.') : activeTab === 'billing' ? 'Invoices and payment history. Onboarding and subscription charges appear here.' : activeTab === 'logs' ? 'Immutable event ledger: status changes, guest signatures, payment and billing activity, and failed attempts. Filter by time, category, or search.' : 'Documentation and authorization for your properties.'}
               </p>
             </div>
@@ -407,7 +407,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                   <button
                     type="button"
                     onClick={() => setShowBulkUploadRulesModal(true)}
-                    className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                    className="p-1 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
                     aria-label="Bulk upload rules"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -430,14 +430,14 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         )}
 
         {error && (
-          <div className="mb-8 p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center">
-            <p className="text-slate-600 mb-4">Something went wrong loading the dashboard.</p>
+          <div className="mb-8 p-6 rounded-2xl glass border border-white/10 text-center">
+            <p className="text-white/95 mb-4">Something went wrong loading the dashboard.</p>
             <Button variant="primary" onClick={() => { setError(null); loadData(); }}>Try again</Button>
           </div>
         )}
 
         {loading ? (
-          <p className="text-slate-600">Loading dashboard…</p>
+          <p className="text-white/90">Loading dashboard…</p>
         ) : activeTab === 'guests' && contextMode === 'personal' ? (
           /* Guests tab: pending invitations + active & expired stays (personal mode only; never show in business) */
           <div className="space-y-8">
@@ -1138,17 +1138,17 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         ) : activeTab === 'billing' ? (
           <div className="space-y-6">
             {paymentReturnMessage && (
-              <div className={`flex items-center justify-between gap-4 p-4 rounded-xl text-sm ${paymentReturnIsError ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'}`}>
+              <div className={`flex items-center justify-between gap-4 p-4 rounded-xl text-sm ${paymentReturnIsError ? 'bg-red-500/10 border border-red-400/30 text-red-200' : 'bg-emerald-500/10 border border-emerald-400/30 text-emerald-200'}`}>
                 <span>{paymentReturnMessage}</span>
-                <button type="button" onClick={() => { setPaymentReturnMessage(null); setPaymentReturnIsError(false); }} className={paymentReturnIsError ? 'text-red-600 hover:text-red-800 font-medium shrink-0' : 'text-emerald-600 hover:text-emerald-800 font-medium shrink-0'} aria-label="Dismiss">Dismiss</button>
+                <button type="button" onClick={() => { setPaymentReturnMessage(null); setPaymentReturnIsError(false); }} className={paymentReturnIsError ? 'text-red-300 hover:text-red-200 font-medium shrink-0' : 'text-emerald-300 hover:text-emerald-200 font-medium shrink-0'} aria-label="Dismiss">Dismiss</button>
               </div>
             )}
-            <Card className="p-6">
-              <h3 className="text-lg font-bold text-slate-800 mb-2">Billing</h3>
-              <p className="text-slate-500 text-sm mb-4">Invoices and payment history. Onboarding and subscription charges appear here. Billing activity is also recorded in Event ledger.</p>
+            <Card className="p-6 border-white/10">
+              <h3 className="text-lg font-bold text-white mb-2">Billing</h3>
+              <p className="text-white/90 text-sm mb-4">Invoices and payment history. Onboarding and subscription charges appear here. Billing activity is also recorded in Event ledger.</p>
               {billing && (billing.current_unit_count != null || billing.current_shield_count != null) && (
-                <p className="text-slate-600 text-sm mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <strong>Current subscription:</strong> {billing.current_unit_count ?? 0} unit{(billing.current_unit_count ?? 0) !== 1 ? 's' : ''} (${(billing.current_unit_count ?? 0) * 1}/mo baseline)
+                <p className="text-white/90 text-sm mb-4 p-3 bg-white/5 rounded-lg border border-white/10">
+                  <strong className="text-white">Current subscription:</strong> {billing.current_unit_count ?? 0} unit{(billing.current_unit_count ?? 0) !== 1 ? 's' : ''} (${(billing.current_unit_count ?? 0) * 1}/mo baseline)
                   {(billing.current_shield_count ?? 0) > 0 && (
                     <>, {(billing.current_shield_count ?? 0)} with Shield (${(billing.current_shield_count ?? 0) * 10}/mo)</>
                   )}
@@ -1156,19 +1156,19 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 </p>
               )}
               {billingLoading ? (
-                <p className="text-slate-500">Loading billing…</p>
+                <p className="text-white/90">Loading billing…</p>
               ) : (
                 <>
                   <div className="mb-6">
-                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Invoices</h4>
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Invoices</h4>
                     {(() => {
                       const displayInvoices = (billing?.invoices ?? []).filter((inv: BillingInvoiceView) => inv.status !== 'draft');
                       return !billing || displayInvoices.length === 0 ? (
-                      <p className="text-slate-500 text-sm">No invoices yet. Invoices are created when you add your first properties (onboarding fee) and for monthly subscription.</p>
+                      <p className="text-white/90 text-sm">No invoices yet. Invoices are created when you add your first properties (onboarding fee) and for monthly subscription.</p>
                     ) : (
-                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                      <div className="overflow-x-auto border border-white/10 rounded-lg">
                         <table className="w-full text-left text-sm">
-                          <thead className="bg-slate-100 text-slate-600 uppercase text-xs tracking-wider">
+                          <thead className="bg-white/5 text-white/80 uppercase text-xs tracking-wider">
                             <tr>
                               <th className="px-4 py-3">Date</th>
                               <th className="px-4 py-3">Number</th>
@@ -1178,23 +1178,23 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                               <th className="px-4 py-3">Action</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-200">
+                          <tbody className="divide-y divide-white/10">
                             {displayInvoices.map((inv: BillingInvoiceView) => (
-                              <tr key={inv.id} className="hover:bg-slate-50">
-                                <td className="px-4 py-3 text-slate-600">{new Date(inv.created).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
-                                <td className="px-4 py-3 font-mono text-slate-700">{inv.number ?? inv.id.slice(0, 12)}</td>
-                                <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{inv.description ?? '—'}</td>
-                                <td className="px-4 py-3">${(inv.amount_due_cents / 100).toFixed(2)} {inv.currency.toUpperCase()}</td>
+                              <tr key={inv.id} className="hover:bg-white/5">
+                                <td className="px-4 py-3 text-white/90">{new Date(inv.created).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                                <td className="px-4 py-3 font-mono text-white/90">{inv.number ?? inv.id.slice(0, 12)}</td>
+                                <td className="px-4 py-3 text-white/90 max-w-xs truncate">{inv.description ?? '—'}</td>
+                                <td className="px-4 py-3 text-white/90">${(inv.amount_due_cents / 100).toFixed(2)} {inv.currency.toUpperCase()}</td>
                                 <td className="px-4 py-3">
                                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                                    inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
-                                    inv.status === 'open' ? 'bg-amber-100 text-amber-800' :
-                                    inv.status === 'past_due' ? 'bg-red-100 text-red-800' :
-                                    inv.status === 'void' ? 'bg-slate-200 text-slate-600' :
-                                    'bg-slate-100 text-slate-700'
+                                    inv.status === 'paid' ? 'bg-emerald-500/20 text-emerald-200' :
+                                    inv.status === 'open' ? 'bg-amber-500/20 text-amber-200' :
+                                    inv.status === 'past_due' ? 'bg-red-500/20 text-red-200' :
+                                    inv.status === 'void' ? 'bg-white/10 text-white/70' :
+                                    'bg-white/10 text-white/80'
                                   }`}>{inv.status === 'past_due' ? 'Payment failed' : inv.status}</span>
                                   {inv.status === 'past_due' && (
-                                    <p className="text-xs text-red-600 mt-1">Update your payment method and try again.</p>
+                                    <p className="text-xs text-red-300 mt-1">Update your payment method and try again.</p>
                                   )}
                                 </td>
                                 <td className="px-4 py-3">
@@ -1202,13 +1202,13 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                     <button
                                       type="button"
                                       onClick={() => setShowVoidInvoiceDialog(true)}
-                                      className="text-blue-600 hover:underline"
+                                      className="text-[hsl(265,89%,76%)] hover:underline"
                                     >
                                       Pay invoice
                                     </button>
                                   ) : inv.status !== 'paid' ? (
                                     inv.hosted_invoice_url ? (
-                                      <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Pay invoice</a>
+                                      <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-[hsl(265,89%,76%)] hover:underline">Pay invoice</a>
                                     ) : (
                                       <button
                                         type="button"
@@ -1217,13 +1217,13 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                             .then((data) => { window.location.href = data.url; })
                                             .catch(() => notify('error', 'Could not open payment page. Try again.'));
                                         }}
-                                        className="text-blue-600 hover:underline disabled:opacity-50"
+                                        className="text-[hsl(265,89%,76%)] hover:underline disabled:opacity-50"
                                       >
                                         Pay invoice
                                       </button>
                                     )
                                   ) : inv.hosted_invoice_url ? (
-                                    <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:underline">View</a>
+                                    <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-white/70 hover:underline">View</a>
                                   ) : null}
                                 </td>
                               </tr>
@@ -1235,25 +1235,25 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                     })()}
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Payments</h4>
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Payments</h4>
                     {!billing || billing.payments.length === 0 ? (
-                      <p className="text-slate-500 text-sm">No payments yet.</p>
+                      <p className="text-white/90 text-sm">No payments yet.</p>
                     ) : (
-                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                      <div className="overflow-x-auto border border-white/10 rounded-lg">
                         <table className="w-full text-left text-sm">
-                          <thead className="bg-slate-100 text-slate-600 uppercase text-xs tracking-wider">
+                          <thead className="bg-white/5 text-white/80 uppercase text-xs tracking-wider">
                             <tr>
                               <th className="px-4 py-3">Paid at</th>
                               <th className="px-4 py-3">Description</th>
                               <th className="px-4 py-3">Amount</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-200">
+                          <tbody className="divide-y divide-white/10">
                             {billing.payments.map((pay: BillingPaymentView) => (
-                              <tr key={pay.invoice_id} className="hover:bg-slate-50">
-                                <td className="px-4 py-3 text-slate-600">{new Date(pay.paid_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                                <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{pay.description ?? 'Payment'}</td>
-                                <td className="px-4 py-3 font-medium">${(pay.amount_cents / 100).toFixed(2)} {pay.currency.toUpperCase()}</td>
+                              <tr key={pay.invoice_id} className="hover:bg-white/5">
+                                <td className="px-4 py-3 text-white/90">{new Date(pay.paid_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                                <td className="px-4 py-3 text-white/90 max-w-xs truncate">{pay.description ?? 'Payment'}</td>
+                                <td className="px-4 py-3 font-medium text-white/90">${(pay.amount_cents / 100).toFixed(2)} {pay.currency.toUpperCase()}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1320,10 +1320,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 {logsLoading ? 'Loading…' : 'Apply filters'}
               </Button>
             </Card>
-            <Card className="overflow-hidden">
-              <div className="p-6 border-b border-slate-200 bg-slate-50">
-                <h3 className="text-lg font-bold text-slate-800">Event ledger (append-only)</h3>
-                <p className="text-slate-500 text-sm mt-1">Status changes, Shield Mode and stay end reminders on/off, guest signatures, payment and billing activity (invoices created, paid), and failed attempts are recorded. Use the category filter to view Shield Mode, stay end reminders, or Billing events. Records cannot be edited or deleted.</p>
+            <Card className="overflow-hidden border-white/10">
+              <div className="p-6 border-b border-white/10 bg-white/5">
+                <h3 className="text-lg font-bold text-white">Event ledger (append-only)</h3>
+                <p className="text-white/90 text-sm mt-1">Status changes, Shield Mode and stay end reminders on/off, guest signatures, payment and billing activity (invoices created, paid), and failed attempts are recorded. Use the category filter to view Shield Mode, stay end reminders, or Billing events. Records cannot be edited or deleted.</p>
               </div>
               <div className="overflow-x-auto">
                 {logsLoading && logs.length === 0 ? (
@@ -1496,34 +1496,34 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             </Card>
               </>
             ) : (
-              /* Business mode: property/unit status only, no guest data */
+              /* Business mode: property/unit status only, no guest data – cosmic */
               <div className="space-y-8">
-                <p className="text-slate-500 text-sm">Property and unit status. Switch to Personal mode to view guest invitations, stays, and overstays.</p>
+                <p className="text-white/90 text-sm">Property and unit status. Switch to Personal mode to view guest invitations, stays, and overstays.</p>
                 <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6">
-                  <Card className="p-6 border-l-4 border-blue-500 hover:scale-[1.02] transition-transform cursor-pointer" onClick={() => setActiveTab('properties')}>
-                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Properties</p>
-                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.length}</p>
+                  <Card className="p-6 border-l-4 border-[hsl(265,89%,66%)] hover:scale-[1.02] transition-transform cursor-pointer border-white/10" onClick={() => setActiveTab('properties')}>
+                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Properties</p>
+                    <p className="text-4xl font-extrabold text-white mt-1">{properties.length}</p>
                   </Card>
-                  <Card className="p-6 border-l-4 border-emerald-500">
-                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Occupied</p>
-                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length}</p>
+                  <Card className="p-6 border-l-4 border-emerald-500 border-white/10">
+                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Occupied</p>
+                    <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length}</p>
                   </Card>
-                  <Card className="p-6 border-l-4 border-sky-500">
-                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Vacant</p>
-                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length}</p>
+                  <Card className="p-6 border-l-4 border-sky-400 border-white/10">
+                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Vacant</p>
+                    <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length}</p>
                   </Card>
-                  <Card className="p-6 border-l-4 border-slate-400">
-                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Unknown</p>
-                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length}</p>
+                  <Card className="p-6 border-l-4 border-white/30 border-white/10">
+                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Unknown</p>
+                    <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length}</p>
                   </Card>
-                  <Card className="p-6 border-l-4 border-amber-500">
-                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Shield On</p>
-                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => p.shield_mode_enabled).length}</p>
+                  <Card className="p-6 border-l-4 border-amber-400 border-white/10">
+                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Shield On</p>
+                    <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => p.shield_mode_enabled).length}</p>
                   </Card>
                 </div>
-                <Card className="p-6">
-                  <h3 className="text-lg font-bold text-slate-800 mb-4">Property status overview</h3>
-                  <p className="text-slate-600 text-sm">View properties and unit-level occupancy in the Properties tab. Business mode does not display guest names, invitations, or stay details.</p>
+                <Card className="p-6 border-white/10">
+                  <h3 className="text-lg font-bold text-white mb-4">Property status overview</h3>
+                  <p className="text-white/90 text-sm">View properties and unit-level occupancy in the Properties tab. Business mode does not display guest names, invitations, or stay details.</p>
                   <Button variant="outline" onClick={() => setActiveTab('properties')} className="mt-4">View Properties</Button>
                 </Card>
               </div>

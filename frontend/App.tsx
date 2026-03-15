@@ -36,6 +36,7 @@ import AdminLogin from './pages/Admin/AdminLogin';
 import ManagerDashboard from './pages/Manager/ManagerDashboard';
 import ManagerPropertyDetail from './pages/Manager/ManagerPropertyDetail';
 import TenantDashboard from './pages/Tenant/TenantDashboard';
+import { StarField } from './components/StarField';
 
 const PENDING_VERIFICATION_KEY = 'docustay_pending_verification';
 /** Persist how we got to identity verification so identity-complete can send manager to manager-dashboard and owner to POA. */
@@ -319,45 +320,47 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-blue-100/60 via-blue-50/30 to-sky-50/50 text-gray-800 overflow-x-hidden relative">
+    <div className="min-h-screen flex flex-col bg-[hsl(230,35%,4%)] text-white overflow-x-hidden relative">
+      {/* Starry background when signed in (dashboard views) */}
+      {state.user && <StarField />}
       {(loading || sessionRestoring) && <LoadingOverlay />}
 
-      {/* Navigation */}
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
+      {/* Navigation – cosmic theme */}
+      <nav className="bg-[hsl(230,30%,8%)] border-b border-white/10 sticky top-0 z-40">
         <div className="w-full px-4 sm:px-5">
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('')}>
-              <div className="w-9 h-9 bg-blue-700 rounded-lg flex items-center justify-center">
+              <div className="w-9 h-9 bg-[hsl(265,89%,66%)] rounded-lg flex items-center justify-center">
                 <span className="text-white font-semibold text-lg">D</span>
               </div>
-              <span className="text-xl font-semibold text-gray-900">DocuStay <span className="text-blue-700 font-normal">AI</span></span>
+              <span className="text-xl font-semibold text-white">DocuStay <span className="gradient-text font-normal">AI</span></span>
             </div>
             
             <div className="flex items-center gap-6">
-              <button onClick={() => navigate('check')} className="text-gray-600 hover:text-gray-900 font-medium text-sm transition-colors">Verify</button>
+              <button onClick={() => navigate('check')} className="text-white/70 hover:text-white font-medium text-sm md:text-base transition-colors">Verify</button>
               {state.user ? (
                 <>
                   <div className="hidden md:block text-right">
-                    <p className="text-sm font-semibold text-gray-900">{state.user.user_name}</p>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">
+                    <p className="text-sm font-semibold text-white">{state.user.user_name}</p>
+                    <p className="text-xs text-white/60 uppercase tracking-wide">
                       {(state.user.user_type || '').replace('_', ' ')}
                     </p>
                   </div>
-                  <Button variant="outline" onClick={handleLogout} className="px-5 py-2">Logout</Button>
+                  <Button variant="outline" onClick={handleLogout} className="px-5 py-2 border-white/30 text-white hover:bg-white/10">Logout</Button>
                 </>
               ) : (
-                <Button variant="primary" onClick={() => navigate('')} className="px-6 py-2.5 bg-blue-700 hover:bg-blue-800 focus:ring-blue-600">Get Started</Button>
+                <Button variant="primary" onClick={() => navigate('')} className="px-6 py-2.5 bg-[hsl(265,89%,66%)] hover:bg-[hsl(265,75%,58%)] border-0 text-white">Get Started</Button>
               )}
             </div>
           </div>
         </div>
       </nav>
 
-      {/* Success toast (errors use ErrorModal below) */}
+      {/* Success toast (errors use ErrorModal below) – cosmic */}
       {notification && (
-        <div className="fixed top-24 right-4 z-50 p-4 rounded-lg shadow-md border bg-white border-green-200 text-green-800">
+        <div className="fixed top-24 right-4 z-50 p-4 rounded-lg shadow-lg glass border border-white/10 text-white">
           <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-cosmic-twinkle"></div>
             <span className="font-medium">{notification.message}</span>
           </div>
         </div>
@@ -589,8 +592,8 @@ const App: React.FC = () => {
             return (
               <div className="flex-grow flex items-center justify-center p-8">
                 <div className="text-center max-w-md">
-                  <h2 className="text-xl font-semibold text-slate-900 mb-2">Access denied</h2>
-                  <p className="text-slate-600 mb-4">This area is for administrators only.</p>
+                  <h2 className="text-xl font-semibold text-white mb-2">Access denied</h2>
+                  <p className="text-white/70 mb-4">This area is for administrators only.</p>
                   <Button
                     variant="primary"
                     onClick={() => navigate(targetView)}

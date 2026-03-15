@@ -8,16 +8,16 @@ function TokenStateBadge({ tokenState }: { tokenState?: string | null }) {
   const state = (tokenState || 'STAGED').toUpperCase();
   const classes =
     state === 'BURNED'
-      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+      ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30'
       : state === 'STAGED'
-        ? 'bg-sky-100 text-sky-700 border-sky-200'
+        ? 'bg-sky-500/20 text-sky-200 border-sky-400/30'
         : state === 'EXPIRED'
-          ? 'bg-slate-100 text-slate-600 border-slate-200'
+          ? 'bg-white/10 text-white/70 border-white/10'
           : state === 'REVOKED'
-            ? 'bg-amber-100 text-amber-700 border-amber-200'
+            ? 'bg-amber-500/20 text-amber-200 border-amber-400/30'
             : state === 'CANCELLED'
-              ? 'bg-slate-100 text-slate-600 border-slate-200'
-              : 'bg-slate-100 text-slate-600 border-slate-200';
+              ? 'bg-white/10 text-white/70 border-white/10'
+              : 'bg-white/10 text-white/70 border-white/10';
   const displayLabel = state === 'BURNED' ? 'Active' : state === 'STAGED' ? 'Pending' : state === 'REVOKED' ? 'Revoked' : state === 'CANCELLED' ? 'Cancelled' : state === 'EXPIRED' ? 'Expired' : state;
   return (
     <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${classes}`}>
@@ -71,20 +71,20 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
 
   return (
     <div className="space-y-8">
-      {introText && <p className="text-slate-500 text-sm">{introText}</p>}
+      {introText && <p className="text-white/90 text-sm">{introText}</p>}
 
       {/* Pending (within 12h window) */}
-      <Card className="overflow-hidden">
-        <div className="p-6 border-b border-slate-200 bg-amber-50">
-          <h3 className="text-xl font-bold text-slate-800">Pending</h3>
-          <p className="text-xs text-slate-500 mt-1">Invites not yet accepted (within 12-hour window)</p>
+      <Card className="overflow-hidden border-white/10">
+        <div className="p-6 border-b border-white/10 bg-white/5">
+          <h3 className="text-xl font-bold text-white">Pending</h3>
+          <p className="text-xs text-white/80 mt-1">Invites not yet accepted (within 12-hour window)</p>
         </div>
         <div className="overflow-x-auto">
           {invitations.filter((i) => i.status === 'pending' && !i.is_expired).length === 0 ? (
-            <p className="p-6 text-slate-500 text-sm">No pending invitations.</p>
+            <p className="p-6 text-white/90 text-sm">No pending invitations.</p>
           ) : (
             <table className="w-full text-left">
-              <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+              <thead className="bg-white/5 text-white/80 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                 <tr>
                   <th className="px-6 py-4">Invited (email)</th>
                   <th className="px-6 py-4">Property</th>
@@ -96,26 +96,26 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
                   <th className="px-6 py-4">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-white/10">
                 {invitations.filter((i) => i.status === 'pending' && !i.is_expired).map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={inv.id} className="hover:bg-white/5 transition-colors">
                     <td className="px-6 py-5">
-                      <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
+                      <span className="text-sm font-medium text-white/90">{inv.guest_name || inv.guest_email || '—'}</span>
                     </td>
                     <td className="px-6 py-5">
-                      <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                      <p className="text-xs text-slate-500">{inv.region_code}</p>
+                      <p className="text-sm font-medium text-white/90">{inv.property_name}</p>
+                      <p className="text-xs text-white/70">{inv.region_code}</p>
                     </td>
-                    <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
+                    <td className="px-6 py-5 text-sm text-white/80 whitespace-nowrap">
                       {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
                     </td>
-                    <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                    <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
+                    <td className="px-6 py-5 text-sm text-white/80">{inv.region_code}</td>
+                    <td className="px-6 py-5 text-xs font-mono text-white/80">{inv.invitation_code}</td>
                     <td className="px-6 py-5">
                       <TokenStateBadge tokenState={inv.token_state} />
                     </td>
                     <td className="px-6 py-5">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-700 border border-amber-200">Pending</span>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/20 text-amber-200 border border-amber-400/30">Pending</span>
                     </td>
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -135,17 +135,17 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
       </Card>
 
       {/* Expired */}
-      <Card className="overflow-hidden">
-        <div className="p-6 border-b border-slate-200 bg-slate-100">
-          <h3 className="text-xl font-bold text-slate-800">Expired invites</h3>
-          <p className="text-xs text-slate-500 mt-1">Pending guest invites whose 12-hour window was exceeded (not accepted in time). Tenant invitations are not expired by DocuStay.</p>
+      <Card className="overflow-hidden border-white/10">
+        <div className="p-6 border-b border-white/10 bg-white/5">
+          <h3 className="text-xl font-bold text-white">Expired invites</h3>
+          <p className="text-xs text-white/80 mt-1">Pending guest invites whose 12-hour window was exceeded (not accepted in time). Tenant invitations are not expired by DocuStay.</p>
         </div>
         <div className="overflow-x-auto">
           {invitations.filter((i) => i.is_expired).length === 0 ? (
-            <p className="p-6 text-slate-500 text-sm">No expired invitations.</p>
+            <p className="p-6 text-white/90 text-sm">No expired invitations.</p>
           ) : (
             <table className="w-full text-left">
-              <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+              <thead className="bg-white/5 text-white/80 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                 <tr>
                   <th className="px-6 py-4">Invited (email)</th>
                   <th className="px-6 py-4">Property</th>
@@ -157,26 +157,26 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
                   <th className="px-6 py-4">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-white/10">
                 {invitations.filter((i) => i.is_expired).map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={inv.id} className="hover:bg-white/5 transition-colors">
                     <td className="px-6 py-5">
-                      <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
+                      <span className="text-sm font-medium text-white/90">{inv.guest_name || inv.guest_email || '—'}</span>
                     </td>
                     <td className="px-6 py-5">
-                      <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                      <p className="text-xs text-slate-500">{inv.region_code}</p>
+                      <p className="text-sm font-medium text-white/90">{inv.property_name}</p>
+                      <p className="text-xs text-white/70">{inv.region_code}</p>
                     </td>
-                    <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
+                    <td className="px-6 py-5 text-sm text-white/80 whitespace-nowrap">
                       {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
                     </td>
-                    <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                    <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
+                    <td className="px-6 py-5 text-sm text-white/80">{inv.region_code}</td>
+                    <td className="px-6 py-5 text-xs font-mono text-white/80">{inv.invitation_code}</td>
                     <td className="px-6 py-5">
                       <TokenStateBadge tokenState={inv.token_state} />
                     </td>
                     <td className="px-6 py-5">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">Expired</span>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-white/10 text-white/80 border border-white/10">Expired</span>
                     </td>
                     <td className="px-6 py-5">
                       <Button variant="outline" size="sm" onClick={() => handleCopyLink(inv)}>Copy link</Button>
@@ -190,17 +190,17 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
       </Card>
 
       {/* Accepted / Ongoing */}
-      <Card className="overflow-hidden">
-        <div className="p-6 border-b border-slate-200 bg-emerald-50">
-          <h3 className="text-xl font-bold text-slate-800">Accepted / Ongoing</h3>
-          <p className="text-xs text-slate-500 mt-1">Invites accepted by the guest (stay created) or occupied units from bulk upload. Status shows Ongoing or stay status.</p>
+      <Card className="overflow-hidden border-white/10">
+        <div className="p-6 border-b border-white/10 bg-white/5">
+          <h3 className="text-xl font-bold text-white">Accepted / Ongoing</h3>
+          <p className="text-xs text-white/80 mt-1">Invites accepted by the guest (stay created) or occupied units from bulk upload. Status shows Ongoing or stay status.</p>
         </div>
         <div className="overflow-x-auto">
           {invitations.filter((i) => i.status === 'accepted' || i.status === 'ongoing').length === 0 ? (
-            <p className="p-6 text-slate-500 text-sm">No accepted or ongoing invitations.</p>
+            <p className="p-6 text-white/90 text-sm">No accepted or ongoing invitations.</p>
           ) : (
             <table className="w-full text-left">
-              <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+              <thead className="bg-white/5 text-white/80 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                 <tr>
                   <th className="px-6 py-4">Invited (email)</th>
                   <th className="px-6 py-4">Property</th>
@@ -212,27 +212,27 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
                   <th className="px-6 py-4">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-white/10">
                 {invitations.filter((i) => i.status === 'accepted' || i.status === 'ongoing').map((inv) => {
                   const tokenState = (inv.token_state || 'BURNED').toUpperCase();
                   const stayStatusLabel = tokenState === 'EXPIRED' ? 'Completed' : tokenState === 'REVOKED' ? 'Revoked' : tokenState === 'CANCELLED' ? 'Cancelled' : 'Active stay';
-                  const stayStatusClass = tokenState === 'EXPIRED' ? 'bg-slate-100 text-slate-600 border-slate-200' : tokenState === 'REVOKED' ? 'bg-amber-100 text-amber-700 border-amber-200' : tokenState === 'CANCELLED' ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200';
+                  const stayStatusClass = tokenState === 'EXPIRED' ? 'bg-white/10 text-white/70 border-white/10' : tokenState === 'REVOKED' ? 'bg-amber-500/20 text-amber-200 border-amber-400/30' : tokenState === 'CANCELLED' ? 'bg-white/10 text-white/70 border-white/10' : 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30';
                   const statusLabel = inv.status === 'ongoing' ? 'Ongoing' : stayStatusLabel;
-                  const statusClass = inv.status === 'ongoing' ? 'bg-sky-100 text-sky-700 border-sky-200' : stayStatusClass;
+                  const statusClass = inv.status === 'ongoing' ? 'bg-sky-500/20 text-sky-200 border-sky-400/30' : stayStatusClass;
                   return (
-                    <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={inv.id} className="hover:bg-white/5 transition-colors">
                       <td className="px-6 py-5">
-                        <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
+                        <span className="text-sm font-medium text-white/90">{inv.guest_name || inv.guest_email || '—'}</span>
                       </td>
                       <td className="px-6 py-5">
-                        <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                        <p className="text-xs text-slate-500">{inv.region_code}</p>
+                        <p className="text-sm font-medium text-white/90">{inv.property_name}</p>
+                        <p className="text-xs text-white/70">{inv.region_code}</p>
                       </td>
-                      <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
+                      <td className="px-6 py-5 text-sm text-white/80 whitespace-nowrap">
                         {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
                       </td>
-                      <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                      <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
+                      <td className="px-6 py-5 text-sm text-white/80">{inv.region_code}</td>
+                      <td className="px-6 py-5 text-xs font-mono text-white/80">{inv.invitation_code}</td>
                       <td className="px-6 py-5">
                         <TokenStateBadge tokenState={inv.token_state} />
                       </td>
@@ -262,21 +262,21 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
       </Card>
 
       {/* Cancelled */}
-      <Card className="overflow-hidden">
-        <div className="p-6 border-b border-slate-200 bg-slate-50">
-          <h3 className="text-xl font-bold text-slate-800">Cancelled</h3>
-          <p className="text-xs text-slate-500 mt-1">Invites cancelled by you and stays cancelled by guests</p>
+      <Card className="overflow-hidden border-white/10">
+        <div className="p-6 border-b border-white/10 bg-white/5">
+          <h3 className="text-xl font-bold text-white">Cancelled</h3>
+          <p className="text-xs text-white/80 mt-1">Invites cancelled by you and stays cancelled by guests</p>
         </div>
-        <div className="divide-y divide-slate-200">
+        <div className="divide-y divide-white/10">
           <div className="p-6">
-            <h4 className="text-sm font-bold text-slate-700 mb-2">Cancelled by you</h4>
-            <p className="text-xs text-slate-500 mb-3">Invitations you cancelled before the guest accepted.</p>
+            <h4 className="text-sm font-bold text-white mb-2">Cancelled by you</h4>
+            <p className="text-xs text-white/80 mb-3">Invitations you cancelled before the guest accepted.</p>
             {invitations.filter((i) => i.status === 'cancelled').length === 0 ? (
-              <p className="text-slate-500 text-sm">No cancelled invitations.</p>
+              <p className="text-white/90 text-sm">No cancelled invitations.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                  <thead className="bg-white/5 text-white/80 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                     <tr>
                       <th className="px-6 py-4">Invited (email)</th>
                       <th className="px-6 py-4">Property</th>
@@ -287,14 +287,14 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
                       <th className="px-6 py-4">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-white/10">
                     {invitations.filter((i) => i.status === 'cancelled').map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={inv.id} className="hover:bg-white/5 transition-colors">
                         <td className="px-6 py-5">
-                          <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
+                          <span className="text-sm font-medium text-white/90">{inv.guest_name || inv.guest_email || '—'}</span>
                         </td>
                         <td className="px-6 py-5">
-                          <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
+                          <p className="text-sm font-medium text-white/90">{inv.property_name}</p>
                           <p className="text-xs text-slate-500">{inv.region_code}</p>
                         </td>
                         <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
@@ -306,7 +306,7 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
                           <TokenStateBadge tokenState={inv.token_state} />
                         </td>
                         <td className="px-6 py-5">
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-200 text-slate-600 border border-slate-300">Cancelled by you</span>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-white/10 text-white/80 border border-white/10">Cancelled by you</span>
                         </td>
                       </tr>
                     ))}
@@ -316,14 +316,14 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
             )}
           </div>
           <div className="p-6">
-            <h4 className="text-sm font-bold text-slate-700 mb-2">Cancelled by guest</h4>
-            <p className="text-xs text-slate-500 mb-3">Stays that the guest cancelled after accepting your invitation.</p>
+            <h4 className="text-sm font-bold text-white mb-2">Cancelled by guest</h4>
+            <p className="text-xs text-white/80 mb-3">Stays that the guest cancelled after accepting your invitation.</p>
             {stays.filter((s) => s.cancelled_at).length === 0 ? (
-              <p className="text-slate-500 text-sm">No stays cancelled by guests.</p>
+              <p className="text-white/90 text-sm">No stays cancelled by guests.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                  <thead className="bg-white/5 text-white/80 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                     <tr>
                       <th className="px-6 py-4">Guest</th>
                       <th className="px-6 py-4">Property</th>
@@ -336,18 +336,18 @@ export const InvitationsTabContent: React.FC<InvitationsTabContentProps> = ({
                     {stays.filter((s) => s.cancelled_at).map((stay) => (
                       <tr key={stay.stay_id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-5">
-                          <span className="text-sm font-medium text-slate-800">{stay.guest_name}</span>
+                          <span className="text-sm font-medium text-white/90">{stay.guest_name}</span>
                         </td>
                         <td className="px-6 py-5">
-                          <p className="text-sm font-medium text-slate-800">{stay.property_name}</p>
-                          <p className="text-xs text-slate-500">{stay.region_code}</p>
+                          <p className="text-sm font-medium text-white/90">{stay.property_name}</p>
+                          <p className="text-xs text-white/70">{stay.region_code}</p>
                         </td>
-                        <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
+                        <td className="px-6 py-5 text-sm text-white/80 whitespace-nowrap">
                           {formatStayDuration(stay.stay_start_date, stay.stay_end_date)}
                         </td>
-                        <td className="px-6 py-5 text-sm text-slate-600">{stay.region_code}</td>
+                        <td className="px-6 py-5 text-sm text-white/80">{stay.region_code}</td>
                         <td className="px-6 py-5">
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 border border-slate-300">Cancelled by guest</span>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-white/10 text-white/70 border border-white/10">Cancelled by guest</span>
                         </td>
                       </tr>
                     ))}
