@@ -160,6 +160,8 @@ const TenantDashboard: React.FC<{
   const acceptFailedRef = useRef<Set<string>>(new Set());
   const acceptInFlightRef = useRef<Set<string>>(new Set());
   const acceptedInviteRef = useRef<Set<string>>(new Set());
+  /** Invite codes the user dismissed (Cancel) so we don't auto-reopen the modal. */
+  const dismissedInviteCodesRef = useRef<Set<string>>(new Set());
 
   // Tenant invite confirmation modal state
   const [confirmInviteModal, setConfirmInviteModal] = useState<{
@@ -262,14 +264,9 @@ const TenantDashboard: React.FC<{
     loadData();
   }, [loadData]);
 
-  // When pending invites arrive, show the confirmation modal for the first unprocessed one
-  useEffect(() => {
-    if (!pendingInvites.length || confirmInviteModal) return;
-    const first = pendingInvites.find((inv) => !acceptFailedRef.current.has(inv.invitation_code) && !acceptInFlightRef.current.has(inv.invitation_code) && !acceptedInviteRef.current.has(inv.invitation_code));
-    if (first) {
-      openConfirmInviteModal(first.invitation_code, first);
-    }
-  }, [pendingInvites, confirmInviteModal, openConfirmInviteModal]);
+  // Do not auto-show the invitation modal just because pendingInvites has data.
+  // Only show when the user brought an invite to this session (invite link in URL at login → sessionStorage).
+  // See effect below that processes PENDING_INVITE_STORAGE_KEY.
 
   // Process invite code stored during login/signup (e.g. after email verification).
   // Show confirmation modal instead of auto-accepting.
@@ -1165,11 +1162,11 @@ const TenantDashboard: React.FC<{
                     const isOngoing = !isFuture && !isUpcoming && (!ed || td <= ed) && !isCancelled;
                     const statusLabel = isCancelled ? 'CANCELLED' : isFuture ? 'FUTURE' : isUpcoming ? 'UPCOMING' : 'ONGOING';
                     const statusClass = isCancelled
-                      ? 'bg-white/10 text-white/80 border border-slate-200'
+                      ? 'bg-slate-500/40 text-white border border-slate-400/50'
                       : isFuture
-                        ? 'bg-sky-200 text-white border-0'
+                        ? 'bg-sky-500/30 text-white border border-sky-400/40'
                         : isUpcoming
-                          ? 'bg-[#FFC107] text-white border-0'
+                          ? 'bg-amber-500/30 text-white border border-amber-400/40'
                           : 'bg-emerald-500/20 text-emerald-200 border border-emerald-100';
                     const isSelected = !selectedStay && selected?.unit_id === card.unit_id;
                     const cardUnitData = unitsData.find((u) => u.unit?.id === card.unit_id);
@@ -1177,10 +1174,10 @@ const TenantDashboard: React.FC<{
                     return (
                       <div
                         key={`unit-${card.unit_id}-${card.stay_start_date ?? ''}-${card.stay_end_date ?? ''}`}
-                        className={`rounded-xl border bg-white text-left transition-all ${
+                        className={`rounded-xl border text-left transition-all ${
                           isSelected
                             ? 'border-[hsl(265,89%,66%)]/40 border-l-4 border-l-[hsl(265,89%,66%)] bg-[hsl(265,89%,66%)]/10 shadow-sm'
-                            : 'border-white/10 hover:border-white/20'
+                            : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30'
                         }`}
                       >
                         <button
@@ -1199,7 +1196,7 @@ const TenantDashboard: React.FC<{
                             )}
                           </div>
                           <p className="text-sm font-semibold text-white">{addressDisplay}</p>
-                          <p className="text-sm text-white/70 mt-0.5">
+                          <p className="text-sm text-white/80 mt-0.5">
                             {sd && ed ? `${formatDate(sd)} – ${formatDate(ed)}` : sd ? `${formatDate(sd)} – Ongoing` : 'Your assigned unit'}
                           </p>
                         </button>
@@ -1229,10 +1226,10 @@ const TenantDashboard: React.FC<{
                     return (
                       <div
                         key={s.stay_id}
-                        className={`rounded-xl border bg-white text-left transition-all ${
+                        className={`rounded-xl border text-left transition-all ${
                           isSelected
                             ? 'border-[hsl(265,89%,66%)]/40 border-l-4 border-l-[hsl(265,89%,66%)] bg-[hsl(265,89%,66%)]/10 shadow-sm'
-                            : 'border-white/10 hover:border-white/20'
+                            : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30'
                         }`}
                       >
                         <button
@@ -1419,8 +1416,8 @@ const TenantDashboard: React.FC<{
                 {stay.invite_id && (
                   <Button
                     type="button"
-                    variant="outline"
-                    className="w-full h-11 rounded-lg font-medium bg-white border border-slate-300 text-slate-700 hover:bg-white/20"
+                    variant="secondary"
+                    className="w-full h-11 rounded-lg font-medium"
                     onClick={() => { setVerifyQRInviteId(stay.invite_id ?? null); setShowVerifyQRModal(true); }}
                   >
                     Verify with QR code
@@ -1606,15 +1603,15 @@ const TenantDashboard: React.FC<{
                     {selectedUnitData.invite_id && (
                       <Button
                         type="button"
-                        variant="outline"
-                        className="w-full h-11 rounded-lg font-medium bg-white border border-slate-300 text-slate-700 hover:bg-white/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                        variant="secondary"
+                        className="w-full h-11 rounded-lg font-medium"
                         onClick={() => { setVerifyQRInviteId(selectedUnitData.invite_id ?? null); setShowVerifyQRModal(true); }}
                       >
                         Verify with QR code
                       </Button>
                     )}
                     {!selectedUnitData.invite_id && (
-                      <Button type="button" variant="outline" disabled className="w-full h-11 rounded-lg font-medium bg-white border border-slate-300 text-white/60">
+                      <Button type="button" variant="secondary" disabled className="w-full h-11 rounded-lg font-medium">
                         Verify with QR code
                       </Button>
                     )}
@@ -1984,13 +1981,26 @@ const TenantDashboard: React.FC<{
 
       {/* Tenant invite confirmation modal */}
       {confirmInviteModal && (
-        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="max-w-lg w-full rounded-2xl glass shadow-xl border border-white/10 overflow-hidden">
+        <div
+          className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4"
+          onClick={() => {
+            if (confirmInviteModal?.code) dismissedInviteCodesRef.current.add(confirmInviteModal.code);
+            setConfirmInviteModal(null);
+          }}
+          role="presentation"
+        >
+          <div
+            className="max-w-lg w-full rounded-2xl glass shadow-xl border border-white/10 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tenant-invite-modal-title"
+          >
             <div className="bg-gradient-to-r from-slate-800 to-slate-900 p-6 text-white relative">
               <div className="absolute top-0 right-0 w-40 h-full bg-[#6B90F2]/20 blur-[40px] rounded-full"></div>
               <div className="relative z-10">
                 <span className="inline-block px-3 py-1 rounded-full bg-[#6B90F2]/30 text-blue-300 text-xs font-bold uppercase tracking-widest mb-3">Tenant Invitation</span>
-                <h2 className="text-2xl font-bold">Accept this invitation?</h2>
+                <h2 id="tenant-invite-modal-title" className="text-2xl font-bold">Accept this invitation?</h2>
                 {confirmInviteModal.host_name && (
                   <p className="text-slate-300 text-sm mt-1">Invited by <span className="text-white font-semibold">{confirmInviteModal.host_name}</span></p>
                 )}
@@ -2044,7 +2054,10 @@ const TenantDashboard: React.FC<{
                 <button
                   type="button"
                   className="flex-1 h-11 rounded-lg font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20 transition-colors"
-                  onClick={() => setConfirmInviteModal(null)}
+                  onClick={() => {
+                    if (confirmInviteModal?.code) dismissedInviteCodesRef.current.add(confirmInviteModal.code);
+                    setConfirmInviteModal(null);
+                  }}
                   disabled={confirmAccepting}
                 >
                   Cancel

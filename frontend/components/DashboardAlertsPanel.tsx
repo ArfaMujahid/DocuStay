@@ -14,7 +14,8 @@ const HIDDEN_LEDGER_TITLES = new Set([
   'ManagerInvited',
   'Property registered',
   'Invitation created',
-  'User logged in'
+  'User logged in',
+  'Verify attempt – valid'
 ]);
 
 const severityStyles: Record<string, string> = {

@@ -136,7 +136,7 @@ const ManagerPropertyDetail: React.FC<{
 
   const statusBadge = (status: string) => {
     const s = (status || '').toLowerCase();
-    const cls = s === 'occupied' ? 'bg-emerald-100 text-emerald-700' : s === 'vacant' ? 'bg-sky-100 text-sky-700' : s === 'unconfirmed' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600';
+    const cls = s === 'occupied' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' : s === 'vacant' ? 'bg-sky-500/20 text-sky-300 border border-sky-400/40' : s === 'unconfirmed' ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' : 'bg-white/10 text-white/70 border border-white/20';
     const label = s ? s.charAt(0).toUpperCase() + s.slice(1) : (status || '');
     return <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{label}</span>;
   };
@@ -214,7 +214,8 @@ const ManagerPropertyDetail: React.FC<{
 
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
-      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 p-6">
+      {/* Sidebar – cosmic theme (same as ManagerDashboard) */}
+      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col glass border-r border-white/10 p-6">
         <div className="space-y-2 flex-shrink-0">
           {sidebarNav.map((item) => (
             <button
@@ -229,7 +230,7 @@ const ManagerPropertyDetail: React.FC<{
                   setActiveSection(item.id as Section);
                 }
               }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${item.id !== 'properties' && item.id !== 'guests' && item.id !== 'invitations' && activeSection === item.id ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${item.id !== 'properties' && item.id !== 'guests' && item.id !== 'invitations' && activeSection === item.id ? 'bg-[hsl(265,89%,66%)]/20 text-white border border-[hsl(265,89%,66%)]/40' : 'text-white/90 hover:text-white hover:bg-white/10'}`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} /></svg>
               {item.label}
@@ -237,7 +238,7 @@ const ManagerPropertyDetail: React.FC<{
           ))}
         </div>
         <div className="flex-grow min-h-0" />
-        <div className="mt-6 pt-6 border-t border-slate-200 flex-shrink-0">
+        <div className="mt-6 pt-6 border-t border-white/10 flex-shrink-0">
           <ModeSwitcher
             contextMode={contextMode}
             personalModeUnits={personalModeUnits}
@@ -255,11 +256,11 @@ const ManagerPropertyDetail: React.FC<{
           <>
             <header className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-8">
               <div>
-                <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight">Properties</h1>
+                <h1 className="text-4xl font-extrabold text-white tracking-tight">Properties</h1>
               </div>
             </header>
             <div className="space-y-6">
-              <Card className="p-6 border border-slate-200">
+              <Card className="p-6 border border-white/10">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                   <button
                     type="button"
@@ -267,29 +268,29 @@ const ManagerPropertyDetail: React.FC<{
                     className="min-w-0 flex-1 text-left hover:opacity-90 transition-opacity"
                   >
                     <div className="flex flex-wrap items-center gap-2 gap-y-1">
-                      <h3 className="text-lg font-bold text-slate-800 truncate">{displayName}</h3>
+                      <h3 className="text-lg font-bold text-white truncate">{displayName}</h3>
                       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase ${
-                        displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
-                        displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
-                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
-                        'bg-slate-100 text-slate-600'
+                        displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' :
+                        displayStatus === 'VACANT' ? 'bg-white/10 text-white/70 border border-white/20' :
+                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' :
+                        'bg-white/10 text-white/70 border border-white/20'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${
                           displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
-                          displayStatus === 'VACANT' ? 'bg-slate-400' :
-                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                          displayStatus === 'VACANT' ? 'bg-white/50' :
+                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-white/50'
                         }`} />
                         {displayStatus}
                       </span>
                     </div>
-                    <p className="text-sm text-slate-600 mt-1 truncate">{property.address || '—'}</p>
-                    <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-500">
+                    <p className="text-sm text-white/70 mt-1 truncate">{property.address || '—'}</p>
+                    <div className="flex flex-wrap gap-3 mt-3 text-xs text-white/60">
                       <span>{property.occupied_count}/{property.unit_count} units occupied</span>
                       {isOccupied && activeStay && (
-                        <span>Current guest: <span className="font-medium text-slate-700">{activeStay.guest_name}</span></span>
+                        <span>Current guest: <span className="font-medium text-white/90">{activeStay.guest_name}</span></span>
                       )}
                     </div>
-                    <span className="inline-block mt-2 text-xs font-medium text-blue-400">View details →</span>
+                    <span className="inline-block mt-2 text-xs font-medium text-[hsl(265,89%,66%)]">View details →</span>
                   </button>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <Button variant="outline" onClick={() => handleContextModeChange('business')} className="px-4">
@@ -297,32 +298,32 @@ const ManagerPropertyDetail: React.FC<{
                     </Button>
                   </div>
                 </div>
-                <div className="mt-6 pt-6 border-t border-slate-200 rounded-xl bg-slate-50/80 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Occupancy status</p>
+                <div className="mt-6 pt-6 border-t border-white/10 rounded-xl bg-white/5 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-white/70 mb-2">Occupancy status</p>
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${
-                      displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
-                      displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
-                      displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
-                      'bg-slate-100 text-slate-600'
+                      displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' :
+                      displayStatus === 'VACANT' ? 'bg-white/10 text-white/70 border border-white/20' :
+                      displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' :
+                      'bg-white/10 text-white/70 border border-white/20'
                     }`}>
                       <span className={`w-2 h-2 rounded-full ${
                         displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
-                        displayStatus === 'VACANT' ? 'bg-slate-400' :
-                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                        displayStatus === 'VACANT' ? 'bg-white/50' :
+                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-white/50'
                       }`} />
                       {displayStatus}
                     </span>
                     {isOccupied && activeStay && (
-                      <span className="text-sm text-slate-600">
-                        Lease end: <span className="font-medium text-slate-800">{activeStay.stay_end_date}</span>
+                      <span className="text-sm text-white/70">
+                        Lease end: <span className="font-medium text-white">{activeStay.stay_end_date}</span>
                       </span>
                     )}
                   </div>
                 </div>
               </Card>
             </div>
-            <p className="text-slate-500 text-sm mt-6">
+            <p className="text-white/60 text-sm mt-6">
               Switch to <strong>Business Mode</strong> to see full property details, event ledger, and documentation.
             </p>
           </>
@@ -331,34 +332,34 @@ const ManagerPropertyDetail: React.FC<{
       <header className="mb-8">
         <button
           onClick={() => navigate('manager-dashboard')}
-          className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-6 text-sm font-medium transition-colors"
+          className="flex items-center gap-2 text-white/80 hover:text-white mb-6 text-sm font-medium transition-colors"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
           Back to dashboard
         </button>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl lg:text-3xl font-bold text-slate-800 tracking-tight">{displayName}</h1>
+          <h1 className="text-2xl lg:text-3xl font-bold text-white tracking-tight">{displayName}</h1>
           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase ${
-            displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
-            displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
-            displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
-            'bg-slate-100 text-slate-600'
+            displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' :
+            displayStatus === 'VACANT' ? 'bg-white/10 text-white/70 border border-white/20' :
+            displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' :
+            'bg-white/10 text-white/70 border border-white/20'
           }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${displayStatus === 'OCCUPIED' ? 'bg-emerald-500' : displayStatus === 'VACANT' ? 'bg-slate-400' : displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${displayStatus === 'OCCUPIED' ? 'bg-emerald-500' : displayStatus === 'VACANT' ? 'bg-white/50' : displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-white/50'}`} />
             {displayStatus}
           </span>
         </div>
-        <p className="text-slate-600 mt-1">{property.address || '—'}</p>
-        <p className="text-xs text-slate-500 mt-2">{property.occupied_count}/{property.unit_count} units occupied</p>
-        <nav className="flex flex-wrap gap-1 mt-6 border-b border-slate-200 -mb-px">
+        <p className="text-white/70 mt-1">{property.address || '—'}</p>
+        <p className="text-xs text-white/60 mt-2">{property.occupied_count}/{property.unit_count} units occupied</p>
+        <nav className="flex flex-wrap gap-1 mt-6 border-b border-white/10 -mb-px">
           {contentTabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveSection(tab)}
               className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
                 activeSection === tab
-                  ? 'border-slate-700 text-slate-800 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  ? 'border-white text-white'
+                  : 'border-transparent text-white/60 hover:text-white/90 hover:bg-white/10'
               }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -370,8 +371,8 @@ const ManagerPropertyDetail: React.FC<{
       {activeSection === 'overview' && (
         <div className="space-y-8">
           {/* Address & property details – same structure as owner */}
-          <Card className="p-6 border-slate-200">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Address & property details</h3>
+          <Card className="p-6 border-white/10">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-4">Address & property details</h3>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               {[
                 { label: 'Street', value: property.street ?? property.address ?? '—' },
@@ -385,8 +386,8 @@ const ManagerPropertyDetail: React.FC<{
                   : []),
               ].map(({ label, value }) => (
                 <div key={label} className="flex flex-col gap-1">
-                  <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">{label}</dt>
-                  <dd className="text-sm font-medium text-slate-800">{value ?? '—'}</dd>
+                  <dt className="text-xs font-medium uppercase tracking-wider text-white/60">{label}</dt>
+                  <dd className="text-sm font-medium text-white">{value ?? '—'}</dd>
                 </div>
               ))}
             </dl>
@@ -394,35 +395,35 @@ const ManagerPropertyDetail: React.FC<{
 
           {/* Occupancy status, Shield Mode, Stay end reminders – same 3-card layout as owner (manager view is read-only for Shield) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-            <Card className="p-5 md:p-6 border-slate-200 bg-slate-50/80 flex flex-col">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Occupancy status</h3>
+            <Card className="p-5 md:p-6 border-white/10 flex flex-col">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-3">Occupancy status</h3>
               <div className="flex flex-col gap-3 flex-1 min-h-0">
                 <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium w-fit ${
-                  displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
-                  displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
-                  displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
-                  'bg-slate-100 text-slate-600'
+                  displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' :
+                  displayStatus === 'VACANT' ? 'bg-white/10 text-white/70 border border-white/20' :
+                  displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' :
+                  'bg-white/10 text-white/70 border border-white/20'
                 }`}>
                   <span className={`w-2 h-2 rounded-full shrink-0 ${
                     displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
-                    displayStatus === 'VACANT' ? 'bg-slate-400' :
-                    displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                    displayStatus === 'VACANT' ? 'bg-white/50' :
+                    displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-white/50'
                   }`} />
                   {displayStatus}
                 </span>
                 {contextMode === 'personal' && isOccupied && activeStay && (
-                  <div className="text-sm text-slate-600 space-y-0.5">
-                    <p>Current guest: <span className="font-medium text-slate-800">{activeStay.guest_name}</span></p>
-                    <p>Lease end: <span className="font-medium text-slate-800">{activeStay.stay_end_date}</span></p>
+                  <div className="text-sm text-white/80 space-y-0.5">
+                    <p>Current guest: <span className="font-medium text-white">{activeStay.guest_name}</span></p>
+                    <p>Lease end: <span className="font-medium text-white">{activeStay.stay_end_date}</span></p>
                   </div>
                 )}
                 {displayStatus === 'UNCONFIRMED' && (
-                  <p className="text-xs text-amber-700">Confirmation requested but no response received by deadline. Owner can use the confirmation options.</p>
+                  <p className="text-xs text-amber-300">Confirmation requested but no response received by deadline. Owner can use the confirmation options.</p>
                 )}
               </div>
             </Card>
-            <Card className="p-5 md:p-6 border-slate-200 flex flex-col">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Shield Mode</h3>
+            <Card className="p-5 md:p-6 border-white/10 flex flex-col">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-3">Shield Mode</h3>
               <div className="flex flex-col gap-3 flex-1 min-h-0">
                 <div className="flex items-center gap-2">
                   <button
@@ -444,34 +445,34 @@ const ManagerPropertyDetail: React.FC<{
                         setShieldToggling(false);
                       }
                     }}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${shieldOn ? 'cursor-pointer bg-emerald-600' : 'cursor-pointer bg-slate-200 hover:bg-slate-300'} ${shieldToggling ? 'opacity-50' : ''}`}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)] focus:ring-offset-2 focus:ring-offset-[hsl(230,35%,4%)] ${shieldOn ? 'cursor-pointer bg-[hsl(265,89%,66%)]' : 'cursor-pointer bg-white/25 hover:bg-white/35'} ${shieldToggling ? 'opacity-50' : ''}`}
                   >
                     <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${shieldOn ? 'translate-x-5' : 'translate-x-1'}`} />
                   </button>
-                  <span className="text-sm font-medium text-slate-800">{shieldOn ? 'ON' : 'OFF'}</span>
+                  <span className="text-sm font-medium text-white">{shieldOn ? 'ON' : 'OFF'}</span>
                 </div>
                 {!shieldOn && (
-                  <span className="text-xs text-slate-500">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when stay end reminders run (48h after stay end).</span>
+                  <span className="text-xs text-white/60">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when stay end reminders run (48h after stay end).</span>
                 )}
               </div>
             </Card>
-            <Card className="p-5 md:p-6 border-slate-200 flex flex-col">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Stay end reminders</h3>
+            <Card className="p-5 md:p-6 border-white/10 flex flex-col">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-3">Stay end reminders</h3>
               <div className="flex flex-col gap-2 flex-1 min-h-0">
                 {contextMode === 'personal' && isOccupied && activeStay ? (
                   <>
-                    <span className={`text-sm font-medium ${activeStay.dead_mans_switch_enabled ? 'text-amber-700' : 'text-slate-600'}`}>
+                    <span className={`text-sm font-medium ${activeStay.dead_mans_switch_enabled ? 'text-amber-300' : 'text-white/70'}`}>
                       {activeStay.dead_mans_switch_enabled ? 'On' : 'Off'}
                     </span>
-                    <p className="text-xs text-slate-500">Alerts owner if the stay ends without checkout or renewal. Shown for current guest stay.</p>
+                    <p className="text-xs text-white/60">Alerts owner if the stay ends without checkout or renewal. Shown for current guest stay.</p>
                   </>
                 ) : contextMode === 'personal' && upcomingStayForProperty ? (
                   <>
-                    <span className="text-sm font-medium text-slate-600">Off</span>
-                    <p className="text-xs text-slate-500">Activates when the guest checks in. Alerts owner if the stay ends without checkout or renewal.</p>
+                    <span className="text-sm font-medium text-white/70">Off</span>
+                    <p className="text-xs text-white/60">Activates when the guest checks in. Alerts owner if the stay ends without checkout or renewal.</p>
                   </>
                 ) : (
-                  <span className="text-sm text-slate-500">No active stay at this property.</span>
+                  <span className="text-sm text-white/60">No active stay at this property.</span>
                 )}
               </div>
             </Card>
@@ -479,20 +480,20 @@ const ManagerPropertyDetail: React.FC<{
 
           {/* Presence – only on individual property: in Personal Mode when manager has a personal-mode unit at this property */}
           {contextMode === 'personal' && !hasPersonalModeUnitHere && (
-            <Card className="p-6 border-slate-200 border-amber-200 bg-amber-50/50">
-              <h3 className="font-medium text-slate-900 mb-2">Presence (here/away)</h3>
-              <p className="text-sm text-slate-600">To set your presence for this property, the owner must add you as an on-site resident for a unit. Then you can mark yourself as &quot;here&quot; or &quot;away&quot; on this Overview in Personal mode.</p>
+            <Card className="p-6 border-amber-400/50 bg-amber-500/10">
+              <h3 className="font-medium text-white mb-2">Presence (here/away)</h3>
+              <p className="text-sm text-white/80">To set your presence for this property, the owner must add you as an on-site resident for a unit. Then you can mark yourself as &quot;here&quot; or &quot;away&quot; on this Overview in Personal mode.</p>
             </Card>
           )}
           {contextMode === 'personal' && hasPersonalModeUnitHere && personalModeUnitId != null && (
-            <Card className="p-6 border-slate-200">
-              <h3 className="font-medium text-slate-900 mb-3">Presence</h3>
-              <p className="text-sm text-slate-600 mb-4">Let others know if you are at the property or away. This is visible to the owner and in all views (business and personal).</p>
+            <Card className="p-6 border-white/10">
+              <h3 className="font-medium text-white mb-3">Presence</h3>
+              <p className="text-sm text-white/70 mb-4">Let others know if you are at the property or away. This is visible to the owner and in all views (business and personal).</p>
               <div className="flex flex-wrap items-center gap-4">
-                <div className={`px-4 py-2 rounded-lg ${presence === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                <div className={`px-4 py-2 rounded-lg ${presence === 'present' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' : 'bg-white/10 text-white/70 border border-white/20'}`}>
                   {presence === 'present' ? 'You are here' : presenceAwayStartedAt ? `Away since ${new Date(presenceAwayStartedAt).toLocaleDateString()}` : 'Away'}
                 </div>
-                {presence === 'away' && presenceGuestsAuthorized && <span className="text-sm text-slate-600">Guests authorized during this period</span>}
+                {presence === 'away' && presenceGuestsAuthorized && <span className="text-sm text-white/70">Guests authorized during this period</span>}
                 {!isOccupied && (
                   <Button
                     variant="outline"
@@ -520,15 +521,15 @@ const ManagerPropertyDetail: React.FC<{
                 )}
               </div>
               {isOccupied && (
-                <p className="text-sm text-amber-700 mt-3">
+                <p className="text-sm text-amber-300 mt-3">
                   You can&apos;t change your presence (here/away) because a guest or tenant is currently staying at this property.
                 </p>
               )}
               {presenceShowAwayConfirm && (
-                <div className="mt-4 p-4 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={presenceAwayGuestsAuthorized} onChange={(e) => setPresenceAwayGuestsAuthorized(e.target.checked)} className="rounded" />
-                    <span className="text-sm text-slate-700">Guests authorized during this period</span>
+                    <span className="text-sm text-white/90">Guests authorized during this period</span>
                   </label>
                   <div className="flex gap-2 mt-3">
                     <Button
@@ -558,19 +559,19 @@ const ManagerPropertyDetail: React.FC<{
             </Card>
           )}
           {contextMode === 'business' && hasPersonalModeUnitHere && (
-            <p className="text-sm text-slate-600">You have Personal Mode for a unit at this property. Switch to Personal in the sidebar to set your presence (here/away).</p>
+            <p className="text-sm text-white/70">You have Personal Mode for a unit at this property. Switch to Personal in the sidebar to set your presence (here/away).</p>
           )}
 
           {/* Units */}
-          <Card className="p-6 border-slate-200">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Units</h3>
+          <Card className="p-6 border-white/10">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-4">Units</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {units.map((u) => (
-                <div key={u.id} className="bg-slate-50 rounded-lg p-3 border border-slate-200 flex flex-col gap-2">
-                  <p className="font-medium text-slate-900">Unit {u.unit_label}</p>
+                <div key={u.id} className="rounded-lg p-3 border border-white/10 bg-white/5 flex flex-col gap-2">
+                  <p className="font-medium text-white">Unit {u.unit_label}</p>
                   {statusBadge(u.occupancy_status)}
-                  {contextMode === 'personal' && u.occupied_by && <p className="text-xs text-slate-600">Occupied by {u.occupied_by}</p>}
-                  {contextMode === 'personal' && u.invite_id && <p className="text-xs text-slate-500">Invite ID {u.invite_id}</p>}
+                  {contextMode === 'personal' && u.occupied_by && <p className="text-xs text-white/70">Occupied by {u.occupied_by}</p>}
+                  {contextMode === 'personal' && u.invite_id && <p className="text-xs text-white/60">Invite ID {u.invite_id}</p>}
                   {(u.occupancy_status || '').toLowerCase() === 'vacant' && u.id > 0 && (
                     <Button variant="outline" onClick={() => { setInviteRoleChoiceUnit({ unitId: u.id, unitLabel: u.unit_label }); }}>Invite</Button>
                   )}
@@ -582,8 +583,8 @@ const ManagerPropertyDetail: React.FC<{
       )}
 
       {activeSection === 'guests' && contextMode === 'personal' && (
-        <Card className="p-6 overflow-x-auto">
-          <h2 className="font-semibold text-slate-900 mb-2">Guests</h2>
+        <Card className="p-6 overflow-x-auto border-white/10">
+          <h2 className="font-semibold text-white mb-2">Guests</h2>
           <p className="text-slate-500 text-sm mb-4">View-only. Guest stays at this property.</p>
           {propertyStays.length === 0 ? (
             <p className="text-slate-500 text-sm">No guests.</p>

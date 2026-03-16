@@ -969,14 +969,14 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         const showDays = total <= maxShow ? allDays : allDays.slice(-maxShow);
         return (
           <section className="rounded-2xl glass border border-white/10 p-6 md:p-8 shadow-sm">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 mb-4">TIME LEFT ON YOUR STAY</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-white/80 mb-4">TIME LEFT ON YOUR STAY</h3>
             <div className="flex flex-col sm:flex-row sm:items-center gap-8">
               <div className="flex-shrink-0">
-                <div className="inline-flex flex-col items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-inner px-8 py-6 min-w-[140px]">
+                <div className="inline-flex flex-col items-center justify-center rounded-2xl bg-white/10 border border-white/20 px-8 py-6 min-w-[140px]">
                   <span className="text-4xl md:text-5xl font-bold tabular-nums text-white">
                     {dLeft}
                   </span>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 mt-1">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-white/70 mt-1">
                     {dLeft === 0 ? 'DAY (CHECK-OUT TODAY)' : dLeft === 1 ? 'DAY LEFT' : 'DAYS LEFT'}
                   </span>
                 </div>
@@ -995,14 +995,14 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                       <div
                         key={dayStr}
                         title={`${dayStr}${isToday ? ' (today)' : ''}${isEnd ? ' (check-out)' : ''}`}
-                        className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
+                        className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all ring-offset-2 ring-offset-[hsl(230,35%,4%)] ${
                           isToday
-                            ? 'bg-[#6F42C1] text-white ring-2 ring-[#6F42C1]/30 ring-offset-1'
+                            ? 'bg-[hsl(265,89%,66%)] text-white ring-2 ring-[hsl(265,89%,66%)]/40'
                             : isEnd
-                              ? 'bg-[#FFC107] text-white font-semibold'
+                              ? 'bg-amber-400 text-slate-900 font-semibold'
                               : isPast
-                                ? 'bg-slate-200 text-white/70'
-                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                ? 'bg-white/20 text-white/60'
+                                : 'bg-white/10 text-white/90 border border-white/20'
                         }`}
                       >
                         {dayNum}
@@ -1015,13 +1015,13 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                 )}
                 <div className="flex flex-wrap gap-4 mt-3 text-xs text-white/70">
                   <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[#6F42C1]" /> Today
+                    <span className="w-3 h-3 rounded-full bg-[hsl(265,89%,66%)]" /> Today
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[#FFC107]" /> Check-out day
+                    <span className="w-3 h-3 rounded-full bg-amber-400" /> Check-out day
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-slate-200" /> Past
+                    <span className="w-3 h-3 rounded-full bg-white/20" /> Past
                   </span>
                 </div>
               </div>

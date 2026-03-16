@@ -328,39 +328,77 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
         return RegisterPendingResponse(user_id=pending.id)
 
 
+def _normalized_login_role(role: UserRole | None) -> str | None:
+    """Return lowercase role value for branching; treat guest/tenant consistently."""
+    if role is None:
+        return None
+    v = getattr(role, "value", None) or str(role)
+    return (v or "").strip().lower() or None
+
+
+def _log_login_failure(
+    db: Session,
+    request: Request,
+    email: str,
+    reason: str,
+    user_id: int | None,
+) -> None:
+    """Log failed login (audit + ledger) and commit. Does not raise."""
+    ip = request.client.host if request.client else None
+    ua = (request.headers.get("user-agent") or "").strip() or None
+    create_log(
+        db,
+        CATEGORY_FAILED_ATTEMPT,
+        "Login failed",
+        f"Failed login attempt for email: {email}.",
+        actor_email=email,
+        ip_address=ip,
+        user_agent=ua,
+        meta={"reason": reason},
+    )
+    create_ledger_event(
+        db,
+        ACTION_LOGIN_FAILED,
+        meta={"email": email, "reason": reason},
+        ip_address=ip,
+        user_agent=ua,
+    )
+    db.commit()
+
+
 @router.post("/login", response_model=Token)
 def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
-    if not data.role:
-        candidates = db.query(User).filter(User.email == data.email).all()
+    # Normalize email for case-insensitive lookup (trim + lower; DB side trimmed so stored spaces don't break match)
+    email_normalized = (data.email or "").strip().lower()
+    if not email_normalized:
+        raise HTTPException(status_code=400, detail="Email is required")
+    role_key = _normalized_login_role(data.role)
+    # Compare against trimmed+lowered email in DB so leading/trailing spaces in stored email don't prevent match
+    email_match = func.lower(func.trim(User.email)) == email_normalized
+    if not role_key:
+        candidates = db.query(User).filter(email_match).all()
         if len(candidates) > 1:
             raise HTTPException(
                 status_code=400,
                 detail="This email is registered as both property owner and guest. Use the Owner Login or Guest Login page and try again.",
             )
         user = candidates[0] if candidates else None
+    elif role_key == "guest":
+        # Guest Login page: accept both guest and tenant accounts (tenant may have registered via tenant invite)
+        user = db.query(User).filter(
+            email_match,
+            User.role.in_([UserRole.guest, UserRole.tenant]),
+        ).first()
     else:
-        user = db.query(User).filter(User.email == data.email, User.role == data.role).first()
-    if not user or not verify_password(data.password, user.hashed_password):
-        ip = request.client.host if request.client else None
-        ua = (request.headers.get("user-agent") or "").strip() or None
-        create_log(
-            db,
-            CATEGORY_FAILED_ATTEMPT,
-            "Login failed",
-            f"Failed login attempt for email: {data.email}.",
-            actor_email=data.email,
-            ip_address=ip,
-            user_agent=ua,
-            meta={"reason": "invalid_email_or_password"},
-        )
-        create_ledger_event(
-            db,
-            ACTION_LOGIN_FAILED,
-            meta={"email": data.email, "reason": "invalid_email_or_password"},
-            ip_address=ip,
-            user_agent=ua,
-        )
-        db.commit()
+        user = db.query(User).filter(
+            email_match,
+            User.role == data.role,
+        ).first()
+    if not user:
+        _log_login_failure(db, request, data.email, "user_not_found", None)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not verify_password(data.password, user.hashed_password):
+        _log_login_failure(db, request, data.email, "password_mismatch", user.id)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if user.role == UserRole.owner and not getattr(user, "email_verified", True):
         raise HTTPException(

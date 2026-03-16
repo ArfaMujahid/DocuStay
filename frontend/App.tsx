@@ -321,8 +321,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(230,35%,4%)] text-white overflow-x-hidden relative">
-      {/* Starry background when signed in (dashboard views) */}
-      {state.user && <StarField />}
+      {/* Starry background when signed in (dashboard views); hide on #check so verify page content is visible */}
+      {state.user && view !== 'check' && <StarField />}
       {(loading || sessionRestoring) && <LoadingOverlay />}
 
       {/* Navigation – cosmic theme */}

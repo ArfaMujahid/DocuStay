@@ -229,19 +229,19 @@ const Settings: React.FC<{
 
         {/* Master POA (owners only) – same structure as guest agreement section */}
         {isOwner && (
-          <Card className="p-8 md:p-10">
-            <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-3 mb-4">Master Power of Attorney (POA)</h2>
-            <p className="text-gray-600 text-sm mb-2">
+          <Card className="p-8 md:p-10 border-white/10">
+            <h2 className="text-lg font-semibold text-white border-b border-white/10 pb-3 mb-4">Master Power of Attorney (POA)</h2>
+            <p className="text-white/90 text-sm mb-2">
               The Master POA is a one-time, account-level legal document you signed during onboarding that establishes DocuStay as your legal representative for all property protection activities.
             </p>
-            <p className="text-gray-500 text-xs mb-6">
+            <p className="text-white/70 text-xs mb-6">
               It designates DocuStay as your Authorized Agent to generate legal evidence packages and maintain audit trails for all properties you add.
             </p>
             {poaSignature === undefined ? (
-              <p className="text-gray-500 text-sm">Loading…</p>
+              <p className="text-white/70 text-sm">Loading…</p>
             ) : poaSignature ? (
               <div className="space-y-3">
-                <p className="text-sm text-gray-700">
+                <p className="text-sm text-white/90">
                   <span className="font-medium">Signed:</span> {poaSignature.signed_by} on {new Date(poaSignature.signed_at).toLocaleDateString()}
                 </p>
                 <Button variant="outline" type="button" onClick={openSignedPoaPdf}>
@@ -249,7 +249,7 @@ const Settings: React.FC<{
                 </Button>
               </div>
             ) : (
-              <p className="text-sm text-gray-500">No Master POA signature on file for this account.</p>
+              <p className="text-sm text-white/70">No Master POA signature on file for this account.</p>
             )}
           </Card>
         )}

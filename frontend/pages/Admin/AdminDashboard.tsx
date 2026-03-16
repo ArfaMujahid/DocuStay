@@ -175,13 +175,13 @@ export const AdminDashboard: React.FC<{
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
       {/* Sidebar – same layout as Owner dashboard */}
-      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 p-6">
+      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col glass border-r border-white/10 p-6">
         <div className="space-y-2 flex-shrink-0">
           {SIDEBAR_ITEMS.map((item) => (
             <button
               key={item.id}
               onClick={() => setTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${tab === item.id ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${tab === item.id ? 'bg-[hsl(265,89%,66%)]/20 text-white border border-[hsl(265,89%,66%)]/40' : 'text-white/90 hover:text-white hover:bg-white/10'}`}
             >
               <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} />
@@ -190,9 +190,9 @@ export const AdminDashboard: React.FC<{
             </button>
           ))}
         </div>
-        <div className="mt-6 pt-6 border-t border-slate-200 flex-shrink-0">
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 px-1">Admin</p>
-          <p className="text-sm text-slate-600 mt-1 px-1 truncate" title={user.email}>{user.email}</p>
+        <div className="mt-6 pt-6 border-t border-white/10 flex-shrink-0">
+          <p className="text-xs font-bold uppercase tracking-widest text-white/60 px-1">Admin</p>
+          <p className="text-sm text-white/80 mt-1 px-1 truncate" title={user.email}>{user.email}</p>
         </div>
       </aside>
 
@@ -205,7 +205,7 @@ export const AdminDashboard: React.FC<{
             id="admin-mobile-tab"
             value={tab}
             onChange={(e) => setTab(e.target.value as AdminTab)}
-            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full max-w-xs rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
           >
             {SIDEBAR_ITEMS.map((item) => (
               <option key={item.id} value={item.id}>{item.label}</option>
@@ -215,26 +215,26 @@ export const AdminDashboard: React.FC<{
 
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
           <div>
-            <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight">{tabTitles[tab]}</h1>
-            <p className="text-slate-600 mt-1">{tabDescriptions[tab]}</p>
+            <h1 className="text-4xl font-extrabold text-white tracking-tight">{tabTitles[tab]}</h1>
+            <p className="text-white/70 mt-1">{tabDescriptions[tab]}</p>
           </div>
         </header>
 
         {tab === 'users' && (
           <Card className="overflow-hidden">
-            <div className="p-6 border-b border-slate-200 bg-slate-50">
+            <div className="p-6 border-b border-white/10 bg-white/5">
               <div className="flex flex-wrap gap-3 items-center">
                 <input
                   type="text"
                   placeholder="Search email or name"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-48"
+                  className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm text-white placeholder-white/50 focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20 w-48"
                 />
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
                 >
                   <option value="">All roles</option>
                   <option value="owner">Owner</option>
@@ -248,7 +248,7 @@ export const AdminDashboard: React.FC<{
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                   <tr>
                     <th className="py-3 px-4">ID</th>
                     <th className="py-3 px-4">Email</th>
@@ -257,14 +257,14 @@ export const AdminDashboard: React.FC<{
                     <th className="py-3 px-4">Created</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-white/10">
                   {users.map((u) => (
-                    <tr key={u.id} className="bg-white hover:bg-slate-50/80">
-                      <td className="py-3 px-4 text-slate-700">{u.id}</td>
-                      <td className="py-3 px-4 text-slate-700">{u.email}</td>
-                      <td className="py-3 px-4 text-slate-700">{u.role}</td>
-                      <td className="py-3 px-4 text-slate-700">{u.full_name ?? '—'}</td>
-                      <td className="py-3 px-4 text-slate-600">{formatDate(u.created_at)}</td>
+                    <tr key={u.id} className="hover:bg-white/5">
+                      <td className="py-3 px-4 text-white/90">{u.id}</td>
+                      <td className="py-3 px-4 text-white/90">{u.email}</td>
+                      <td className="py-3 px-4 text-white/90">{u.role}</td>
+                      <td className="py-3 px-4 text-white/90">{u.full_name ?? '—'}</td>
+                      <td className="py-3 px-4 text-white/70">{formatDate(u.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -275,26 +275,26 @@ export const AdminDashboard: React.FC<{
 
         {tab === 'logs' && (
           <Card className="overflow-hidden">
-            <div className="p-6 border-b border-slate-200 bg-slate-50">
+            <div className="p-6 border-b border-white/10 bg-white/5">
               <div className="flex flex-wrap gap-3 items-center">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">From date</label>
+                <label className="text-xs font-medium text-white/70 uppercase tracking-wider">From date</label>
                 <input
                   type="date"
                   value={logFromDate}
                   onChange={(e) => setLogFromDate(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
                 />
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">To date</label>
+                <label className="text-xs font-medium text-white/70 uppercase tracking-wider">To date</label>
                 <input
                   type="date"
                   value={logToDate}
                   onChange={(e) => setLogToDate(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
                 />
                 <select
                   value={logCategory}
                   onChange={(e) => setLogCategory(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[10rem]"
+                  className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20 min-w-[10rem]"
                 >
                   {AUDIT_LOG_CATEGORIES.map((c) => (
                     <option key={c.value || 'all'} value={c.value}>{c.label}</option>
@@ -303,7 +303,7 @@ export const AdminDashboard: React.FC<{
                 <select
                   value={logPropertyId}
                   onChange={(e) => setLogPropertyId(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[10rem]"
+                  className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20 min-w-[10rem]"
                 >
                   <option value="">All properties</option>
                   {properties.map((p) => (
@@ -313,7 +313,7 @@ export const AdminDashboard: React.FC<{
                 <select
                   value={logActorUserId}
                   onChange={(e) => setLogActorUserId(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[10rem]"
+                  className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20 min-w-[10rem]"
                 >
                   <option value="">All actors</option>
                   {users.map((u) => (
@@ -325,7 +325,7 @@ export const AdminDashboard: React.FC<{
                   placeholder="Search title/message"
                   value={logSearch}
                   onChange={(e) => setLogSearch(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-48"
+                  className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm text-white placeholder-white/50 focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20 w-48"
                 />
                 <Button variant="outline" onClick={loadLogs} disabled={loading} className="px-6">
                   {loading ? 'Loading…' : 'Refresh'}
@@ -334,7 +334,7 @@ export const AdminDashboard: React.FC<{
             </div>
             <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
               <table className="w-full text-sm text-left">
-                <thead className="sticky top-0 bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200 z-10">
+                <thead className="sticky top-0 bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10 z-10">
                   <tr>
                     <th className="py-3 px-4">Time</th>
                     <th className="py-3 px-4">Property</th>
@@ -344,24 +344,24 @@ export const AdminDashboard: React.FC<{
                     <th className="py-3 px-4">Actor</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-white/10">
                   {logs.map((r) => (
-                    <tr key={r.id} className="bg-white hover:bg-slate-50/80">
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-600">{formatDate(r.created_at)}</td>
-                      <td className="py-3 px-4 text-slate-700">{r.property_name ?? (r.property_id != null ? `#${r.property_id}` : '—')}</td>
-                      <td className="py-3 px-4 text-slate-700">{r.category}</td>
-                      <td className="py-3 px-4 text-slate-700">{r.title}</td>
-                      <td className="py-3 px-4 text-slate-700 max-w-xs">
+                    <tr key={r.id} className="hover:bg-white/5">
+                      <td className="py-3 px-4 whitespace-nowrap text-white/70">{formatDate(r.created_at)}</td>
+                      <td className="py-3 px-4 text-white/90">{r.property_name ?? (r.property_id != null ? `#${r.property_id}` : '—')}</td>
+                      <td className="py-3 px-4 text-white/90">{r.category}</td>
+                      <td className="py-3 px-4 text-white/90">{r.title}</td>
+                      <td className="py-3 px-4 text-white/90 max-w-xs">
                         <span className="truncate block">{r.message}</span>
                         <button
                           type="button"
                           onClick={() => setLogMessageModalEntry(r)}
-                          className="text-sky-600 hover:text-sky-800 text-xs mt-0.5 focus:outline-none focus:underline"
+                          className="text-[hsl(265,89%,76%)] hover:text-[hsl(265,89%,86%)] text-xs mt-0.5 focus:outline-none focus:underline"
                         >
                           View full message
                         </button>
                       </td>
-                      <td className="py-3 px-4 text-slate-700">{r.actor_email ?? r.actor_user_id ?? '—'}</td>
+                      <td className="py-3 px-4 text-white/90">{r.actor_email ?? r.actor_user_id ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -372,12 +372,12 @@ export const AdminDashboard: React.FC<{
 
         {tab === 'properties' && (
           <Card className="overflow-hidden">
-            <div className="p-6 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-3 items-center">
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">State</label>
+            <div className="p-6 border-b border-white/10 bg-white/5 flex flex-wrap gap-3 items-center">
+              <label className="text-xs font-medium text-white/70 uppercase tracking-wider">State</label>
               <select
                 value={propertyStateFilter}
                 onChange={(e) => setPropertyStateFilter(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[8rem]"
+                className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20 min-w-[8rem]"
               >
                 <option value="">All states</option>
                 {SUPPORTED_STATES.map((s) => (
@@ -390,7 +390,7 @@ export const AdminDashboard: React.FC<{
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                   <tr>
                     <th className="py-3 px-4">ID</th>
                     <th className="py-3 px-4">Owner</th>
@@ -402,13 +402,13 @@ export const AdminDashboard: React.FC<{
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {properties.map((p) => (
-                    <tr key={p.id} className="bg-white hover:bg-slate-50/80">
-                      <td className="py-3 px-4 text-slate-700">{p.id}</td>
-                      <td className="py-3 px-4 text-slate-700">{p.owner_email ?? '—'}</td>
-                      <td className="py-3 px-4 text-slate-700">{p.name ?? '—'}</td>
-                      <td className="py-3 px-4 text-slate-700">{[p.street, p.city, p.state].filter(Boolean).join(', ')}</td>
-                      <td className="py-3 px-4 text-slate-700">{p.region_code ?? '—'}</td>
-                      <td className="py-3 px-4 text-slate-700">{p.occupancy_status ?? '—'}</td>
+                    <tr key={p.id} className="hover:bg-white/5">
+                      <td className="py-3 px-4 text-white/90">{p.id}</td>
+                      <td className="py-3 px-4 text-white/90">{p.owner_email ?? '—'}</td>
+                      <td className="py-3 px-4 text-white/90">{p.name ?? '—'}</td>
+                      <td className="py-3 px-4 text-white/90">{[p.street, p.city, p.state].filter(Boolean).join(', ')}</td>
+                      <td className="py-3 px-4 text-white/90">{p.region_code ?? '—'}</td>
+                      <td className="py-3 px-4 text-white/90">{p.occupancy_status ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -419,12 +419,12 @@ export const AdminDashboard: React.FC<{
 
         {tab === 'stays' && (
           <Card className="overflow-hidden">
-            <div className="p-6 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-3 items-center">
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">State</label>
+            <div className="p-6 border-b border-white/10 bg-white/5 flex flex-wrap gap-3 items-center">
+              <label className="text-xs font-medium text-white/70 uppercase tracking-wider">State</label>
               <select
                 value={stayStateFilter}
                 onChange={(e) => setStayStateFilter(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[8rem]"
+                className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20 min-w-[8rem]"
               >
                 <option value="">All states</option>
                 {SUPPORTED_STATES.map((s) => (
@@ -437,7 +437,7 @@ export const AdminDashboard: React.FC<{
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                   <tr>
                     <th className="py-3 px-4">ID</th>
                     <th className="py-3 px-4">Property</th>
@@ -448,12 +448,12 @@ export const AdminDashboard: React.FC<{
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {stays.map((s) => (
-                    <tr key={s.id} className="bg-white hover:bg-slate-50/80">
-                      <td className="py-3 px-4 text-slate-700">{s.id}</td>
-                      <td className="py-3 px-4 text-slate-700">{s.property_name ?? s.property_id}</td>
-                      <td className="py-3 px-4 text-slate-700">{s.guest_email ?? s.guest_id}</td>
-                      <td className="py-3 px-4 text-slate-700">{s.stay_start_date} – {s.stay_end_date}</td>
-                      <td className="py-3 px-4 text-slate-700">
+                    <tr key={s.id} className="hover:bg-white/5">
+                      <td className="py-3 px-4 text-white/90">{s.id}</td>
+                      <td className="py-3 px-4 text-white/90">{s.property_name ?? s.property_id}</td>
+                      <td className="py-3 px-4 text-white/90">{s.guest_email ?? s.guest_id}</td>
+                      <td className="py-3 px-4 text-white/90">{s.stay_start_date} – {s.stay_end_date}</td>
+                      <td className="py-3 px-4 text-white/90">
                         {s.revoked_at ? 'Revoked' : s.cancelled_at ? 'Cancelled' : s.checked_out_at ? 'Ended' : 'Active'}
                       </td>
                     </tr>
@@ -466,14 +466,14 @@ export const AdminDashboard: React.FC<{
 
         {tab === 'invitations' && (
           <Card className="overflow-hidden">
-            <div className="p-6 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-3 items-center">
+            <div className="p-6 border-b border-white/10 bg-white/5 flex flex-wrap gap-3 items-center">
               <Button variant="outline" onClick={loadInvitations} disabled={loading} className="px-6">
                 {loading ? 'Loading…' : 'Refresh'}
               </Button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                   <tr>
                     <th className="py-3 px-4">Code</th>
                     <th className="py-3 px-4">Property</th>
@@ -484,12 +484,12 @@ export const AdminDashboard: React.FC<{
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {invitations.map((inv) => (
-                    <tr key={inv.id} className="bg-white hover:bg-slate-50/80">
-                      <td className="py-3 px-4 font-mono text-xs text-slate-700">{inv.invitation_code}</td>
-                      <td className="py-3 px-4 text-slate-700">{inv.property_name ?? inv.property_id}</td>
-                      <td className="py-3 px-4 text-slate-700">{inv.guest_name ?? inv.guest_email ?? '—'}</td>
-                      <td className="py-3 px-4 text-slate-700">{inv.stay_start_date} – {inv.stay_end_date}</td>
-                      <td className="py-3 px-4 text-slate-700">{inv.status} / {inv.token_state}</td>
+                    <tr key={inv.id} className="hover:bg-white/5">
+                      <td className="py-3 px-4 font-mono text-xs text-white/90">{inv.invitation_code}</td>
+                      <td className="py-3 px-4 text-white/90">{inv.property_name ?? inv.property_id}</td>
+                      <td className="py-3 px-4 text-white/90">{inv.guest_name ?? inv.guest_email ?? '—'}</td>
+                      <td className="py-3 px-4 text-white/90">{inv.stay_start_date} – {inv.stay_end_date}</td>
+                      <td className="py-3 px-4 text-white/90">{inv.status} / {inv.token_state}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -502,26 +502,26 @@ export const AdminDashboard: React.FC<{
       {/* Full log message modal */}
       {logMessageModalEntry && (
         <>
-          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={() => setLogMessageModalEntry(null)} aria-hidden="true" />
+          <div className="fixed inset-0 bg-black/60 z-40" onClick={() => setLogMessageModalEntry(null)} aria-hidden="true" />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="admin-log-message-title">
             <Card className="w-full max-w-lg max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-              <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-                <h3 id="admin-log-message-title" className="text-lg font-bold text-slate-800">
+              <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                <h3 id="admin-log-message-title" className="text-lg font-bold text-white">
                   Full message — {logMessageModalEntry.title}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setLogMessageModalEntry(null)}
-                  className="text-slate-500 hover:text-slate-700 p-1 rounded focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  className="text-white/70 hover:text-white p-1 rounded focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]"
                   aria-label="Close"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
               <div className="p-4 overflow-y-auto flex-1">
-                <p className="text-slate-700 text-sm whitespace-pre-wrap break-words">{logMessageModalEntry.message}</p>
+                <p className="text-white/90 text-sm whitespace-pre-wrap break-words">{logMessageModalEntry.message}</p>
               </div>
-              <div className="p-4 border-t border-slate-200">
+              <div className="p-4 border-t border-white/10">
                 <Button variant="outline" onClick={() => setLogMessageModalEntry(null)}>Close</Button>
               </div>
             </Card>

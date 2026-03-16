@@ -37,16 +37,16 @@ function TokenStateBadge({ tokenState }: { tokenState?: string | null }) {
   const state = (tokenState || 'STAGED').toUpperCase();
   const classes =
     state === 'BURNED'
-      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
       : state === 'STAGED'
-        ? 'bg-sky-100 text-sky-700 border-sky-200'
+        ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
         : state === 'EXPIRED'
-          ? 'bg-slate-100 text-slate-600 border-slate-200'
+          ? 'bg-white/20 text-white/70 border-white/30'
           : state === 'REVOKED'
-            ? 'bg-amber-100 text-amber-700 border-amber-200'
+            ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
             : state === 'CANCELLED'
-              ? 'bg-slate-100 text-slate-600 border-slate-200'
-              : 'bg-slate-100 text-slate-600 border-slate-200';
+              ? 'bg-white/20 text-white/70 border-white/30'
+              : 'bg-white/20 text-white/70 border-white/30';
   const displayLabel = state === 'BURNED' ? 'Active' : state === 'STAGED' ? 'Pending' : state === 'REVOKED' ? 'Revoked' : state === 'CANCELLED' ? 'Cancelled' : state === 'EXPIRED' ? 'Expired' : state;
   return (
     <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${classes}`}>
@@ -376,7 +376,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 <span className={!canInvite ? 'group relative inline-block cursor-not-allowed' : undefined}>
                   {!canInvite && (
                     <span
-                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-[200] group-hover:opacity-100"
+                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-2 bg-[hsl(230,30%,12%)] border border-white/10 text-white text-xs rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-[200] group-hover:opacity-100"
                       role="tooltip"
                     >
                       Go to Billing and pay your onboarding fee to invite guests.
@@ -441,20 +441,20 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         ) : activeTab === 'guests' && contextMode === 'personal' ? (
           /* Guests tab: pending invitations + active & expired stays (personal mode only; never show in business) */
           <div className="space-y-8">
-            <p className="text-slate-500 text-sm">
+            <p className="text-white/70 text-sm">
               Pending invitations, active stays, and past/expired stays. Data is loaded from your dashboard.
             </p>
 
             {/* Pending invitations */}
             {invitations.filter((i) => i.status === 'pending').length > 0 && (
               <Card className="overflow-hidden">
-                <div className="p-6 border-b border-slate-200 bg-amber-50">
-                  <h3 className="text-xl font-bold text-slate-800">Pending invitations</h3>
-                  <p className="text-xs text-slate-500 mt-1">Invites not yet accepted by the guest</p>
+                <div className="p-6 border-b border-white/10 bg-amber-500/10">
+                  <h3 className="text-xl font-bold text-white">Pending invitations</h3>
+                  <p className="text-xs text-white/60 mt-1">Invites not yet accepted by the guest</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                    <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                       <tr>
                         <th className="px-6 py-4">Invited (email)</th>
                         <th className="px-6 py-4">Property</th>
@@ -465,26 +465,26 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-800">
+                    <tbody className="divide-y divide-white/10">
                       {invitations.filter((i) => i.status === 'pending').map((inv) => (
-                        <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                        <tr key={inv.id} className="hover:bg-white/5 transition-colors">
                           <td className="px-6 py-5">
-                            <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
+                            <span className="text-sm font-medium text-white/95">{inv.guest_name || inv.guest_email || '—'}</span>
                           </td>
                           <td className="px-6 py-5">
-                            <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
-                            <p className="text-xs text-slate-500">{inv.region_code}</p>
+                            <p className="text-sm font-medium text-white/95">{inv.property_name}</p>
+                            <p className="text-xs text-white/60">{inv.region_code}</p>
                           </td>
-                          <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
+                          <td className="px-6 py-5 text-sm text-white/70 whitespace-nowrap">
                             {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
                           </td>
-                          <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
-                          <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
+                          <td className="px-6 py-5 text-sm text-white/70">{inv.region_code}</td>
+                          <td className="px-6 py-5 text-xs font-mono text-white/70">{inv.invitation_code}</td>
                           <td className="px-6 py-5">
                             {inv.is_expired ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">Expired</span>
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-white/20 text-white/70 border border-white/30">Expired</span>
                             ) : (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-700 border border-amber-200">Pending</span>
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/20 text-amber-300 border border-amber-400/40">Pending</span>
                             )}
                           </td>
                           <td className="px-6 py-5 text-right">
@@ -511,16 +511,16 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
 
             {/* Stays: active and expired */}
             <Card className="overflow-hidden">
-              <div className="p-6 border-b border-slate-200 bg-white/60 backdrop-blur-md">
-                <h3 className="text-xl font-bold text-slate-800">Stays (active & past)</h3>
-                <p className="text-xs text-slate-500 mt-1">Guests who accepted and their current or past stay</p>
+              <div className="p-6 border-b border-white/10 bg-white/5">
+                <h3 className="text-xl font-bold text-white">Stays (active & past)</h3>
+                <p className="text-xs text-white/60 mt-1">Guests who accepted and their current or past stay</p>
               </div>
               {stays.length === 0 ? (
-                <div className="px-6 py-12 text-center text-slate-500">No stays yet. When guests accept an invitation, they appear here.</div>
+                <div className="px-6 py-12 text-center text-white/60">No stays yet. When guests accept an invitation, they appear here.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                    <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                       <tr>
                         <th className="px-6 py-4">Guest</th>
                         <th className="px-6 py-4">Property</th>
@@ -531,7 +531,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-800">
+                    <tbody className="divide-y divide-white/10">
                       {stays.map((stay) => {
                         const overstay = isOverstayed(stay.stay_end_date);
                         const dLeft = daysLeft(stay.stay_end_date);
@@ -540,34 +540,34 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         const cancelled = !!stay.cancelled_at;
                         const isActive = !completed && !cancelled;
                         return (
-                          <tr key={stay.stay_id} className="hover:bg-slate-50 transition-colors">
+                          <tr key={stay.stay_id} className="hover:bg-white/5 transition-colors">
                             <td className="px-6 py-5">
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-sm">
+                                <div className="w-10 h-10 rounded-full bg-white/20 text-white/90 flex items-center justify-center font-bold text-sm">
                                   {stay.guest_name.charAt(0)}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-bold text-slate-800">{stay.guest_name}</p>
-                                  <p className="text-xs text-slate-500">Stay #{stay.stay_id}</p>
+                                  <p className="text-sm font-bold text-white/95">{stay.guest_name}</p>
+                                  <p className="text-xs text-white/60">Stay #{stay.stay_id}</p>
                                 </div>
                               </div>
                             </td>
                             <td className="px-6 py-5">
-                              <p className="text-sm font-medium text-slate-800">{stay.property_name}</p>
-                              <p className="text-xs text-slate-500">{stay.region_code}</p>
+                              <p className="text-sm font-medium text-white/95">{stay.property_name}</p>
+                              <p className="text-xs text-white/60">{stay.region_code}</p>
                             </td>
-                            <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
+                            <td className="px-6 py-5 text-sm text-white/70 whitespace-nowrap">
                               {formatStayDuration(stay.stay_start_date, stay.stay_end_date)}
                             </td>
-                            <td className="px-6 py-5 text-sm text-slate-600">{stay.region_code}</td>
+                            <td className="px-6 py-5 text-sm text-white/70">{stay.region_code}</td>
                             <td className="px-6 py-5">
-                              <span className={`text-sm font-bold ${!isActive ? 'text-slate-500' : revoked ? 'text-amber-600' : overstay ? 'text-red-600' : 'text-green-600'}`}>
+                              <span className={`text-sm font-bold ${!isActive ? 'text-white/50' : revoked ? 'text-amber-400' : overstay ? 'text-red-400' : 'text-emerald-400'}`}>
                                 {completed || cancelled ? '—' : revoked ? '—' : overstay ? '—' : `${dLeft}d`}
                               </span>
                             </td>
                             <td className="px-6 py-5">
                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                                stay.invitation_only ? 'bg-amber-50 text-amber-700 border border-amber-200' : completed ? 'bg-slate-100 text-slate-600 border border-slate-200' : cancelled ? 'bg-slate-100 text-slate-500 border border-slate-200' : revoked ? 'bg-amber-50 text-amber-700 border border-amber-500/20' : overstay ? 'bg-red-50 text-red-600 border border-red-500/20' : 'bg-green-50 text-green-700 border border-green-200'
+                                stay.invitation_only ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' : completed ? 'bg-white/20 text-white/70 border border-white/30' : cancelled ? 'bg-white/20 text-white/60 border border-white/30' : revoked ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' : overstay ? 'bg-red-500/20 text-red-300 border border-red-400/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
                               }`}>
                                 {stay.invitation_only ? 'Pending sign-up' : completed ? 'Completed' : cancelled ? 'Cancelled' : revoked ? 'Revoked' : overstay ? 'Overstayed' : 'Active'}
                               </span>
@@ -577,11 +577,11 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                 <Button variant="outline" onClick={() => { setVerifyQRInviteId(stay.invite_id ?? null); setShowVerifyQRModal(true); }} className="text-xs py-2">Verify QR</Button>
                               )}
                               {stay.invitation_only ? (
-                                <span className="text-xs text-slate-500"></span>
+                                <span className="text-xs text-white/60"></span>
                               ) : completed || cancelled ? (
-                                <span className="text-xs text-slate-500">—</span>
+                                <span className="text-xs text-white/60">—</span>
                               ) : revoked ? (
-                                <span className="text-xs text-slate-500">Revoked</span>
+                                <span className="text-xs text-white/60">Revoked</span>
                               ) : overstay ? (
                                 <Button variant="danger" onClick={() => handleInitiateRemoval(stay)} className="text-xs py-2">Remove</Button>
                               ) : (
@@ -600,11 +600,11 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
 
             {stays.length === 0 && invitations.filter((i) => i.status === 'pending').length === 0 && (
               <Card className="p-12 text-center">
-                <p className="text-slate-600 mb-6">No guests or pending invites yet. Invite someone to get started.</p>
+                <p className="text-white/70 mb-6">No guests or pending invites yet. Invite someone to get started.</p>
                 <span className={!canInvite ? 'group relative inline-block cursor-not-allowed' : undefined}>
                   {!canInvite && (
                     <span
-                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-[200] group-hover:opacity-100"
+                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-2 bg-[hsl(230,30%,12%)] border border-white/10 text-white text-xs rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-[200] group-hover:opacity-100"
                       role="tooltip"
                     >
                       Go to Billing and pay your onboarding fee to invite guests.
@@ -630,18 +630,18 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
           <div className="space-y-8">
             {tenants.length === 0 ? (
               <Card className="p-12 text-center">
-                <p className="text-slate-600 mb-6">No tenants or tenant invitations for your properties yet.</p>
+                <p className="text-white/70 mb-6">No tenants or tenant invitations for your properties yet.</p>
                 <Button variant="outline" onClick={() => setShowInviteTenantModal(true)}>Invite Tenant</Button>
               </Card>
             ) : (
               <Card className="overflow-hidden">
-                <div className="p-6 border-b border-slate-200 bg-white/60 backdrop-blur-md">
-                  <h3 className="text-xl font-bold text-slate-800">Tenants</h3>
-                  <p className="text-xs text-slate-500 mt-1">Active tenants and pending invitations for your properties</p>
+                <div className="p-6 border-b border-white/10 bg-white/5">
+                  <h3 className="text-xl font-bold text-white">Tenants</h3>
+                  <p className="text-xs text-white/60 mt-1">Active tenants and pending invitations for your properties</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                    <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                       <tr>
                         <th className="px-6 py-4">Tenant</th>
                         <th className="px-6 py-4">Property</th>
@@ -651,38 +651,38 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4">Invite code</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-white/10">
                       {tenants.map((t) => (
-                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                        <tr key={t.id} className="hover:bg-white/5 transition-colors">
                           <td className="px-6 py-5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${t.status === 'pending_signup' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-700'}`}>
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${t.status === 'pending_signup' ? 'bg-amber-500/20 text-amber-300' : 'bg-white/20 text-white/90'}`}>
                                 {t.tenant_name.charAt(0).toUpperCase()}
                               </div>
                               <div>
-                                <p className="text-sm font-bold text-slate-800">{t.tenant_name}</p>
-                                {t.tenant_email && <p className="text-xs text-slate-500">{t.tenant_email}</p>}
+                                <p className="text-sm font-bold text-white/95">{t.tenant_name}</p>
+                                {t.tenant_email && <p className="text-xs text-white/60">{t.tenant_email}</p>}
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-5">
-                            <p className="text-sm font-medium text-slate-800">{t.property_name}</p>
+                            <p className="text-sm font-medium text-white/95">{t.property_name}</p>
                           </td>
-                          <td className="px-6 py-5 text-sm text-slate-600">{t.unit_label || '—'}</td>
-                          <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
+                          <td className="px-6 py-5 text-sm text-white/70">{t.unit_label || '—'}</td>
+                          <td className="px-6 py-5 text-sm text-white/70 whitespace-nowrap">
                             {t.start_date && t.end_date ? formatStayDuration(t.start_date, t.end_date) : t.start_date ? `From ${new Date(t.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : '—'}
-                            {t.status === 'active' && !t.end_date && <span className="ml-1 text-xs text-slate-400">(ongoing)</span>}
+                            {t.status === 'active' && !t.end_date && <span className="ml-1 text-xs text-white/50">(ongoing)</span>}
                           </td>
                           <td className="px-6 py-5">
                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
                               t.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                               t.status === 'pending_signup' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                              'bg-slate-100 text-slate-500 border border-slate-200'
+                              'bg-white/20 text-white/70 border border-white/30'
                             }`}>
                               {t.status === 'active' ? 'Active' : t.status === 'pending_signup' ? 'Pending signup' : 'Ended'}
                             </span>
                           </td>
-                          <td className="px-6 py-5 text-xs font-mono text-slate-500">
+                          <td className="px-6 py-5 text-xs font-mono text-white/70">
                             {t.invitation_code || '—'}
                           </td>
                         </tr>
@@ -699,7 +699,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             
             {properties.length === 0 && inactiveProperties.length === 0 ? (
               <Card className="p-12 text-center">
-                <p className="text-slate-600 mb-6">You haven’t registered any properties yet.</p>
+                <p className="text-white/70 mb-6">You haven’t registered any properties yet.</p>
                 {contextMode !== 'personal' && (
                   <Button variant="primary" onClick={() => navigate('add-property')}>Register your first property</Button>
                 )}
@@ -711,40 +711,40 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
               <div>
                 {contextMode === 'business' && (
                   <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-                    <Card className="p-6 border-l-4 border-blue-500">
-                      <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Properties</p>
-                      <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.length}</p>
+                    <Card className="p-6 border-l-4 border-blue-400">
+                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Properties</p>
+                      <p className="text-4xl font-extrabold text-white mt-1">{properties.length}</p>
                     </Card>
-                    <Card className="p-6 border-l-4 border-emerald-500">
-                      <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Occupied</p>
-                      <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length}</p>
+                    <Card className="p-6 border-l-4 border-emerald-400">
+                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Occupied</p>
+                      <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length}</p>
                     </Card>
-                    <Card className="p-6 border-l-4 border-sky-500">
-                      <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Vacant</p>
-                      <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length}</p>
+                    <Card className="p-6 border-l-4 border-sky-400">
+                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Vacant</p>
+                      <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length}</p>
                     </Card>
-                    <Card className="p-6 border-l-4 border-slate-400">
-                      <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Unknown</p>
-                      <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length}</p>
+                    <Card className="p-6 border-l-4 border-white/40">
+                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Unknown</p>
+                      <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length}</p>
                     </Card>
-                    <Card className="p-6 border-l-4 border-amber-500">
-                      <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Shield On</p>
-                      <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => p.shield_mode_enabled).length}</p>
+                    <Card className="p-6 border-l-4 border-amber-400">
+                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Shield On</p>
+                      <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => p.shield_mode_enabled).length}</p>
                     </Card>
                   </div>
                 )}
-                <h3 className="text-lg font-bold text-slate-800 mb-4">Active properties</h3>
+                <h3 className="text-lg font-bold text-white mb-4">Active properties</h3>
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                  <span className="text-slate-500 text-sm">Filter and manage Shield Mode for your properties.</span>
+                  <span className="text-white/70 text-sm">Filter and manage Shield Mode for your properties.</span>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Shield Mode:</span>
-                    <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+                    <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">Shield Mode:</span>
+                    <div className="flex rounded-lg border border-white/20 bg-white/10 p-0.5">
                       {(['all', 'on', 'off'] as const).map((f) => (
                         <button
                           key={f}
                           type="button"
                           onClick={() => setShieldFilter(f)}
-                          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${shieldFilter === f ? 'bg-slate-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${shieldFilter === f ? 'bg-[hsl(265,89%,66%)] text-white' : 'text-white/80 hover:bg-white/20'}`}
                         >
                           {f === 'all' ? 'All' : f === 'on' ? 'Shield ON' : 'Shield OFF'}
                         </button>
@@ -760,18 +760,18 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                       <button
                         type="button"
                         onClick={() => setSelectedPropertyIds(allFilteredSelected ? new Set() : new Set(filteredProps.map((p) => p.id)))}
-                        className="text-sm text-slate-600 hover:text-slate-800 underline"
+                        className="text-sm text-white/70 hover:text-white underline"
                       >
                         {allFilteredSelected ? 'Select none' : 'Select all'}
                       </button>
-                      <span className="text-slate-400">·</span>
-                      <span className="text-sm text-slate-500">({filteredProps.length} propert{filteredProps.length === 1 ? 'y' : 'ies'} shown)</span>
+                      <span className="text-white/50">·</span>
+                      <span className="text-sm text-white/60">({filteredProps.length} propert{filteredProps.length === 1 ? 'y' : 'ies'} shown)</span>
                     </div>
                   );
                 })()}
                 {selectedPropertyIds.size > 0 && (
-                  <div className="mb-4 p-4 rounded-xl bg-slate-100 border border-slate-200 flex flex-wrap items-center justify-between gap-4">
-                    <span className="text-sm font-medium text-slate-700">{selectedPropertyIds.size} propert{selectedPropertyIds.size === 1 ? 'y' : 'ies'} selected</span>
+                  <div className="mb-4 p-4 rounded-xl bg-white/10 border border-white/20 flex flex-wrap items-center justify-between gap-4">
+                    <span className="text-sm font-medium text-white/90">{selectedPropertyIds.size} propert{selectedPropertyIds.size === 1 ? 'y' : 'ies'} selected</span>
                     <div className="flex items-center gap-2">
                       <Button variant="outline" size="sm" onClick={() => setSelectedPropertyIds(new Set())}>Clear selection</Button>
                       <Button
@@ -830,7 +830,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                   const shieldStatus = shieldOn ? (isOccupied ? 'PASSIVE GUARD' : 'ACTIVE MONITORING') : null;
                   const isSelected = selectedPropertyIds.has(prop.id);
                   return (
-                    <Card key={prop.id} className="p-6 border border-slate-200">
+                    <Card key={prop.id} className="p-6 border border-white/10">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                         <div className="flex items-start gap-3 flex-shrink-0">
                           <input
@@ -845,7 +845,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                 return next;
                               });
                             }}
-                            className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                            className="mt-1 h-4 w-4 rounded border-white/30 text-[hsl(265,89%,66%)] focus:ring-[hsl(265,89%,66%)]"
                             aria-label={`Select ${displayName}`}
                           />
                         <button
@@ -854,44 +854,44 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                           className="min-w-0 flex-1 text-left hover:opacity-90 transition-opacity"
                         >
                           <div className="flex flex-wrap items-center gap-2 gap-y-1">
-                            <h3 className="text-lg font-bold text-slate-800 truncate">{displayName}</h3>
+                            <h3 className="text-lg font-bold text-white truncate">{displayName}</h3>
                             {(() => {
                               const displayStatus = isOccupied ? 'OCCUPIED' : (prop.occupancy_status ?? 'unknown').toUpperCase();
                               return (
                                 <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase ${
-                                  displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
-                                  displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
-                                  displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
-                                  'bg-slate-100 text-slate-600'
+                                  displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300' :
+                                  displayStatus === 'VACANT' ? 'bg-white/20 text-white/80' :
+                                  displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300' :
+                                  'bg-white/20 text-white/70'
                                 }`}>
                                   <span className={`w-1.5 h-1.5 rounded-full ${
-                                    displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
-                                    displayStatus === 'VACANT' ? 'bg-slate-400' :
-                                    displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                                    displayStatus === 'OCCUPIED' ? 'bg-emerald-400' :
+                                    displayStatus === 'VACANT' ? 'bg-white/50' :
+                                    displayStatus === 'UNCONFIRMED' ? 'bg-amber-400' : 'bg-white/50'
                                   }`} />
                                   {displayStatus}
                                 </span>
                               );
                             })()}
                           </div>
-                          <p className="text-sm text-slate-600 mt-1 truncate">{address || '—'}</p>
-                          <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-500">
-                            <span>Region: <span className="text-slate-600 font-medium">{prop.region_code}</span></span>
+                          <p className="text-sm text-white/70 mt-1 truncate">{address || '—'}</p>
+                          <div className="flex flex-wrap gap-3 mt-3 text-xs text-white/60">
+                            <span>Region: <span className="text-white/80 font-medium">{prop.region_code}</span></span>
                             {(prop.property_type_label || prop.property_type) && (
-                              <span>Type: <span className="text-slate-600 font-medium">{prop.property_type_label || prop.property_type}</span></span>
+                              <span>Type: <span className="text-white/80 font-medium">{prop.property_type_label || prop.property_type}</span></span>
                             )}
                             {!prop.is_multi_unit && prop.bedrooms && (
-                              <span>Bedrooms: <span className="text-slate-600 font-medium">{prop.bedrooms}</span></span>
+                              <span>Bedrooms: <span className="text-white/80 font-medium">{prop.bedrooms}</span></span>
                             )}
                             {contextMode === 'personal' && isOccupied && activeStayForProp && (
                               <span>
-                                Stay end reminders: <span className={activeStayForProp.dead_mans_switch_enabled ? 'text-amber-600 font-medium' : 'text-slate-600 font-medium'}>
+                                Stay end reminders: <span className={activeStayForProp.dead_mans_switch_enabled ? 'text-amber-400 font-medium' : 'text-white/70 font-medium'}>
                                   {activeStayForProp.dead_mans_switch_enabled ? 'On' : 'Off'}
                                 </span>
                               </span>
                             )}
                           </div>
-                          <span className="inline-block mt-2 text-xs font-medium text-blue-400">View details →</span>
+                          <span className="inline-block mt-2 text-xs font-medium text-[hsl(265,89%,76%)]">View details →</span>
                         </button>
                         </div>
                         <div className="flex items-center gap-3 flex-shrink-0">
@@ -902,7 +902,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                             <Button
                               variant="ghost"
                               onClick={() => { setDeleteConfirmProperty(prop); setDeleteError(null); }}
-                              className="px-4 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              className="px-4 text-red-400 hover:text-red-300 hover:bg-red-500/20"
                             >
                               Remove Property
                             </Button>
@@ -910,40 +910,40 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         </div>
                       </div>
                       {/* Occupancy status: VACANT | OCCUPIED | UNKNOWN | UNCONFIRMED */}
-                      <div className="mt-6 pt-6 border-t border-slate-200 rounded-xl bg-slate-50/80 p-4">
-                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Occupancy status</p>
+                      <div className="mt-6 pt-6 border-t border-white/10 rounded-xl bg-white/5 p-4">
+                        <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-2">Occupancy status</p>
                         <div className="flex items-center gap-3 flex-wrap">
                           {(() => {
                             const displayStatus = isOccupied ? 'OCCUPIED' : (prop.occupancy_status ?? 'unknown').toUpperCase();
                             return (
                           <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${
-                            displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
-                            displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
-                            displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
-                            'bg-slate-100 text-slate-600'
+                            displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300' :
+                            displayStatus === 'VACANT' ? 'bg-white/20 text-white/80' :
+                            displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300' :
+                            'bg-white/20 text-white/70'
                           }`}>
                             <span className={`w-2 h-2 rounded-full ${
-                              displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
-                              displayStatus === 'VACANT' ? 'bg-slate-400' :
-                              displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
+                              displayStatus === 'OCCUPIED' ? 'bg-emerald-400' :
+                              displayStatus === 'VACANT' ? 'bg-white/50' :
+                              displayStatus === 'UNCONFIRMED' ? 'bg-amber-400' : 'bg-white/50'
                             }`} />
                             {displayStatus}
                           </span>
                             );
                           })()}
                           {contextMode === 'personal' && isOccupied && activeStayForProp && (
-                            <span className="text-sm text-slate-600">
-                              Current guest: <span className="font-medium text-slate-800">{activeStayForProp.guest_name}</span>
+                            <span className="text-sm text-white/70">
+                              Current guest: <span className="font-medium text-white/90">{activeStayForProp.guest_name}</span>
                               {' · '}
-                              Lease end: <span className="font-medium text-slate-800">{activeStayForProp.stay_end_date}</span>
+                              Lease end: <span className="font-medium text-white/90">{activeStayForProp.stay_end_date}</span>
                             </span>
                           )}
                         </div>
                       </div>
 
                       {/* Shield Mode: independent of vacant/occupied; owner can turn ON or OFF anytime. Auto ON: last day of stay, DMS run (48h after stay end). Auto OFF: when new guest accepts invitation. */}
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Shield Mode</p>
+                      <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                        <p className="text-xs font-bold uppercase tracking-wider text-white/80 mb-2">Shield Mode</p>
                         <div className="flex flex-wrap items-center gap-4">
                           <div className="flex items-center gap-2">
                             <button
@@ -964,47 +964,47 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                   setShieldTogglePropertyId(null);
                                 }
                               }}
-                              className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${shieldOn ? 'cursor-pointer bg-emerald-600' : 'cursor-pointer bg-slate-200 hover:bg-slate-300'} ${shieldTogglePropertyId === prop.id ? 'opacity-50' : ''}`}
+                              className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)] focus:ring-offset-2 focus:ring-offset-[hsl(230,35%,4%)] ${shieldOn ? 'cursor-pointer bg-[hsl(265,89%,66%)]' : 'cursor-pointer bg-white/25 hover:bg-white/35'} ${shieldTogglePropertyId === prop.id ? 'opacity-50' : ''}`}
                             >
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${shieldOn ? 'translate-x-5' : 'translate-x-1'}`} />
                             </button>
-                            <span className="text-sm font-medium text-slate-800">{shieldOn ? 'ON' : 'OFF'}</span>
+                            <span className="text-sm font-medium text-white">{shieldOn ? 'ON' : 'OFF'}</span>
                           </div>
                           {shieldOn && shieldStatus && (
-                            <span className="text-sm text-slate-600">
-                              Status: <span className="font-semibold text-slate-800">{shieldStatus}</span>
+                            <span className="text-sm text-white/80">
+                              Status: <span className="font-semibold text-white">{shieldStatus}</span>
                             </span>
                           )}
                           {!shieldOn && (
-                            <span className="text-xs text-slate-500">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when stay end reminders run (48h after stay end).</span>
+                            <span className="text-xs text-white/70">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when stay end reminders run (48h after stay end).</span>
                           )}
-                          <span className="text-xs text-slate-400">$10/month subscription</span>
+                          <span className="text-xs text-white/60">$10/month subscription</span>
                         </div>
                       </div>
 
                       {/* Property managers: visible in both personal and business; remove only in business */}
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Property managers</p>
+                      <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                        <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-2">Property managers</p>
                         {(propertyManagersMap[prop.id]?.length ?? 0) === 0 ? (
-                          <p className="text-sm text-slate-500">No managers assigned. Invite from property details.</p>
+                          <p className="text-sm text-white/60">No managers assigned. Invite from property details.</p>
                         ) : (
                           <ul className="space-y-2">
                             {(propertyManagersMap[prop.id] || []).map((m) => (
-                              <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
+                              <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-white/10 last:border-0">
                                 <div>
-                                  <p className="text-sm font-medium text-slate-800">{m.full_name || m.email}</p>
-                                  <p className="text-xs text-slate-500">{m.email}</p>
+                                  <p className="text-sm font-medium text-white/95">{m.full_name || m.email}</p>
+                                  <p className="text-xs text-white/60">{m.email}</p>
                                   {m.has_resident_mode && m.resident_unit_label && (
                                     <>
-                                      <p className="text-xs text-emerald-600 mt-0.5">On-site resident · Unit {m.resident_unit_label}</p>
+                                      <p className="text-xs text-emerald-400 mt-0.5">On-site resident · Unit {m.resident_unit_label}</p>
                                       {m.presence_status && (
-                                        <p className="text-xs text-slate-600 mt-0.5">
+                                        <p className="text-xs text-white/60 mt-0.5">
                                           {m.presence_status === 'present' ? (
-                                            <span className="text-emerald-600">Present</span>
+                                            <span className="text-emerald-400">Present</span>
                                           ) : m.presence_away_started_at ? (
-                                            <span className="text-slate-600">Away since {new Date(m.presence_away_started_at).toLocaleDateString()}</span>
+                                            <span className="text-white/70">Away since {new Date(m.presence_away_started_at).toLocaleDateString()}</span>
                                           ) : (
-                                            <span className="text-slate-600">Away</span>
+                                            <span className="text-white/70">Away</span>
                                           )}
                                         </p>
                                       )}
@@ -1342,9 +1342,9 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4">Message</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200">
+                    <tbody className="divide-y divide-white/10">
                       {logs.map((entry) => (
-                        <tr key={entry.id} className="hover:bg-slate-50">
+                        <tr key={entry.id} className="hover:bg-white/5">
                           <td className="px-6 py-3 text-slate-600 text-sm whitespace-nowrap">
                             {entry.created_at ? new Date(entry.created_at).toISOString().replace('T', ' ').slice(0, 19) + 'Z' : '—'}
                           </td>
@@ -1418,27 +1418,27 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 )}
 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-                  <Card className="p-6 border-l-4 border-blue-500 hover:scale-[1.02] transition-transform cursor-pointer" onClick={() => setActiveTab('properties')}>
-                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Properties</p>
-                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.length}</p>
+                  <Card className="p-6 border-l-4 border-blue-400 hover:scale-[1.02] transition-transform cursor-pointer" onClick={() => setActiveTab('properties')}>
+                    <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Properties</p>
+                    <p className="text-4xl font-extrabold text-white mt-1">{properties.length}</p>
                   </Card>
-                  <Card className="p-6 border-l-4 border-green-500 hover:scale-[1.02] transition-transform cursor-pointer">
-                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Guests</p>
-                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{activeCount}</p>
+                  <Card className="p-6 border-l-4 border-emerald-400 hover:scale-[1.02] transition-transform cursor-pointer">
+                    <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Guests</p>
+                    <p className="text-4xl font-extrabold text-white mt-1">{activeCount}</p>
                   </Card>
-                  <Card className="p-6 border-l-4 border-red-500 hover:scale-[1.02] transition-transform cursor-pointer">
-                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Overstays</p>
-                    <p className="text-4xl font-extrabold text-red-600 mt-1">{overstays.length}</p>
+                  <Card className="p-6 border-l-4 border-red-400 hover:scale-[1.02] transition-transform cursor-pointer">
+                    <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Overstays</p>
+                    <p className="text-4xl font-extrabold text-red-300 mt-1">{overstays.length}</p>
                   </Card>
                 </div>
 
                 <Card className="mb-10 overflow-hidden">
-                  <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-white/60 backdrop-blur-md">
-                    <h3 className="text-xl font-bold text-slate-800">Guests</h3>
+                  <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
+                    <h3 className="text-xl font-bold text-white">Guests</h3>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                      <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
                         <tr>
                           <th className="px-6 py-4">Guest Name</th>
                           <th className="px-6 py-4">Property</th>
@@ -1447,10 +1447,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                           <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-800">
+                      <tbody className="divide-y divide-white/10">
                         {activeStays.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-6 py-12 text-center text-slate-500">No active stays. Invite a guest to get started.</td>
+                            <td colSpan={5} className="px-6 py-12 text-center text-white/60">No active stays. Invite a guest to get started.</td>
                           </tr>
                         ) : (
                           activeStays.map((stay) => {
@@ -1458,27 +1458,27 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         const dLeft = daysLeft(stay.stay_end_date);
                         const revoked = !!stay.revoked_at;
                         return (
-                          <tr key={stay.stay_id} className="hover:bg-slate-50 transition-colors group">
+                          <tr key={stay.stay_id} className="hover:bg-white/5 transition-colors group">
                             <td className="px-6 py-5">
                               <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs">{stay.guest_name.charAt(0)}</div>
-                                <span className="text-sm font-bold text-slate-800">{stay.guest_name}</span>
+                                <div className="w-8 h-8 rounded-full bg-white/20 text-white/90 flex items-center justify-center font-bold text-xs">{stay.guest_name.charAt(0)}</div>
+                                <span className="text-sm font-bold text-white/95">{stay.guest_name}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-5 text-sm text-slate-600">{stay.property_name}</td>
+                            <td className="px-6 py-5 text-sm text-white/70">{stay.property_name}</td>
                             <td className="px-6 py-5">
-                              <span className={`text-sm font-bold ${revoked ? 'text-amber-600' : overstay ? 'text-red-600' : 'text-green-600'}`}>{revoked ? '—' : overstay ? 'EXPIRED' : `${dLeft}d`}</span>
+                              <span className={`text-sm font-bold ${revoked ? 'text-amber-400' : overstay ? 'text-red-400' : 'text-emerald-400'}`}>{revoked ? '—' : overstay ? 'EXPIRED' : `${dLeft}d`}</span>
                             </td>
                             <td className="px-6 py-5">
                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                                revoked ? 'bg-amber-50 text-amber-700 border border-amber-500/20' : overstay ? 'bg-red-50 text-red-600 border border-red-500/20' : 'bg-green-50 text-green-700 border border-green-200'
+                                revoked ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' : overstay ? 'bg-red-500/20 text-red-300 border border-red-400/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
                               }`}>
                                 {revoked ? 'Revoked' : overstay ? 'Overstayed' : 'Active'}
                               </span>
                             </td>
                             <td className="px-6 py-5 text-right space-x-3">
                               {revoked ? (
-                                <span className="text-xs text-slate-500">Revoked</span>
+                                <span className="text-xs text-white/60">Revoked</span>
                               ) : overstay ? (
                                 <Button variant="danger" onClick={() => handleInitiateRemoval(stay)} className="text-xs py-2">Remove</Button>
                               ) : (
