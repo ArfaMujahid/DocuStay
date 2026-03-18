@@ -6,6 +6,9 @@ Key distinction:
 Compliance is checked against the platform_renewal_cycle_days (the operational limit the platform
 enforces). The legal_threshold_days is informational — shown in UI, agreements, and authority packages.
 """
+from __future__ import annotations
+
+from datetime import date
 from sqlalchemy.orm import Session
 from app.models.region_rule import RegionRule, StayClassification, RiskLevel
 from app.schemas.jle import JLEInput, JLEResult
@@ -76,3 +79,44 @@ def resolve_jurisdiction(db: Session, inp: JLEInput) -> JLEResult | None:
         risk_level=risk,
         message=message,
     )
+
+
+def get_max_stay_days_for_property(db: Session, region_code: str | None, owner_occupied: bool) -> int | None:
+    """Return maximum allowed stay duration (days) for this property's jurisdiction, or None if no rule."""
+    if not region_code or not str(region_code).strip():
+        return None
+    inp = JLEInput(
+        region_code=region_code.strip().upper(),
+        stay_duration_days=0,
+        owner_occupied=bool(owner_occupied),
+    )
+    result = resolve_jurisdiction(db, inp)
+    return result.maximum_allowed_duration_days if result else None
+
+
+def validate_stay_duration_for_property(
+    db: Session,
+    region_code: str,
+    owner_occupied: bool,
+    start_date: date,
+    end_date: date,
+) -> str | None:
+    """Validate that stay duration is within legal limit for the property's jurisdiction.
+    Returns an error message if the stay exceeds the limit, or None if valid."""
+    duration_days = (end_date - start_date).days
+    if duration_days <= 0:
+        return "End date must be after start date."
+    rc = (region_code or "").strip().upper() or None
+    if not rc:
+        return None  # no region rule, no restriction
+    inp = JLEInput(
+        region_code=rc,
+        stay_duration_days=duration_days,
+        owner_occupied=bool(owner_occupied),
+    )
+    result = resolve_jurisdiction(db, inp)
+    if result is None:
+        return None  # no rule for region, allow
+    if result.compliance_status == "exceeds_limit":
+        return result.message or f"Stay of {duration_days} days exceeds maximum allowed {result.maximum_allowed_duration_days} days for this jurisdiction."
+    return None

@@ -402,6 +402,7 @@ const TenantDashboard: React.FC<{
       await dashboardApi.guestAddPendingInvite(code);
       setInviteLinkInput('');
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
       openConfirmInviteModal(code);
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Invalid or expired invitation. Please check the link.');
@@ -426,6 +427,7 @@ const TenantDashboard: React.FC<{
       notify('success', 'Invitation accepted.');
       setConfirmInviteModal(null);
       await loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
       setActiveTab('stays');
       setStayFilter('all');
     } catch (e) {
@@ -435,6 +437,7 @@ const TenantDashboard: React.FC<{
         notify('success', 'Invitation already accepted.');
         setConfirmInviteModal(null);
         await loadData();
+        window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
         setActiveTab('stays');
         setStayFilter('all');
       } else {
@@ -453,6 +456,7 @@ const TenantDashboard: React.FC<{
       setShowCancelStayConfirm(false);
       setSelectedUnitForCancel(null);
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not cancel assignment.');
     } finally {
@@ -469,6 +473,7 @@ const TenantDashboard: React.FC<{
       setSelectedUnit(null);
       setSelectedStay(null);
       await loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not end residency.');
     } finally {
@@ -482,6 +487,7 @@ const TenantDashboard: React.FC<{
       await dashboardApi.guestCheckIn(s.stay_id);
       notify('success', 'You are checked in. Your stay is now active.');
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not check in.');
     } finally {
@@ -498,6 +504,7 @@ const TenantDashboard: React.FC<{
       setEndStayConfirm(null);
       setSelectedStay(null);
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not end stay.');
     } finally {
@@ -514,6 +521,7 @@ const TenantDashboard: React.FC<{
       setCancelStayConfirm(null);
       setSelectedStay(null);
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not cancel stay.');
     } finally {
@@ -1685,7 +1693,7 @@ const TenantDashboard: React.FC<{
                               >
                                 Copy link
                               </Button>
-                              <Button variant="outline" className="rounded-lg text-xs h-8 px-3" onClick={async () => { try { await dashboardApi.cancelInvitation(inv.id); notify('success', 'Invitation cancelled.'); loadData(); } catch (e) { notify('error', (e as Error)?.message ?? 'Failed to cancel.'); } }}>Cancel</Button>
+                              <Button variant="outline" className="rounded-lg text-xs h-8 px-3" onClick={async () => { try { await dashboardApi.cancelInvitation(inv.id); notify('success', 'Invitation cancelled.'); loadData(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); } catch (e) { notify('error', (e as Error)?.message ?? 'Failed to cancel.'); } }}>Cancel</Button>
                             </div>
                           </li>
                         ))}
@@ -1839,6 +1847,7 @@ const TenantDashboard: React.FC<{
                                     await dashboardApi.cancelInvitation(inv.id);
                                     notify('success', 'Invitation cancelled.');
                                     loadData();
+                                    window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                                   } catch (e) {
                                     notify('error', (e as Error)?.message ?? 'Failed to cancel.');
                                   }
@@ -2202,7 +2211,7 @@ const TenantDashboard: React.FC<{
         setLoading={setLoading}
         notify={notify}
         navigate={navigate}
-        onSuccess={() => loadData()}
+        onSuccess={() => { loadData(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); }}
         unitId={selectedUnitData?.unit?.id ?? null}
         propertyOrStayLabel={selected ? `${selected.property_name}${selected.unit_label ? ` — Unit ${selected.unit_label}` : ''}` : null}
         tenantStayStartDate={selectedUnitData?.stay_start_date ?? null}
@@ -2216,7 +2225,7 @@ const TenantDashboard: React.FC<{
       {generatedInviteLink && (
         <Modal
           open={!!generatedInviteLink}
-          onClose={() => { setGeneratedInviteLink(null); loadData(); }}
+          onClose={() => { setGeneratedInviteLink(null); loadData(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); }}
           title="Invitation link generated"
           className="max-w-lg"
         >
@@ -2227,7 +2236,7 @@ const TenantDashboard: React.FC<{
             </div>
             <div className="flex gap-3">
               <Button variant="outline" onClick={async () => { const ok = await copyToClipboard(generatedInviteLink); notify(ok ? 'success' : 'error', ok ? 'Link copied to clipboard.' : 'Copy failed.'); }} className="flex-1">Copy link</Button>
-              <Button onClick={() => { setGeneratedInviteLink(null); loadData(); }} className="flex-1">Done</Button>
+              <Button onClick={() => { setGeneratedInviteLink(null); loadData(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); }} className="flex-1">Done</Button>
             </div>
           </div>
         </Modal>

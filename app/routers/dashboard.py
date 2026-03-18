@@ -56,7 +56,7 @@ from app.services.event_ledger import (
     ACTION_SHIELD_MODE_OFF,
 )
 from app.services.invitation_cleanup import get_invitation_expire_cutoff
-from app.services.billing import sync_subscription_quantities
+from app.services.billing import _count_properties_and_shield, sync_subscription_quantities
 from app.services.notifications import send_vacate_12h_notice, send_owner_guest_checkout_email, send_guest_checkout_confirmation_email, send_owner_guest_cancelled_stay_email, send_removal_notice_to_guest, send_removal_confirmation_to_owner, send_dead_mans_switch_enabled_notification, send_shield_mode_turned_on_notification, send_shield_mode_turned_off_notification, send_dms_turned_off_notification
 from app.services.dashboard_alerts import create_alert_for_owner_and_managers, create_alert_for_user
 from app.schemas.jle import JLEInput
@@ -851,18 +851,18 @@ def bulk_shield_mode(
         if new_val == old_val:
             continue
         prop.shield_mode_enabled = new_val
-        property_name = (prop.name or "").strip() or (f"{prop.city}, {prop.state}".strip(", ") if (prop.city or prop.state) else f"Property {property_id}")
+        property_address = _format_property_address_for_log(prop)
         create_log(
             db,
             CATEGORY_SHIELD_MODE,
             "Shield Mode turned off" if new_val == 0 else "Shield Mode turned on",
-            f"{turned_by.title()} turned {'off' if new_val == 0 else 'on'} Shield Mode for {property_name} (bulk).",
+            f"{turned_by.title()} turned {'off' if new_val == 0 else 'on'} Shield Mode for {property_address} (bulk).",
             property_id=prop.id,
             actor_user_id=current_user.id,
             actor_email=current_user.email,
             ip_address=ip,
             user_agent=ua,
-            meta={"property_id": property_id, "property_name": property_name},
+            meta={"property_id": property_id, "property_name": property_address},
         )
         shield_label = "turned off" if new_val == 0 else "turned on"
         create_ledger_event(
@@ -874,8 +874,8 @@ def bulk_shield_mode(
             actor_user_id=current_user.id,
             meta={
                 "property_id": property_id,
-                "property_name": property_name,
-                "message": f"Shield Mode {shield_label} for {property_name}.",
+                "property_name": property_address,
+                "message": f"Shield Mode {shield_label} for {property_address}.",
             },
             ip_address=ip,
             user_agent=ua,
@@ -895,9 +895,9 @@ def bulk_shield_mode(
         ]
         try:
             if new_val == 1:
-                send_shield_mode_turned_on_notification(owner_email, manager_emails, property_name, turned_on_by=turned_by)
+                send_shield_mode_turned_on_notification(owner_email, manager_emails, property_address, turned_on_by=turned_by)
             else:
-                send_shield_mode_turned_off_notification(owner_email, manager_emails, property_name, turned_off_by=turned_by)
+                send_shield_mode_turned_off_notification(owner_email, manager_emails, property_address, turned_off_by=turned_by)
         except Exception as e:
             print(f"[Dashboard] Shield mode notification failed for property {property_id}: {e}", flush=True)
         updated_count += 1
@@ -1839,10 +1839,13 @@ def guest_logs(
         q = q.filter((EventLedger.action_type.ilike(term)) | (cast(EventLedger.meta, String).ilike(term)))
     rows = q.order_by(desc(EventLedger.created_at)).limit(200).all()
     prop_ids = {r.property_id for r in rows if r.property_id}
-    props = {p.id: (p.name or f"{p.city}, {p.state}") for p in db.query(Property).filter(Property.id.in_(prop_ids)).all()} if prop_ids else {}
+    props = {}
+    if prop_ids:
+        for p in db.query(Property).filter(Property.id.in_(prop_ids)).all():
+            props[p.id] = _format_property_address_for_log(p)
     out = []
     for r in rows:
-        cat, title, msg = ledger_event_to_display(r)
+        cat, title, msg = ledger_event_to_display(r, db)
         actor_email = get_actor_email(db, r.actor_user_id)
         out.append(
             OwnerAuditLogEntry(
@@ -3476,8 +3479,7 @@ def owner_billing(
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
     if not profile:
         return BillingResponse(invoices=[], payments=[], can_invite=True, current_unit_count=0, current_shield_count=0)
-    from app.services.billing import _count_units_and_shield
-    _units, _shield = _count_units_and_shield(db, profile)
+    _units, _shield = _count_properties_and_shield(db, profile)
     if not profile.stripe_customer_id:
         can_invite = profile.onboarding_billing_completed_at is None or profile.onboarding_invoice_paid_at is not None
         return BillingResponse(invoices=[], payments=[], can_invite=can_invite, current_unit_count=_units, current_shield_count=_shield)
@@ -3555,8 +3557,8 @@ def owner_billing(
     # Sort invoices by created desc, payments by paid_at desc
     invoices.sort(key=lambda x: x.created, reverse=True)
     payments.sort(key=lambda x: x.paid_at, reverse=True)
-    # Recompute unit counts (may have changed) and can_invite (may have been set by self-heal above)
-    _units, _shield = _count_units_and_shield(db, profile)
+    # Recompute property counts (billing units) and can_invite (may have been set by self-heal above)
+    _units, _shield = _count_properties_and_shield(db, profile)
     can_invite = profile.onboarding_billing_completed_at is None or profile.onboarding_invoice_paid_at is not None
     return BillingResponse(invoices=invoices, payments=payments, can_invite=can_invite, current_unit_count=_units, current_shield_count=_shield)
 
@@ -3658,6 +3660,15 @@ def owner_portfolio_link(
     return PortfolioLinkResponse(portfolio_slug=slug, portfolio_url=f"portfolio/{slug}")
 
 
+def _format_property_address_for_log(p: Property) -> str:
+    """Full address for log/notification display (e.g. '1 Infinite Loop, Cupertino, CA 95014 USA')."""
+    parts = [p.street, p.city, (f"{p.state or ''} {p.zip_code or ''}".strip())]
+    addr = ", ".join(x for x in parts if x).strip()
+    if addr and not addr.endswith("USA"):
+        addr = f"{addr} USA"
+    return addr or p.name or f"{p.city}, {p.state}" or ""
+
+
 @router.get("/owner/logs", response_model=list[OwnerAuditLogEntry])
 def owner_logs(
     db: Session = Depends(get_db),
@@ -3721,7 +3732,10 @@ def owner_logs(
     rows = filter_tenant_lane_from_ledger_rows(db, rows)
 
     prop_ids = {r.property_id for r in rows if r.property_id}
-    props = {p.id: p.name or f"{p.city}, {p.state}" for p in db.query(Property).filter(Property.id.in_(prop_ids)).all()} if prop_ids else {}
+    props = {}
+    if prop_ids:
+        for p in db.query(Property).filter(Property.id.in_(prop_ids)).all():
+            props[p.id] = _format_property_address_for_log(p)
 
     def _property_name(r) -> str | None:
         if r.property_id:
@@ -3732,7 +3746,7 @@ def owner_logs(
 
     out = []
     for r in rows:
-        cat, title, msg = ledger_event_to_display(r)
+        cat, title, msg = ledger_event_to_display(r, db)
         actor_email = get_actor_email(db, r.actor_user_id)
         out.append(
             OwnerAuditLogEntry(
@@ -3793,11 +3807,14 @@ def manager_logs(
     rows = filter_tenant_lane_from_ledger_rows(db, rows)
 
     prop_ids = {r.property_id for r in rows if r.property_id}
-    props = {p.id: p.name or f"{p.city}, {p.state}" for p in db.query(Property).filter(Property.id.in_(prop_ids)).all()} if prop_ids else {}
+    props = {}
+    if prop_ids:
+        for p in db.query(Property).filter(Property.id.in_(prop_ids)).all():
+            props[p.id] = _format_property_address_for_log(p)
 
     out = []
     for r in rows:
-        cat, title, msg = ledger_event_to_display(r)
+        cat, title, msg = ledger_event_to_display(r, db)
         actor_email = get_actor_email(db, r.actor_user_id)
         out.append(
             OwnerAuditLogEntry(
@@ -3869,10 +3886,13 @@ def tenant_logs(
         q = q.filter((EventLedger.action_type.ilike(term)) | (cast(EventLedger.meta, String).ilike(term)))
     rows = q.order_by(desc(EventLedger.created_at)).limit(500).all()
     prop_ids = {r.property_id for r in rows if r.property_id}
-    props = {p.id: p.name or f"{p.city}, {p.state}" for p in db.query(Property).filter(Property.id.in_(prop_ids)).all()} if prop_ids else {}
+    props = {}
+    if prop_ids:
+        for p in db.query(Property).filter(Property.id.in_(prop_ids)).all():
+            props[p.id] = _format_property_address_for_log(p)
     out = []
     for r in rows:
-        cat, title, msg = ledger_event_to_display(r)
+        cat, title, msg = ledger_event_to_display(r, db)
         actor_email = get_actor_email(db, r.actor_user_id)
         out.append(
             OwnerAuditLogEntry(
@@ -3902,8 +3922,7 @@ def manager_billing(
     profile = db.query(OwnerProfile).filter(OwnerProfile.id == owner_profile_ids[0]).first()
     if not profile:
         return BillingResponse(invoices=[], payments=[], can_invite=False, current_unit_count=0, current_shield_count=0)
-    from app.services.billing import _count_units_and_shield
-    _units, _shield = _count_units_and_shield(db, profile)
+    _units, _shield = _count_properties_and_shield(db, profile)
     if not profile.stripe_customer_id:
         return BillingResponse(invoices=[], payments=[], can_invite=False, current_unit_count=_units, current_shield_count=_shield)
     from app.config import get_settings

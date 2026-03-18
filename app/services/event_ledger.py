@@ -253,20 +253,23 @@ def get_actor_display_name(db: Session, actor_user_id: int | None) -> str | None
 
 def ledger_event_to_display(entry: EventLedger, db: Session | None = None) -> tuple[str, str, str]:
     """Map ledger entry to (category, title, message) for OwnerAuditLogEntry / LiveLogEntry.
-    When db is provided, appends ' by <actor name>' to the message for user attribution."""
+    When db is provided and message is generic, appends ' by <actor name>' for attribution.
+    When meta has a custom 'message' (e.g. 'Property updated: X. Change made: Y'), we do not append
+    so the UI can show 'Title by actor@email' and the message separately."""
     cat, title = _ACTION_DISPLAY.get(
         entry.action_type or "",
         ("status_change", entry.action_type or "—"),
     )
     meta = entry.meta or {}
-    if isinstance(meta, dict) and meta.get("message"):
+    has_custom_message = isinstance(meta, dict) and meta.get("message")
+    if has_custom_message:
         msg = str(meta["message"])
     elif isinstance(meta, dict) and meta.get("property_name"):
         msg = f"{title} for {meta['property_name']}"
     else:
         msg = title
-    # User attribution
-    if db and entry.actor_user_id:
+    # User attribution: only append to generic messages so notification UI can show "Title by email" + message
+    if not has_custom_message and db and entry.actor_user_id:
         actor_name = get_actor_display_name(db, entry.actor_user_id)
         if actor_name and f"by {actor_name}" not in msg:
             msg = f"{msg} by {actor_name}"

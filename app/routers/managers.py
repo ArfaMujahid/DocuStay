@@ -18,7 +18,8 @@ from app.services.occupancy import (
 )
 from app.models.guest import PurposeOfStay, RelationshipToOwner
 from app.dependencies import get_current_user, require_property_manager, require_property_manager_identity_verified, get_context_mode
-from app.services.permissions import can_view_audit_logs, get_manager_personal_mode_units
+from app.services.permissions import can_view_audit_logs, get_manager_personal_mode_units, get_manager_personal_mode_property_ids
+from app.services.jle import validate_stay_duration_for_property
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE
 from app.services.event_ledger import create_ledger_event, ACTION_TENANT_INVITED
 from app.models.audit_log import AuditLog
@@ -120,13 +121,18 @@ def get_property(
     property_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_property_manager_identity_verified),
+    context_mode: str = Depends(get_context_mode),
 ):
-    """Read-only property summary for assigned property."""
+    """Read-only property summary. Business: assigned properties only. Personal: only properties manager is assigned to live on."""
     if not db.query(PropertyManagerAssignment).filter(
         PropertyManagerAssignment.property_id == property_id,
         PropertyManagerAssignment.user_id == current_user.id,
     ).first():
         raise HTTPException(status_code=404, detail="Property not found or not assigned to you")
+    if context_mode == "personal":
+        personal_ids = get_manager_personal_mode_property_ids(db, current_user.id)
+        if property_id not in personal_ids:
+            raise HTTPException(status_code=404, detail="Property not found or you are not assigned to live on this property")
     prop = db.query(Property).filter(Property.id == property_id, Property.deleted_at.is_(None)).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
@@ -168,12 +174,16 @@ def list_property_units(
     current_user: User = Depends(require_property_manager_identity_verified),
     context_mode: str = Depends(get_context_mode),
 ):
-    """List units for an assigned property. Business mode: no guest names (occupied_by, invite_id) for privacy."""
+    """List units for an assigned property. Business: assigned only. Personal: only if manager is assigned to live on this property."""
     if not db.query(PropertyManagerAssignment).filter(
         PropertyManagerAssignment.property_id == property_id,
         PropertyManagerAssignment.user_id == current_user.id,
     ).first():
         raise HTTPException(status_code=404, detail="Property not found or not assigned to you")
+    if context_mode == "personal":
+        personal_ids = get_manager_personal_mode_property_ids(db, current_user.id)
+        if property_id not in personal_ids:
+            raise HTTPException(status_code=404, detail="Property not found or you are not assigned to live on this property")
     prop = db.query(Property).filter(Property.id == property_id).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
@@ -240,6 +250,11 @@ def invite_tenant(
         raise HTTPException(status_code=400, detail="lease_end_date must be after lease_start_date")
     if start < date.today():
         raise HTTPException(status_code=400, detail="Lease start date cannot be in the past")
+    region_code = getattr(prop, "region_code", None) or ""
+    owner_occupied = bool(getattr(prop, "owner_occupied", False))
+    jurisdiction_error = validate_stay_duration_for_property(db, region_code, owner_occupied, start, end)
+    if jurisdiction_error:
+        raise HTTPException(status_code=400, detail=jurisdiction_error)
     code = "INV-" + secrets.token_hex(4).upper()
     inv = Invitation(
         invitation_code=code,

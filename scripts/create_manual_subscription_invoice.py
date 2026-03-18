@@ -24,7 +24,7 @@ def main():
     from app.database import SessionLocal
     from app.models.user import User, UserRole
     from app.models.owner import OwnerProfile
-    from app.services.billing import _count_units_and_shield, _stripe_enabled
+    from app.services.billing import _count_properties_and_shield, _stripe_enabled
     from app.config import get_settings
 
     if not _stripe_enabled():
@@ -49,7 +49,7 @@ def main():
             print(f"Owner {email} has no Stripe customer ID. They need to have gone through billing once (e.g. onboarding).")
             sys.exit(1)
 
-        units, shield_units = _count_units_and_shield(db, profile)
+        units, shield_units = _count_properties_and_shield(db, profile)
         if units < 1:
             print(f"Owner {email} has no non-deleted properties (units=0). Cannot create subscription-style invoice.")
             sys.exit(1)

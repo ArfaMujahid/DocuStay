@@ -71,7 +71,8 @@ from app.services.authority_letter_email import send_authority_letter_to_provide
 from app.services.notifications import send_manager_invite_email, send_shield_mode_turned_on_notification, send_shield_mode_turned_off_notification, send_dead_mans_switch_enabled_notification
 from app.services.dropbox_sign import get_signed_pdf
 from app.services.billing import on_onboarding_properties_completed, ensure_subscription, sync_subscription_quantities
-from app.services.permissions import can_perform_action, can_assign_property_manager, Action
+from app.services.permissions import can_perform_action, can_assign_property_manager, Action, can_access_property
+from app.services.jle import validate_stay_duration_for_property, get_max_stay_days_for_property
 from app.services.occupancy import (
     get_unit_display_occupancy_status,
     get_property_display_occupancy_status,
@@ -372,6 +373,7 @@ def add_property(
     db.commit()
     db.refresh(prop)
     # Billing: first property upload triggers one-time onboarding invoice only. Subscription is created when they pay (webhook).
+    # Billing units = properties (1 property = 1 billing unit; property with 10 physical units still counts as 1).
     if profile.onboarding_billing_completed_at is None:
         total_units = db.query(Property).filter(Property.owner_profile_id == profile.id, Property.deleted_at.is_(None)).count()
         if total_units >= 1:
@@ -555,7 +557,8 @@ def bulk_upload_properties(
         tenant_name = _get_cell(row, "tenant_name", "tenant_name")
         lease_start_str = _get_cell(row, "lease_start", "lease_start")
         lease_end_str = _get_cell(row, "lease_end", "lease_end")
-        shield_mode_raw = _get_cell(row, "shield_mode", "shield_mode")
+        # Shield Mode: optional YES/NO; stored on property and shown on dashboard (Properties tab, Shield filter, per-property toggle).
+        shield_mode_raw = _get_cell(row, "shield_mode", "shieldmode")
         primary_residence_raw = _get_cell(row, "is_primary_residence", "owner_occupied", "primary_residence")
         tax_id_raw = _get_cell(row, "tax_id", "tax_id")
         apn_raw = _get_cell(row, "apn", "parcel", "apn")
@@ -646,6 +649,13 @@ def bulk_upload_properties(
                 failed_from_row = row_num
                 failure_reason = "Lease End must be after Lease Start."
                 break
+            # Jurisdiction: validate lease duration for this region (same rule as individual tenant invite)
+            owner_occ_for_validation = primary_residence or (primary_unit_val is not None and primary_unit_val >= 1)
+            jurisdiction_error_early = validate_stay_duration_for_property(db, region_code, owner_occ_for_validation, lease_start, lease_end)
+            if jurisdiction_error_early:
+                failed_from_row = row_num
+                failure_reason = jurisdiction_error_early
+                break
             # Allow past lease start (e.g. existing tenancies / backfilled data)
 
         state_norm = _normalize_addr(state)
@@ -731,6 +741,7 @@ def bulk_upload_properties(
                 user_agent=(request.headers.get("user-agent") or "").strip() or None,
             )
             if occupied and (tenant_name or "").strip():
+                # Jurisdiction already validated early for this row; create invite
                 inv_code = "INV-" + secrets.token_hex(4).upper()
                 inv_unit_id: int | None = None
                 if prop.is_multi_unit and occupied_unit_raw:
@@ -858,6 +869,14 @@ def bulk_upload_properties(
                     .first()
                 )
                 if not existing_inv:
+                    # Validate with existing property's region/owner_occupied (update path)
+                    region_code_upd = getattr(existing_match, "region_code", None) or ""
+                    owner_occupied_upd = bool(getattr(existing_match, "owner_occupied", False))
+                    jurisdiction_error_upd = validate_stay_duration_for_property(db, region_code_upd, owner_occupied_upd, lease_start, lease_end)
+                    if jurisdiction_error_upd:
+                        failed_from_row = row_num
+                        failure_reason = jurisdiction_error_upd
+                        break
                     inv_code = "INV-" + secrets.token_hex(4).upper()
                     inv = Invitation(
                         invitation_code=inv_code,
@@ -908,7 +927,7 @@ def bulk_upload_properties(
             db.commit()
 
     # Billing: after bulk upload, same as single-property add — create onboarding invoice when first properties were just added, then sync subscription.
-    # Re-query profile so we have latest DB state after all commits in the loop.
+    # Billing units = properties (1 property = 1 billing unit).
     if created >= 1 or updated >= 1:
         profile_fresh = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
         if profile_fresh:
@@ -1973,18 +1992,25 @@ def update_property(
         db.flush()
         ip = request.client.host if request.client else None
         ua = (request.headers.get("user-agent") or "").strip() or None
-        property_name = (prop.name or "").strip() or f"{prop.city}, {prop.state}".strip(", ") or f"Property {property_id}"
+        # Full address for notifications (e.g. "1 Infinite Loop, Cupertino, CA 95014 USA")
+        address_parts = [prop.street, prop.city, (f"{prop.state} {prop.zip_code or ''}".strip())]
+        property_address = ", ".join(p for p in address_parts if p).strip()
+        if property_address and not property_address.endswith("USA"):
+            property_address = f"{property_address} USA"
+        property_name = (prop.name or "").strip() or property_address or f"Property {property_id}"
+        if not property_address:
+            property_address = property_name
         create_log(
             db,
             CATEGORY_STATUS_CHANGE,
             "Property updated",
-            f"Owner updated property: {property_name} (id={property_id}). Changes: " + "; ".join(changes),
+            f"Owner updated property: {property_address} (id={property_id}). Changes: " + "; ".join(changes),
             property_id=prop.id,
             actor_user_id=current_user.id,
             actor_email=current_user.email,
             ip_address=ip,
             user_agent=ua,
-            meta={"property_id": property_id, "property_name": property_name, "changes": changes_meta},
+            meta={"property_id": property_id, "property_name": property_address, "changes": changes_meta},
         )
         changes_summary = "; ".join(changes) if changes else "details updated"
         create_ledger_event(
@@ -1998,43 +2024,16 @@ def update_property(
             new_value=new,
             meta={
                 "property_id": property_id,
-                "property_name": property_name,
+                "property_name": property_address,
                 "changes": changes_meta,
-                "message": f"Property updated: {property_name}. {changes_summary}",
+                "message": f"Property updated: {property_address}. Change made: {changes_summary}",
             },
             ip_address=ip,
             user_agent=ua,
         )
         if "shield_mode_enabled" in changes_meta:
             new_shield = changes_meta["shield_mode_enabled"].get("new")
-            create_log(
-                db,
-                CATEGORY_SHIELD_MODE,
-                "Shield Mode turned off" if new_shield == 0 else "Shield Mode turned on",
-                f"Owner turned {'off' if new_shield == 0 else 'on'} Shield Mode for {property_name}.",
-                property_id=prop.id,
-                actor_user_id=current_user.id,
-                actor_email=current_user.email,
-                ip_address=ip,
-                user_agent=ua,
-                meta={"property_id": property_id, "property_name": property_name},
-            )
-            shield_label = "turned off" if new_shield == 0 else "turned on"
-            create_ledger_event(
-                db,
-                ACTION_SHIELD_MODE_OFF if new_shield == 0 else ACTION_SHIELD_MODE_ON,
-                target_object_type="Property",
-                target_object_id=prop.id,
-                property_id=prop.id,
-                actor_user_id=current_user.id,
-                meta={
-                    "property_id": property_id,
-                    "property_name": property_name,
-                    "message": f"Shield Mode {shield_label} for {property_name}.",
-                },
-                ip_address=ip,
-                user_agent=ua,
-            )
+            # No duplicate log/ledger: the single "Property updated" event above already includes shield change
             owner_user = None
             if getattr(prop, "owner_profile_id", None):
                 prof = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
@@ -2049,9 +2048,9 @@ def update_property(
             turned_by = "property manager" if current_user.role == UserRole.property_manager else "property owner"
             try:
                 if new_shield == 1:
-                    send_shield_mode_turned_on_notification(owner_email, manager_emails, property_name, turned_on_by=turned_by)
+                    send_shield_mode_turned_on_notification(owner_email, manager_emails, property_address, turned_on_by=turned_by)
                 else:
-                    send_shield_mode_turned_off_notification(owner_email, manager_emails, property_name, turned_off_by=turned_by)
+                    send_shield_mode_turned_off_notification(owner_email, manager_emails, property_address, turned_off_by=turned_by)
             except Exception as e:
                 print(f"[Owners] Shield mode notification failed: {e}", flush=True)
     db.commit()
@@ -2190,6 +2189,41 @@ def reactivate_property(
     return PropertyResponse.model_validate(prop)
 
 
+@router.get("/invitations/jurisdiction-limits")
+def get_invitation_jurisdiction_limits(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    context_mode: str = Depends(get_context_mode),
+    property_id: int | None = None,
+    unit_id: int | None = None,
+):
+    """Return max allowed stay days for the property (for calendar/date picker). Requires access to the property or unit."""
+    if property_id is None and unit_id is None:
+        raise HTTPException(status_code=400, detail="property_id or unit_id required")
+    prop = None
+    if unit_id is not None:
+        unit = db.query(Unit).filter(Unit.id == unit_id).first()
+        if not unit:
+            raise HTTPException(status_code=404, detail="Unit not found")
+        prop = db.query(Property).filter(Property.id == unit.property_id, Property.deleted_at.is_(None)).first()
+        if not prop:
+            raise HTTPException(status_code=404, detail="Property not found")
+        if not can_perform_action(db, current_user, Action.INVITE_GUEST, unit_id=unit_id, mode=context_mode):
+            raise HTTPException(status_code=403, detail="You do not have access to invite guests for this unit")
+    else:
+        prop = db.query(Property).filter(Property.id == property_id, Property.deleted_at.is_(None)).first()
+        if not prop:
+            raise HTTPException(status_code=404, detail="Property not found")
+        if current_user.role == UserRole.tenant:
+            raise HTTPException(status_code=400, detail="Tenants must provide unit_id for jurisdiction limits")
+        if not can_access_property(db, current_user, prop.id, context_mode):
+            raise HTTPException(status_code=403, detail="You do not have access to this property")
+    region_code = getattr(prop, "region_code", None) or ""
+    owner_occupied = bool(getattr(prop, "owner_occupied", False))
+    max_days = get_max_stay_days_for_property(db, region_code, owner_occupied)
+    return {"max_stay_days": max_days}
+
+
 @router.post("/invitations")
 def create_invitation(
     request: Request,
@@ -2310,6 +2344,13 @@ def create_invitation(
 
     if prop.deleted_at is not None:
         raise HTTPException(status_code=400, detail="Cannot create invitation for an inactive property. Reactivate the property first.")
+
+    # Jurisdiction: stay duration must not exceed legal limit for this property's state/region
+    region_code = getattr(prop, "region_code", None) or ""
+    owner_occupied = bool(getattr(prop, "owner_occupied", False))
+    jurisdiction_error = validate_stay_duration_for_property(db, region_code, owner_occupied, start, end)
+    if jurisdiction_error:
+        raise HTTPException(status_code=400, detail=jurisdiction_error)
 
     code = "INV-" + secrets.token_hex(4).upper()
     purpose = _PURPOSE_MAP.get((data.purpose or "visit").lower(), PurposeOfStay.travel)
@@ -2460,6 +2501,11 @@ def owner_invite_tenant_by_property(
             status_code=409,
             detail=f"A tenant lease already exists for this property that overlaps with the selected dates ({overlapping.stay_start_date.isoformat()} – {overlapping.stay_end_date.isoformat()}, {existing_name}). Please choose dates that do not overlap with an existing tenant lease.",
         )
+    region_code = getattr(prop, "region_code", None) or ""
+    owner_occupied = bool(getattr(prop, "owner_occupied", False))
+    jurisdiction_error = validate_stay_duration_for_property(db, region_code, owner_occupied, start, end)
+    if jurisdiction_error:
+        raise HTTPException(status_code=400, detail=jurisdiction_error)
     code = "INV-" + secrets.token_hex(4).upper()
     inv = Invitation(
         invitation_code=code,
@@ -2576,6 +2622,11 @@ def owner_invite_tenant(
             status_code=409,
             detail=f"A tenant lease already exists for this unit that overlaps with the selected dates ({overlapping.stay_start_date.isoformat()} – {overlapping.stay_end_date.isoformat()}, {existing_name}). Please choose dates that do not overlap with an existing tenant lease.",
         )
+    region_code = getattr(prop, "region_code", None) or ""
+    owner_occupied = bool(getattr(prop, "owner_occupied", False))
+    jurisdiction_error = validate_stay_duration_for_property(db, region_code, owner_occupied, start, end)
+    if jurisdiction_error:
+        raise HTTPException(status_code=400, detail=jurisdiction_error)
     code = "INV-" + secrets.token_hex(4).upper()
     inv = Invitation(
         invitation_code=code,

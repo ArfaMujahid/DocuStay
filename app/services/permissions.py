@@ -125,15 +125,20 @@ def can_access_property(db: Session, user: User, property_id: int, mode: str = "
             Property.owner_profile_id == profile.id,
             Property.deleted_at.is_(None),
         ).first()
-        return prop is not None
+        if prop is None:
+            return False
+        # Personal mode: only properties owner has marked as primary (owner_occupied)
+        if mode == "personal":
+            return bool(prop.owner_occupied)
+        return True
     if user.role == UserRole.property_manager:
+        # Business: only properties assigned to this manager. Personal: only properties they are assigned to live on (ResidentMode).
         if mode == "business":
             return db.query(PropertyManagerAssignment).filter(
                 PropertyManagerAssignment.property_id == property_id,
                 PropertyManagerAssignment.user_id == user.id,
             ).first() is not None
         if mode == "personal":
-            # Manager personal mode: must have ResidentMode for a unit in this property
             unit = db.query(Unit).filter(Unit.property_id == property_id).first()
             if not unit:
                 return False
@@ -165,16 +170,12 @@ def can_access_unit(db: Session, user: User, unit_id: int, mode: str = "business
             Property.id == unit.property_id,
             Property.owner_profile_id == profile.id,
         ).first()
-        if prop:
-            return True
-        # Owner in personal mode: must have ResidentMode for this unit
+        if prop is None:
+            return False
+        # Owner in personal mode: only units in properties marked as primary (owner_occupied)
         if mode == "personal":
-            return db.query(ResidentMode).filter(
-                ResidentMode.unit_id == unit_id,
-                ResidentMode.user_id == user.id,
-                ResidentMode.mode == ResidentModeType.owner_personal,
-            ).first() is not None
-        return False
+            return bool(prop.owner_occupied)
+        return True
     if user.role == UserRole.property_manager:
         if mode == "business":
             return db.query(PropertyManagerAssignment).filter(
@@ -241,31 +242,24 @@ def can_view_audit_logs(db: Session, user: User, property_id: int) -> bool:
 
 
 def get_owner_personal_mode_units(db: Session, user_id: int) -> list[int]:
-    """Return unit IDs where this owner can set presence (here/away) in Personal Mode.
-    Includes units from ALL properties the owner owns. Owners can mark stay/away for any property."""
+    """Return unit IDs where this owner has Personal Mode (can set presence here/away).
+    Only properties the owner has marked as primary (owner_occupied) are included."""
     unit_ids: list[int] = []
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == user_id).first()
     if not profile:
         return []
 
-    # From explicit ResidentMode (in case any exist)
-    resident_rows = db.query(ResidentMode.unit_id).filter(
-        ResidentMode.user_id == user_id,
-        ResidentMode.mode == ResidentModeType.owner_personal,
-    ).all()
-    for (u_id,) in resident_rows:
-        unit_ids.append(u_id)
-
-    # From ALL owned properties (owner can set presence for any property)
-    owned_props = (
+    # Only primary (owner_occupied) properties
+    primary_props = (
         db.query(Property)
         .filter(
             Property.owner_profile_id == profile.id,
             Property.deleted_at.is_(None),
+            Property.owner_occupied == True,
         )
         .all()
     )
-    for prop in owned_props:
+    for prop in primary_props:
         units = db.query(Unit.id).filter(Unit.property_id == prop.id).all()
         if units:
             for (u_id,) in units:
@@ -294,16 +288,18 @@ def get_manager_personal_mode_units(db: Session, user_id: int) -> list[int]:
 
 
 def get_owner_personal_mode_property_ids(db: Session, user_id: int) -> list[int]:
-    """Return property IDs where this owner has Personal Mode (ResidentMode.owner_personal on at least one unit).
+    """Return property IDs where this owner has Personal Mode (properties marked as primary / owner_occupied).
     Used to scope dashboard alerts in personal mode: only alerts for these properties are shown."""
+    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == user_id).first()
+    if not profile:
+        return []
     rows = (
-        db.query(Unit.property_id)
-        .join(ResidentMode, ResidentMode.unit_id == Unit.id)
+        db.query(Property.id)
         .filter(
-            ResidentMode.user_id == user_id,
-            ResidentMode.mode == ResidentModeType.owner_personal,
+            Property.owner_profile_id == profile.id,
+            Property.deleted_at.is_(None),
+            Property.owner_occupied == True,
         )
-        .distinct()
         .all()
     )
     return [r[0] for r in rows]

@@ -319,6 +319,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         propertiesApi.getUnits(property.id).then((u) => setPropertyUnits(u.filter((x) => x.id > 0))).catch(() => {});
       }
       notify('success', 'Property updated.');
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       const msg = (e as Error)?.message ?? 'Failed to update property.';
       setEditError(msg);
@@ -336,6 +337,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
       await propertiesApi.delete(property.id);
       setDeleteConfirmOpen(false);
       notify('success', 'Property removed from dashboard. It has been moved to Inactive properties.');
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
       navigate('dashboard/properties');
     } catch (e) {
       const msg = (e as Error)?.message ?? 'Failed to remove property.';
@@ -522,6 +524,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                     await propertiesApi.reactivate(property.id);
                     notify('success', 'Property reactivated. It appears in My Properties and in the invite list again.');
                     loadData();
+                    window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                   } catch (e) {
                     notify('error', (e as Error)?.message ?? 'Failed to reactivate.');
                   } finally {
@@ -746,6 +749,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                                     notify('success', 'Manager removed as on-site resident. They remain assigned; that unit is now vacant.');
                                     propertiesApi.listAssignedManagers(property.id).then(setAssignedManagers).catch(() => {});
                                     loadData();
+                                    window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                                   } catch (e) {
                                     notify('error', (e as Error)?.message ?? 'Failed.');
                                   } finally {
@@ -787,6 +791,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                                       setAddResidentModeForManager((prev) => { const p = { ...prev }; delete p[m.user_id]; return p; });
                                       propertiesApi.listAssignedManagers(property.id).then(setAssignedManagers).catch(() => {});
                                       loadData();
+                                      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                                     } catch (e) {
                                       notify('error', (e as Error)?.message ?? 'Failed.');
                                     } finally {
@@ -1014,6 +1019,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                               const updated = await propertiesApi.update(property.id, { shield_mode_enabled: !shieldOn });
                               setProperty(updated);
                               notify('success', shieldOn ? 'Shield Mode turned off.' : 'Shield Mode turned on.');
+                              window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                             } catch (e) {
                               notify('error', (e as Error)?.message ?? 'Failed to update Shield Mode.');
                             } finally {
@@ -1631,6 +1637,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                           setInviteTenantUnitId(null);
                           setInviteTenantForm({ tenant_name: '', tenant_email: '', lease_start_date: '', lease_end_date: '' });
                           loadData();
+                          window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                           // Keep modal open so user can see and copy the invite link; they close it via "Done"
                         } else {
                           notify('error', 'We couldn\'t create a valid invitation link. Please try again.');
@@ -1695,6 +1702,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                     notify('success', 'Invitation sent. The manager will receive an email with a signup link.');
                     setShowInviteManagerModal(false);
                     setInviteManagerEmail('');
+                    window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                   } catch (e) {
                     notify('error', (e as Error)?.message ?? 'Failed to send invitation.');
                   } finally {

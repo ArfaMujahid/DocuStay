@@ -21,6 +21,15 @@ export function toUserFriendlyInvitationError(apiMessage: string | undefined | n
     return orig;
   }
 
+  // Jurisdiction / legal limit: show backend message so user sees max days and reason
+  if (
+    orig.length > 0 &&
+    orig.length <= 500 &&
+    (raw.includes("exceeds") && (raw.includes("maximum allowed") || raw.includes("renewal cycle") || raw.includes("jurisdiction") || raw.includes("days")))
+  ) {
+    return orig;
+  }
+
   if (raw.includes("overlap")) {
     return orig.length > 0 && orig.length <= 500 ? orig : "A tenant lease already exists for this property that overlaps with the selected dates. Please choose different dates.";
   }

@@ -205,14 +205,17 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
           setStayFilter('all');
         }
         notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+        window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
       } catch {
         loadData();
         notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+        window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
       }
     }).catch((e) => {
       toAccept.forEach((inv) => acceptFailedRef.current.add(`${inv.invitation_code}:${inv.accept_now_signature_id}`));
       notify('error', (e as Error)?.message ?? 'Could not confirm your stay.');
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     });
   }, [pendingInvites, loadData, notify]);
 
@@ -246,9 +249,11 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                 setStayFilter('all');
               }
               notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+              window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
             } catch {
               loadData();
               notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+              window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
             }
           }).catch((e) => {
             notify('error', (e as Error)?.message ?? 'Could not confirm your stay.');
@@ -310,13 +315,16 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                 setStayFilter('all');
               }
               notify('success', 'Your stay is confirmed. It will appear in your current or upcoming stays.');
+              window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
             } catch {
               notify('error', 'Could not load your stay. Please refresh the page.');
               loadData();
+              window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
             }
           }).catch((e) => {
             notify('error', (e as Error)?.message ?? 'Could not confirm your stay.');
             loadData();
+            window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
           });
         }
       }).catch(() => {});
@@ -332,6 +340,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
     dashboardApi.guestAddPendingInvite(code)
       .then(() => {
         loadData();
+        window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
         openAgreementModal(code);
       })
       .catch((e) => {
@@ -393,6 +402,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       notify('success', 'Invitation accepted. Your stay is confirmed.');
       setAgreementModalCode(null);
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not accept invitation.');
     }
@@ -407,6 +417,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       setEndStayConfirm(null);
       setSelectedStay(null);
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not end stay.');
     } finally {
@@ -423,6 +434,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       setCancelStayConfirm(null);
       setSelectedStay(null);
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not cancel stay.');
     } finally {
@@ -436,6 +448,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       await dashboardApi.guestCheckIn(s.stay_id);
       notify('success', 'You are checked in. Your stay is now active.');
       loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Could not check in.');
     } finally {
@@ -465,6 +478,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       .then(() => {
         setInviteLinkInput('');
         loadData();
+        window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
         openAgreementModal(code);
         notify('success', 'Invitation added. Review and sign the agreement below.');
       })

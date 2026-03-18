@@ -10,7 +10,7 @@ import { ModeSwitcher } from '../../components/ModeSwitcher';
 import Settings from '../Settings/Settings';
 import HelpCenter from '../Support/HelpCenter';
 import { InvitationsTabContent } from '../../components/InvitationsTabContent';
-import { DashboardAlertsPanel } from '../../components/DashboardAlertsPanel';
+import { DashboardAlertsPanel, DASHBOARD_ALERTS_REFRESH_EVENT } from '../../components/DashboardAlertsPanel';
 
 interface PropertySummary {
   id: number;
@@ -334,6 +334,7 @@ const ManagerDashboard: React.FC<{
             await dashboardApi.cancelInvitation(id);
             notify('success', 'Invitation cancelled.');
             loadInvitationsAndStays();
+            window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
           }}
           introText="Pending invitations for properties you manage. Invitations expire if not accepted within the configured window."
         />
@@ -573,6 +574,7 @@ const ManagerDashboard: React.FC<{
                       notify('success', res.message || `Shield Mode turned on for ${res.updated_count} propert${res.updated_count === 1 ? 'y' : 'ies'}.`);
                       setSelectedPropertyIds(new Set());
                       loadData();
+                      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                     } catch (e) {
                       notify('error', (e as Error)?.message ?? 'Failed to update Shield Mode.');
                     } finally {
@@ -593,6 +595,7 @@ const ManagerDashboard: React.FC<{
                       notify('success', res.message || `Shield Mode turned off for ${res.updated_count} propert${res.updated_count === 1 ? 'y' : 'ies'}.`);
                       setSelectedPropertyIds(new Set());
                       loadData();
+                      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                     } catch (e) {
                       notify('error', (e as Error)?.message ?? 'Failed to update Shield Mode.');
                     } finally {
@@ -826,7 +829,7 @@ const ManagerDashboard: React.FC<{
           }).then((r) => ({ invitation_code: r.invitation_code }))
         }
         notify={notify}
-        onSuccess={loadInvitationsAndStays}
+        onSuccess={() => { loadInvitationsAndStays(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); }}
       />
 
       <InviteGuestModal
@@ -838,7 +841,7 @@ const ManagerDashboard: React.FC<{
         user={user}
         setLoading={setLoadingWrapper}
         notify={notify}
-        onSuccess={loadInvitationsAndStays}
+        onSuccess={() => { loadInvitationsAndStays(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); }}
         propertiesLoader={() => dashboardApi.managerProperties()}
         unitsLoader={(id) => dashboardApi.managerUnits(id)}
         unitId={inviteGuestUnitId}

@@ -2,6 +2,9 @@
 
 Uses Stripe. Requirement 1: one-time onboarding fee at first property upload.
 Requirement 2: monthly subscription = $1/unit baseline + $10/unit when Shield on.
+
+Billing units = properties: 1 property = 1 billing unit. A property with 10 physical
+units (Unit rows) still counts as 1 for billing. We count Property rows only, never Unit.
 """
 from __future__ import annotations
 
@@ -39,7 +42,7 @@ class OnboardingFeeResult(NamedTuple):
 
 
 def get_onboarding_fee(total_units: int) -> OnboardingFeeResult | None:
-    """Compute onboarding fee for a given unit count. Returns None if total_units < 1."""
+    """Compute onboarding fee. total_units = property count (1 property = 1 billing unit). Returns None if total_units < 1."""
     if total_units < 1:
         return None
     for min_u, max_u, amount, flat in _ONBOARDING_TIERS:
@@ -94,15 +97,16 @@ def get_or_create_stripe_customer(profile: OwnerProfile, user: User) -> str | No
     return customer.id
 
 
-def _count_units_and_shield(db: Session, profile: OwnerProfile) -> tuple[int, int]:
-    """Return (unit_count, shield_count) for non-deleted properties. 1 unit = 1 property."""
+def _count_properties_and_shield(db: Session, profile: OwnerProfile) -> tuple[int, int]:
+    """Return (billing_unit_count, shield_count). Billing is per property: count non-deleted
+    properties only. A property with many physical units (Unit rows) counts as 1."""
     q = db.query(Property).filter(
         Property.owner_profile_id == profile.id,
         Property.deleted_at.is_(None),
     )
-    total = q.count()
-    shield = q.filter(Property.shield_mode_enabled == 1).count()
-    return total, shield
+    property_count = q.count()
+    shield_count = q.filter(Property.shield_mode_enabled == 1).count()
+    return property_count, shield_count
 
 
 _BASELINE_PRODUCT_NAME = "DocuStay Baseline (per unit)"
@@ -170,7 +174,7 @@ def ensure_subscription(db: Session, profile: OwnerProfile, user: User | None = 
         except Exception:
             pass  # subscription may have been cancelled; create new
 
-    units, shield_units = _count_units_and_shield(db, profile)
+    units, shield_units = _count_properties_and_shield(db, profile)
     if units < 1:
         return
 
@@ -308,7 +312,7 @@ def sync_subscription_quantities(db: Session, profile: OwnerProfile) -> None:
     When unit count goes to 0, cancels the subscription so we do not send quantity=0 (Stripe prorates and stops billing)."""
     if not _stripe_enabled() or not profile.stripe_subscription_id:
         return
-    units, shield_units = _count_units_and_shield(db, profile)
+    units, shield_units = _count_properties_and_shield(db, profile)
 
     import stripe
     stripe.api_key = get_settings().stripe_secret_key

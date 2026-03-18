@@ -694,7 +694,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             notify={notify}
             showVerifyQR={true}
             onVerifyQR={(code) => { setVerifyQRInviteId(code); setShowVerifyQRModal(true); }}
-            onCancelInvitation={async (id) => { await dashboardApi.cancelInvitation(id); notify('success', 'Invitation cancelled.'); loadData(); }}
+            onCancelInvitation={async (id) => { await dashboardApi.cancelInvitation(id); notify('success', 'Invitation cancelled.'); loadData(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); }}
             introText={contextMode === 'business' ? 'Tenant invitations you have sent. Pending invitations expire after 12 hours if not accepted.' : "Invitations you've sent. Pending invitations are labeled as expired after 12 hours if not accepted."}
           />
         ) : activeTab === 'tenants' && contextMode !== 'personal' ? (
@@ -862,6 +862,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                             notify('success', res.message || `Shield Mode turned on for ${res.updated_count} propert${res.updated_count === 1 ? 'y' : 'ies'}.`);
                             setSelectedPropertyIds(new Set());
                             loadData();
+                            window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                           } catch (e) {
                             notify('error', (e as Error)?.message ?? 'Failed to update Shield Mode.');
                           } finally {
@@ -882,6 +883,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                             notify('success', res.message || `Shield Mode turned off for ${res.updated_count} propert${res.updated_count === 1 ? 'y' : 'ies'}.`);
                             setSelectedPropertyIds(new Set());
                             loadData();
+                            window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                           } catch (e) {
                             notify('error', (e as Error)?.message ?? 'Failed to update Shield Mode.');
                           } finally {
@@ -1080,6 +1082,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                   await propertiesApi.update(prop.id, { shield_mode_enabled: !shieldOn });
                                   notify('success', shieldOn ? 'Shield Mode turned off.' : 'Shield Mode turned on.');
                                   loadData();
+                                  window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                                 } catch (e) {
                                   notify('error', (e as Error)?.message ?? 'Failed to update Shield Mode.');
                                 } finally {
@@ -1145,6 +1148,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                             notify('success', 'Manager removed as on-site resident. They remain assigned; that unit is now vacant.');
                                             const next = await propertiesApi.listAssignedManagers(prop.id);
                                             setPropertyManagersMap((prev) => ({ ...prev, [prop.id]: next }));
+                                            window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                                           } catch (e) {
                                             notify('error', (e as Error)?.message ?? 'Failed.');
                                           } finally {
@@ -1167,6 +1171,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                             ...prev,
                                             [prop.id]: (prev[prop.id] || []).filter((x) => x.user_id !== m.user_id),
                                           }));
+                                          window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                                         } catch (e) {
                                           notify('error', (e as Error)?.message ?? 'Failed to remove manager.');
                                         } finally {
@@ -1239,6 +1244,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                   await propertiesApi.reactivate(prop.id);
                                   notify('success', 'Property reactivated. It appears in Active properties and in the invite list again.');
                                   loadData();
+                                  window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                                 } catch (e) {
                                   notify('error', (e as Error)?.message ?? 'Failed to reactivate.');
                                 }
@@ -1822,6 +1828,14 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                   const result = await propertiesApi.bulkUpload(file);
                   setBulkUploadResult(result);
                   loadData();
+                  window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
+                  const created = result.created ?? 0;
+                  const updated = result.updated ?? 0;
+                  if (created > 0 || updated > 0) {
+                    notify('success', result.failed_from_row == null
+                      ? `${created + updated} propert${created + updated === 1 ? 'y' : 'ies'} updated.`
+                      : `Uploaded ${created + updated} propert${created + updated === 1 ? 'y' : 'ies'}; some rows failed.`);
+                  }
                 } catch (err) {
                   notify('error', (err as Error)?.message ?? 'Bulk upload failed.');
                 } finally {
@@ -1916,6 +1930,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         setDeleteError(null);
                         notify('success', 'Property removed from dashboard. It has been moved to Inactive properties.');
                         loadData();
+                        window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                       } catch (e) {
                         const msg = (e as Error)?.message ?? 'Failed to remove property.';
                         setDeleteError(msg);
@@ -2199,7 +2214,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             : propertiesApi.inviteTenantForProperty(params.propertyId, { tenant_name: params.tenant_name, tenant_email: params.tenant_email, lease_start_date: params.lease_start_date, lease_end_date: params.lease_end_date });
         }}
         notify={notify}
-        onSuccess={loadData}
+        onSuccess={() => { loadData(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); }}
       />
 
       <InviteGuestModal
@@ -2208,7 +2223,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         user={user}
         setLoading={setLoadingWrapper}
         notify={notify}
-        onSuccess={loadData}
+        onSuccess={() => { loadData(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); }}
         navigate={navigate}
       />
     </div>
