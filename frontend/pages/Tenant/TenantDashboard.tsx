@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Input, Modal } from '../../components/UI';
 import { InviteGuestModal } from '../../components/InviteGuestModal';
 import HelpCenter from '../Support/HelpCenter';
-import { DashboardAlertsPanel } from '../../components/DashboardAlertsPanel';
+import { DashboardAlertsPanel, DASHBOARD_ALERTS_REFRESH_EVENT } from '../../components/DashboardAlertsPanel';
 import { UserSession } from '../../types';
 import { dashboardApi, authApi, invitationsApi, APP_ORIGIN } from '../../services/api';
 import type { OwnerInvitationView, OwnerAuditLogEntry, GuestPendingInviteView, GuestStayView, TenantSignedDocument } from '../../services/api';
@@ -96,6 +96,9 @@ const TenantDashboard: React.FC<{
     jurisdiction_statutes: Array<{ citation: string; plain_english?: string | null }>;
     removal_guest_text: string | null;
     removal_tenant_text: string | null;
+    assigned_by_name?: string | null;
+    accepted_by_name?: string | null;
+    pending_acceptance?: boolean;
   }>>([]);
   const [loading, setLoadingState] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,8 +163,6 @@ const TenantDashboard: React.FC<{
   const acceptFailedRef = useRef<Set<string>>(new Set());
   const acceptInFlightRef = useRef<Set<string>>(new Set());
   const acceptedInviteRef = useRef<Set<string>>(new Set());
-  /** Invite codes the user dismissed (Cancel) so we don't auto-reopen the modal. */
-  const dismissedInviteCodesRef = useRef<Set<string>>(new Set());
 
   // Tenant invite confirmation modal state
   const [confirmInviteModal, setConfirmInviteModal] = useState<{
@@ -264,9 +265,14 @@ const TenantDashboard: React.FC<{
     loadData();
   }, [loadData]);
 
-  // Do not auto-show the invitation modal just because pendingInvites has data.
-  // Only show when the user brought an invite to this session (invite link in URL at login → sessionStorage).
-  // See effect below that processes PENDING_INVITE_STORAGE_KEY.
+  // When pending invites arrive, show the confirmation modal for the first unprocessed one
+  useEffect(() => {
+    if (!pendingInvites.length || confirmInviteModal) return;
+    const first = pendingInvites.find((inv) => !acceptFailedRef.current.has(inv.invitation_code) && !acceptInFlightRef.current.has(inv.invitation_code) && !acceptedInviteRef.current.has(inv.invitation_code));
+    if (first) {
+      openConfirmInviteModal(first.invitation_code, first);
+    }
+  }, [pendingInvites, confirmInviteModal, openConfirmInviteModal]);
 
   // Process invite code stored during login/signup (e.g. after email verification).
   // Show confirmation modal instead of auto-accepting.
@@ -367,6 +373,7 @@ const TenantDashboard: React.FC<{
       setAwayStartedAt(res.away_started_at ?? null);
       setGuestsAuthorizedDuringAway(res.guests_authorized_during_away ?? false);
       notify('success', `Status set to ${status}`);
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message || 'Failed to update status');
     } finally {
@@ -517,7 +524,7 @@ const TenantDashboard: React.FC<{
   if (loading) {
     return (
       <div className="flex-grow w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex items-center justify-center min-h-[200px]">
-        <p className="text-white/90 text-sm">Loading…</p>
+        <p className="text-slate-500 text-sm">Loading…</p>
       </div>
     );
   }
@@ -525,8 +532,8 @@ const TenantDashboard: React.FC<{
   if (error) {
     return (
       <div className="flex-grow w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
-        <div className="rounded-2xl glass border border-white/10 p-8 text-center shadow-sm">
-          <p className="text-white/90 text-sm mb-4">Something went wrong loading your dashboard.</p>
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <p className="text-slate-600 text-sm mb-4">Something went wrong loading your dashboard.</p>
           <Button variant="primary" className="rounded-lg font-medium" onClick={() => { setError(null); setLoadingState(true); loadData(); }}>Try again</Button>
         </div>
       </div>
@@ -612,9 +619,9 @@ const TenantDashboard: React.FC<{
   const progressPercent = selected && startDate && endDate ? Math.min(100, (elapsedDays / totalDays) * 100) : 0;
 
   return (
-    <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
-      {/* Sidebar – cosmic */}
-      <aside className="hidden lg:flex w-64 min-w-[16rem] flex-shrink-0 flex-col glass border-r border-white/10 p-5">
+    <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-[#f0f4ff]/50">
+      {/* Sidebar */}
+      <aside className="hidden lg:flex w-64 min-w-[16rem] flex-shrink-0 flex-col bg-white/80 backdrop-blur-xl border-r border-slate-200 p-5">
         <nav className="space-y-1">
           {[
             { id: 'stays' as TenantTab, label: 'My stays', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
@@ -627,7 +634,7 @@ const TenantDashboard: React.FC<{
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-[hsl(265,89%,66%)]/20 text-white border border-[hsl(265,89%,66%)]/40' : 'text-white/90 hover:text-white hover:bg-white/10'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-slate-100 text-slate-800 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
             >
               <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} /></svg>
               {item.label}
@@ -642,7 +649,7 @@ const TenantDashboard: React.FC<{
           <select
             value={activeTab}
             onChange={(e) => setActiveTab(e.target.value as TenantTab)}
-            className="w-full max-w-xs rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
+            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm"
           >
             <option value="stays">My stays</option>
             <option value="property">Property info</option>
@@ -659,70 +666,70 @@ const TenantDashboard: React.FC<{
         {activeTab === 'property' && (
           <div className="space-y-6 w-full">
             {/* Property address & unit */}
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-white mb-4">Property information</h2>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">Property information</h2>
               {selectedUnitData?.property ? (
                 <div className="space-y-3">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-white/70 mb-1">Property address</p>
-                    <p className="text-base font-medium text-white/95">{selectedUnitData.property.name}</p>
-                    <p className="text-sm text-white/80 mt-0.5">{selectedUnitData.property.address}</p>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Property address</p>
+                    <p className="text-base font-medium text-slate-800">{selectedUnitData.property.name}</p>
+                    <p className="text-sm text-slate-600 mt-0.5">{selectedUnitData.property.address}</p>
                   </div>
                   {selectedUnitData.unit && (
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-white/70 mb-1">Unit</p>
-                      <p className="text-base font-medium text-white/95">{selectedUnitData.unit.unit_label}</p>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Unit</p>
+                      <p className="text-base font-medium text-slate-800">{selectedUnitData.unit.unit_label}</p>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-white/80">No property assigned.</p>
+                <p className="text-sm text-slate-500">No property assigned.</p>
               )}
             </div>
 
             {/* Assigned tenants */}
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-white mb-4">Assigned tenants</h2>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">Assigned tenants</h2>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                  <span className="text-sm font-medium text-white/95">{user.user_name || user.email}</span>
-                  <span className={`text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded ${presence === 'away' ? 'bg-amber-500/20 text-amber-200 border border-amber-400/30' : 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'}`}>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-sm font-medium text-slate-800">{user.user_name || user.email}</span>
+                  <span className={`text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded ${presence === 'away' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
                     {presence === 'away' ? 'Away' : 'Present'}
                   </span>
                 </div>
               </div>
-              <p className="text-xs text-white/70 mt-3">Multiple tenants may be assigned to the same unit. Each tenant has their own account and can trigger actions independently.</p>
+              <p className="text-xs text-slate-400 mt-3">Multiple tenants may be assigned to the same unit. Each tenant has their own account and can trigger actions independently.</p>
             </div>
 
             {/* Resident status */}
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-white mb-4">Resident status</h2>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">Resident status</h2>
               <div className="flex items-center gap-4">
-                <span className={`text-lg font-bold ${presence === 'away' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                <span className={`text-lg font-bold ${presence === 'away' ? 'text-amber-600' : 'text-emerald-600'}`}>
                   {presence === 'away' ? 'Away' : 'Present'}
                 </span>
                 {awayStartedAt && presence === 'away' && (
-                  <span className="text-sm text-white/70">since {formatDate(awayStartedAt)}</span>
+                  <span className="text-sm text-slate-500">since {formatDate(awayStartedAt)}</span>
                 )}
               </div>
               {guestsAuthorizedDuringAway && presence === 'away' && (
-                <p className="text-sm text-white/80 mt-2">Guests authorized during this away period.</p>
+                <p className="text-sm text-slate-600 mt-2">Guests authorized during this away period.</p>
               )}
             </div>
 
             {/* Property status */}
             {verificationRecord?.property_status && (
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-white mb-4">Property status</h2>
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-900 mb-4">Property status</h2>
                 <div className="flex items-center gap-3">
                   <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                    verificationRecord.property_status === 'occupied' ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30' :
-                    verificationRecord.property_status === 'vacant' ? 'bg-amber-500/20 text-amber-200 border border-amber-400/30' :
-                    'bg-white/10 text-white/80 border border-white/10'
+                    verificationRecord.property_status === 'occupied' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                    verificationRecord.property_status === 'vacant' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                    'bg-slate-100 text-slate-600 border border-slate-200'
                   }`}>
                     <span className={`w-2 h-2 rounded-full ${
                       verificationRecord.property_status === 'occupied' ? 'bg-emerald-500' :
-                      verificationRecord.property_status === 'vacant' ? 'bg-amber-500' : 'bg-white/50'
+                      verificationRecord.property_status === 'vacant' ? 'bg-amber-500' : 'bg-slate-400'
                     }`} />
                     {verificationRecord.property_status === 'occupied' ? 'Occupied' :
                      verificationRecord.property_status === 'vacant' ? 'Vacant' : 'Unknown'}
@@ -733,16 +740,16 @@ const TenantDashboard: React.FC<{
 
             {/* Guest authorization activity (summary) */}
             {guestHistory.length > 0 && (
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-white mb-4">Guest authorization activity</h2>
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-900 mb-4">Guest authorization activity</h2>
                 <div className="space-y-2">
                   {guestHistory.slice(0, 10).map((gh, i) => (
-                    <div key={gh.stay_id || i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10 text-sm">
+                    <div key={gh.stay_id || i} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100 text-sm">
                       <div>
-                        <span className="font-medium text-white/95">{gh.guest_name}</span>
-                        <span className="text-white/70 ml-2 text-xs">{formatDate(gh.stay_start_date)} – {formatDate(gh.stay_end_date)}</span>
+                        <span className="font-medium text-slate-800">{gh.guest_name}</span>
+                        <span className="text-slate-400 ml-2 text-xs">{formatDate(gh.stay_start_date)} – {formatDate(gh.stay_end_date)}</span>
                       </div>
-                      <span className={`text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded ${gh.checked_out_at ? 'bg-blue-500/20 text-blue-200 border border-blue-400/30' : new Date(gh.stay_end_date) < new Date() ? 'bg-white/10 text-white/80 border border-white/10' : 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'}`}>
+                      <span className={`text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded ${gh.checked_out_at ? 'bg-blue-50 text-blue-700 border border-blue-200' : new Date(gh.stay_end_date) < new Date() ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
                         {gh.checked_out_at ? 'Completed' : new Date(gh.stay_end_date) < new Date() ? 'Expired' : 'Active'}
                       </span>
                     </div>
@@ -752,25 +759,25 @@ const TenantDashboard: React.FC<{
             )}
 
             {/* Verification record */}
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-white mb-2">Verification record</h2>
-              <p className="text-sm text-white/80 mb-4">Property authorization documents and guest agreements tied to this property.</p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">Verification record</h2>
+              <p className="text-sm text-slate-500 mb-4">Property authorization documents and guest agreements tied to this property.</p>
 
               <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-white/95">Power of Attorney (POA)</h3>
+                    <h3 className="text-sm font-semibold text-slate-800">Power of Attorney (POA)</h3>
                     {verificationRecord?.poa_signed_at ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-200 font-medium bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-400/30">
+                      <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                         Signed
                       </span>
                     ) : (
-                      <span className="text-xs text-white/70 font-medium">Not available</span>
+                      <span className="text-xs text-slate-400 font-medium">Not available</span>
                     )}
                   </div>
                   {verificationRecord?.poa_signed_at && (
-                    <p className="text-xs text-white/70 mb-2">Signed on {formatDate(verificationRecord.poa_signed_at)}</p>
+                    <p className="text-xs text-slate-500 mb-2">Signed on {formatDate(verificationRecord.poa_signed_at)}</p>
                   )}
                   {verificationRecord?.poa_url ? (
                     <Button
@@ -782,42 +789,42 @@ const TenantDashboard: React.FC<{
                       View Power of Attorney
                     </Button>
                   ) : (
-                    <p className="text-xs text-white/70">The property owner's Power of Attorney document is available through the verification page or your host.</p>
+                    <p className="text-xs text-slate-500">The property owner's Power of Attorney document is available through the verification page or your host.</p>
                   )}
                 </div>
 
                 {(verificationRecord?.guest_agreements ?? []).length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-white/95 mb-2">Guest agreements for this property</h3>
+                    <h3 className="text-sm font-semibold text-slate-800 mb-2">Guest agreements for this property</h3>
                     <div className="space-y-2">
                       {(verificationRecord?.guest_agreements ?? []).map((ga) => (
-                        <div key={ga.signature_id} className="p-3 rounded-lg bg-white/5 border border-white/10">
+                        <div key={ga.signature_id} className="p-3 rounded-lg bg-slate-50 border border-slate-100">
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-white/95">{ga.guest_name}</span>
+                              <span className="text-sm font-medium text-slate-800">{ga.guest_name}</span>
                               {ga.token_state && (
                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
-                                  ga.token_state === 'BURNED' ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30' :
-                                  ga.token_state === 'REVOKED' ? 'bg-red-500/20 text-red-200 border border-red-400/30' :
-                                  ga.token_state === 'EXPIRED' ? 'bg-white/10 text-white/70 border border-white/10' :
-                                  ga.token_state === 'CANCELLED' ? 'bg-amber-500/20 text-amber-200 border border-amber-400/30' :
-                                  'bg-white/10 text-white/70 border border-white/10'
+                                  ga.token_state === 'BURNED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                  ga.token_state === 'REVOKED' ? 'bg-red-50 text-red-700 border border-red-200' :
+                                  ga.token_state === 'EXPIRED' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                                  ga.token_state === 'CANCELLED' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                  'bg-slate-100 text-slate-600 border border-slate-200'
                                 }`}>
                                   {ga.token_state === 'BURNED' ? 'Active' : ga.token_state === 'STAGED' ? 'Pending' : ga.token_state}
                                 </span>
                               )}
                             </div>
-                            <span className="inline-flex items-center gap-1 text-xs text-emerald-200 font-medium bg-emerald-500/20 px-2 py-0.5 rounded-full">
+                            <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                               Signed
                             </span>
                           </div>
-                          <p className="text-xs text-white/70">
+                          <p className="text-xs text-slate-500">
                             {ga.document_title}
                             {ga.stay_start_date && ga.stay_end_date && ` · ${formatDate(ga.stay_start_date)} – ${formatDate(ga.stay_end_date)}`}
                           </p>
                           {ga.signed_at && (
-                            <p className="text-xs text-white/60 mt-0.5">Signed on {formatDate(ga.signed_at)}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">Signed on {formatDate(ga.signed_at)}</p>
                           )}
                         </div>
                       ))}
@@ -826,16 +833,16 @@ const TenantDashboard: React.FC<{
                 )}
 
                 {(verificationRecord?.guest_agreements ?? []).length === 0 && (
-                  <p className="text-sm text-white/80">No guest agreements have been signed for this property yet.</p>
+                  <p className="text-sm text-slate-500">No guest agreements have been signed for this property yet.</p>
                 )}
               </div>
             </div>
 
             {/* Invite a guest */}
             {selectedUnitData?.unit && (
-              <div className="rounded-2xl border border-[hsl(265,89%,66%)]/30 bg-[hsl(265,89%,66%)]/10 p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-white mb-2">Invite a guest</h2>
-                <p className="text-sm text-white/90 mb-4">Generate an invitation link for a guest to sign and stay at this property.</p>
+              <div className="rounded-2xl border border-[#6B90F2]/30 bg-[#6B90F2]/5 p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-900 mb-2">Invite a guest</h2>
+                <p className="text-sm text-slate-600 mb-4">Generate an invitation link for a guest to sign and stay at this property.</p>
                 <Button variant="primary" className="rounded-lg font-medium" onClick={() => setInviteModalOpen(true)}>
                   Invite guest to this property
                 </Button>
@@ -844,20 +851,20 @@ const TenantDashboard: React.FC<{
 
             {/* Guest invitation links */}
             {invitations.length > 0 && (
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-white mb-4">Guest invitation links</h2>
-                <p className="text-sm text-white/80 mb-3">Active invitation links for guests at this property.</p>
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-900 mb-4">Guest invitation links</h2>
+                <p className="text-sm text-slate-500 mb-3">Active invitation links for guests at this property.</p>
                 <div className="space-y-2">
                   {invitations.filter((inv) => inv.status === 'pending' || inv.status === 'ongoing').map((inv) => {
                     const inviteUrl = `${APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inv.invitation_code}`;
                     return (
-                      <div key={inv.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10 text-sm">
+                      <div key={inv.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100 text-sm">
                         <div>
-                          <span className="font-medium text-white/95">{inv.guest_name || inv.guest_email || 'Pending guest'}</span>
+                          <span className="font-medium text-slate-800">{inv.guest_name || inv.guest_email || 'Pending guest'}</span>
                           {inv.stay_start_date && inv.stay_end_date && (
-                            <span className="text-white/70 ml-2 text-xs">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
+                            <span className="text-slate-400 ml-2 text-xs">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
                           )}
-                          <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded ${inv.status === 'pending' ? 'bg-amber-500/20 text-amber-200' : 'bg-emerald-500/20 text-emerald-200'}`}>
+                          <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded ${inv.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
                             {inv.status}
                           </span>
                         </div>
@@ -886,46 +893,46 @@ const TenantDashboard: React.FC<{
         {/* Documents tab */}
         {activeTab === 'documents' && (
           <div className="space-y-6 w-full">
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-white mb-4">Documents</h2>
-              <p className="text-sm text-white/80 mb-4">Access your signed agreements and legal documents.</p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">Documents</h2>
+              <p className="text-sm text-slate-600 mb-4">Access your signed agreements and legal documents.</p>
               <div className="space-y-3">
                 {signedDocs.length > 0 ? (
                   signedDocs.map((doc) => (
-                    <div key={doc.signature_id} className="p-4 rounded-lg bg-white/5 border border-white/10">
+                    <div key={doc.signature_id} className="p-4 rounded-lg bg-slate-50 border border-slate-100">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="font-medium text-white/95 text-sm">{doc.document_title}</p>
-                        <span className="inline-flex items-center gap-1 text-xs text-emerald-200 font-medium bg-emerald-500/20 px-2 py-0.5 rounded-full">
+                        <p className="font-medium text-slate-800 text-sm">{doc.document_title}</p>
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                           Signed
                         </span>
                       </div>
                       {doc.property_name && (
-                        <p className="text-xs text-white/80 mb-1"><span className="font-medium text-white/90">Property:</span> {doc.property_name}</p>
+                        <p className="text-xs text-slate-600 mb-1"><span className="font-medium text-slate-700">Property:</span> {doc.property_name}</p>
                       )}
                       {doc.stay_start_date && doc.stay_end_date && (
-                        <p className="text-xs text-white/80 mb-1">
-                          <span className="font-medium text-white/90">Duration:</span> {formatDate(doc.stay_start_date)} – {formatDate(doc.stay_end_date)}
+                        <p className="text-xs text-slate-600 mb-1">
+                          <span className="font-medium text-slate-700">Duration:</span> {formatDate(doc.stay_start_date)} – {formatDate(doc.stay_end_date)}
                         </p>
                       )}
                       <div className="flex items-center justify-between mt-2">
-                        <p className="text-xs text-white/70">
+                        <p className="text-xs text-slate-500">
                           Signed by {doc.signed_by}{doc.signed_at ? ` on ${formatDate(doc.signed_at)}` : ''}
                         </p>
-                        <p className="text-xs text-white/60">Invite {doc.invitation_code}</p>
+                        <p className="text-xs text-slate-400">Invite {doc.invitation_code}</p>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-white/80">No signed documents yet. Documents will appear here after you sign agreements.</p>
+                  <p className="text-sm text-slate-500">No signed documents yet. Documents will appear here after you sign agreements.</p>
                 )}
-                <div className="pt-3 border-t border-white/10">
-                  <p className="text-xs font-bold uppercase tracking-wider text-white/70 mb-2">Legal documents</p>
+                <div className="pt-3 border-t border-slate-100">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Legal documents</p>
                   {verificationRecord?.poa_signed_at ? (
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10 mt-2">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100 mt-2">
                       <div>
-                        <p className="text-sm font-medium text-white/95">Power of Attorney (POA)</p>
-                        <p className="text-xs text-white/70">Signed on {formatDate(verificationRecord.poa_signed_at)}</p>
+                        <p className="text-sm font-medium text-slate-800">Power of Attorney (POA)</p>
+                        <p className="text-xs text-slate-500">Signed on {formatDate(verificationRecord.poa_signed_at)}</p>
                       </div>
                       {verificationRecord.poa_url ? (
                         <Button
@@ -937,11 +944,11 @@ const TenantDashboard: React.FC<{
                           View POA
                         </Button>
                       ) : (
-                        <span className="text-xs text-white/60">Available on verify page</span>
+                        <span className="text-xs text-slate-400">Available on verify page</span>
                       )}
                     </div>
                   ) : (
-                    <p className="text-sm text-white/80">Power of Attorney and other property documents are available through the property owner or on the verification page.</p>
+                    <p className="text-sm text-slate-600">Power of Attorney and other property documents are available through the property owner or on the verification page.</p>
                   )}
                 </div>
               </div>
@@ -952,9 +959,9 @@ const TenantDashboard: React.FC<{
         {/* Invitations tab */}
         {activeTab === 'invitations' && (
           <div className="space-y-6 w-full">
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-white mb-1">Add invitation</h2>
-              <p className="text-sm text-white/90 mb-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-1">Add invitation</h2>
+              <p className="text-sm text-slate-600 mb-4">
                 {isEmpty ? 'Paste an invitation link from your host to view and sign the agreement.' : 'Have another link? Add it below to review and sign.'}
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
@@ -979,15 +986,15 @@ const TenantDashboard: React.FC<{
               </div>
             </div>
             {pendingInvites.length > 0 && (
-              <div className="rounded-2xl border border-[hsl(265,89%,66%)]/30 bg-[hsl(265,89%,66%)]/10 p-6 shadow-sm">
-                <h2 className="text-base font-semibold text-white mb-1">Pending invitations</h2>
-                <p className="text-sm text-white/90 mb-4">Accept these invitations to confirm your assignments.</p>
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-6 shadow-sm">
+                <h2 className="text-base font-semibold text-slate-900 mb-1">Pending invitations</h2>
+                <p className="text-sm text-slate-600 mb-4">Accept these invitations to confirm your assignments.</p>
                 <ul className="space-y-3">
                   {pendingInvites.map((inv) => (
-                    <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-white/10 glass">
+                    <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-blue-100 bg-white">
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-white">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
-                        <p className="text-sm text-white/80 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
+                        <p className="font-semibold text-slate-900">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
                       </div>
                       <Button variant="primary" className="shrink-0 h-10 rounded-lg font-medium px-4" onClick={() => openConfirmInviteModal(inv.invitation_code, inv)}>Review & accept</Button>
                     </li>
@@ -995,18 +1002,18 @@ const TenantDashboard: React.FC<{
                 </ul>
               </div>
             )}
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-base font-semibold text-white mb-1">Future invites</h2>
-              <p className="text-sm text-white/80 mb-4">Invitations that don&apos;t overlap your existing stays.</p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-base font-semibold text-slate-900 mb-1">Future invites</h2>
+              <p className="text-sm text-slate-500 mb-4">Invitations that don&apos;t overlap your existing stays.</p>
               {futureInvites.length === 0 ? (
-                <p className="text-white/80 text-sm">No future invites. Add an invitation link above.</p>
+                <p className="text-slate-500 text-sm">No future invites. Add an invitation link above.</p>
               ) : (
                 <ul className="space-y-3">
                   {futureInvites.map((inv) => (
-                    <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-white/10 bg-white/5">
+                    <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50/50">
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-white">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
-                        <p className="text-sm text-white/80 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
+                        <p className="font-semibold text-slate-900">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
                       </div>
                       <Button variant="primary" className="shrink-0 h-10 rounded-lg font-medium px-4" onClick={() => openConfirmInviteModal(inv.invitation_code, inv)}>
                         Review & accept
@@ -1021,30 +1028,30 @@ const TenantDashboard: React.FC<{
 
         {/* Event ledger tab */}
         {activeTab === 'logs' && (
-          <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-white mb-2">Event ledger</h2>
-            <p className="text-sm text-white/80 mb-4">Activity for your property, your actions, and invitations you created.</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900 mb-2">Event ledger</h2>
+            <p className="text-sm text-slate-500 mb-4">Activity for your property, your actions, and invitations you created.</p>
             <div className="flex flex-wrap gap-3 items-center mb-4">
-              <input type="date" value={logsFromDate} onChange={(e) => setLogsFromDate(e.target.value)} className="rounded-lg border border-white/20 bg-white/10 text-white px-3 py-2 text-sm focus:border-[hsl(265,89%,66%)] focus:ring-1 focus:ring-[hsl(265,89%,66%)]/20" />
-              <input type="date" value={logsToDate} onChange={(e) => setLogsToDate(e.target.value)} className="rounded-lg border border-white/20 bg-white/10 text-white px-3 py-2 text-sm focus:border-[hsl(265,89%,66%)] focus:ring-1 focus:ring-[hsl(265,89%,66%)]/20" />
-              <select value={logsCategory} onChange={(e) => setLogsCategory(e.target.value)} className="rounded-lg border border-white/20 bg-white/10 text-white px-3 py-2 text-sm min-w-[10rem] focus:border-[hsl(265,89%,66%)]">
+              <input type="date" value={logsFromDate} onChange={(e) => setLogsFromDate(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <input type="date" value={logsToDate} onChange={(e) => setLogsToDate(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <select value={logsCategory} onChange={(e) => setLogsCategory(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm min-w-[10rem]">
                 <option value="">All categories</option>
                 <option value="status_change">Status change</option>
                 <option value="presence">Presence / Away</option>
                 <option value="guest_signature">Guest signature</option>
                 <option value="billing">Billing</option>
               </select>
-              <input type="text" placeholder="Search…" value={logsSearch} onChange={(e) => setLogsSearch(e.target.value)} className="rounded-lg border border-white/20 bg-white/10 text-white placeholder-white/50 px-3 py-2 text-sm w-40 focus:border-[hsl(265,89%,66%)] focus:ring-1 focus:ring-[hsl(265,89%,66%)]/20" />
+              <input type="text" placeholder="Search…" value={logsSearch} onChange={(e) => setLogsSearch(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm w-40" />
               <Button variant="outline" onClick={loadPropertyLogs} disabled={propertyLogsLoading}>{propertyLogsLoading ? 'Loading…' : 'Apply filters'}</Button>
             </div>
             {propertyLogsLoading && propertyLogs.length === 0 ? (
-              <p className="p-6 text-white/80 text-center text-sm">Loading…</p>
+              <p className="p-6 text-slate-500 text-center text-sm">Loading…</p>
             ) : propertyLogsLoadedOnce && propertyLogs.length === 0 ? (
-              <p className="p-6 text-white/80 text-center text-sm">No events.</p>
+              <p className="p-6 text-slate-500 text-center text-sm">No events.</p>
             ) : propertyLogs.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                  <thead className="bg-white/5 text-white/80 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
+                  <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
                     <tr>
                       <th className="px-4 py-3">Time</th>
                       <th className="px-4 py-3">Category</th>
@@ -1053,27 +1060,27 @@ const TenantDashboard: React.FC<{
                       <th className="px-4 py-3">Message</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/10">
+                  <tbody className="divide-y divide-slate-200">
                     {propertyLogs.map((entry) => (
-                      <tr key={entry.id} className="hover:bg-white/5">
-                        <td className="px-4 py-2 text-white/80 text-sm whitespace-nowrap">{entry.created_at ? new Date(entry.created_at).toISOString().replace('T', ' ').slice(0, 19) + 'Z' : '—'}</td>
+                      <tr key={entry.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-2 text-slate-600 text-sm whitespace-nowrap">{entry.created_at ? new Date(entry.created_at).toISOString().replace('T', ' ').slice(0, 19) + 'Z' : '—'}</td>
                         <td className="px-4 py-2">
                           <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                            entry.category === 'failed_attempt' ? 'bg-red-500/20 text-red-200' :
-                            entry.category === 'guest_signature' ? 'bg-emerald-500/20 text-emerald-200' :
-                            entry.category === 'shield_mode' ? 'bg-violet-500/20 text-violet-200' :
-                            entry.category === 'dead_mans_switch' ? 'bg-amber-500/20 text-amber-200' :
-                            entry.category === 'billing' ? 'bg-white/10 text-white/90' :
-                            entry.category === 'presence' ? 'bg-teal-500/20 text-teal-200' : 'bg-sky-500/20 text-sky-200'
+                            entry.category === 'failed_attempt' ? 'bg-red-100 text-red-800' :
+                            entry.category === 'guest_signature' ? 'bg-emerald-100 text-emerald-800' :
+                            entry.category === 'shield_mode' ? 'bg-violet-100 text-violet-800' :
+                            entry.category === 'dead_mans_switch' ? 'bg-amber-100 text-amber-800' :
+                            entry.category === 'billing' ? 'bg-slate-200 text-slate-800' :
+                            entry.category === 'presence' ? 'bg-teal-100 text-teal-800' : 'bg-sky-100 text-sky-800'
                           }`}>
                             {entry.category === 'shield_mode' ? 'Shield Mode' : entry.category === 'dead_mans_switch' ? 'Stay end reminders' : entry.category === 'billing' ? 'Billing' : entry.category === 'presence' ? 'Presence' : entry.category.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="px-4 py-2 font-medium text-white/95 text-sm">{entry.title}</td>
-                        <td className="px-4 py-2 text-white/80 text-sm">{entry.actor_email ?? '—'}</td>
-                        <td className="px-4 py-2 text-white/80 text-sm max-w-xs">
+                        <td className="px-4 py-2 font-medium text-slate-800 text-sm">{entry.title}</td>
+                        <td className="px-4 py-2 text-slate-600 text-sm">{entry.actor_email ?? '—'}</td>
+                        <td className="px-4 py-2 text-slate-600 text-sm max-w-xs">
                           <span className="truncate block">{entry.message}</span>
-                          <button type="button" onClick={() => setLogMessageModalEntry(entry)} className="text-[hsl(265,89%,76%)] hover:text-[hsl(265,89%,86%)] text-xs mt-0.5 focus:outline-none focus:underline">View full message</button>
+                          <button type="button" onClick={() => setLogMessageModalEntry(entry)} className="text-sky-600 hover:text-sky-800 text-xs mt-0.5 focus:outline-none focus:underline">View full message</button>
                         </td>
                       </tr>
                     ))}
@@ -1095,32 +1102,32 @@ const TenantDashboard: React.FC<{
         {activeTab === 'stays' && (
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
           <div className="lg:w-80 xl:w-96 flex-shrink-0 space-y-4">
-            <div className="rounded-xl glass border border-white/10 p-4 shadow-sm">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-white/70 mb-3">Filter</h3>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Filter</h3>
               <div className="flex flex-wrap gap-2">
                 {filterButtons.map(({ id, label, count }) => (
                   <button
                     key={id}
                     type="button"
                     onClick={() => { setStayFilter(id); if (id !== 'future_invites') { setSelectedUnit(null); setSelectedStay(null); } }}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${stayFilter === id ? 'bg-[hsl(265,89%,66%)]/80 text-white' : 'text-white/90 hover:bg-white/10'}`}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${stayFilter === id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
                   >
                     {label} ({count})
                   </button>
                 ))}
               </div>
             </div>
-            <div className="rounded-xl glass border border-white/10 shadow-sm overflow-hidden max-h-[calc(100vh-20rem)] overflow-y-auto">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden max-h-[calc(100vh-20rem)] overflow-y-auto">
               <div className="p-4">
               {stayFilter === 'future_invites' ? (
                 futureInvites.length === 0 ? (
-                  <p className="text-white/80 text-sm py-4">No future invites. Add an invitation link in the Add invitation tab.</p>
+                  <p className="text-slate-500 text-sm py-4">No future invites. Add an invitation link in the Add invitation tab.</p>
                 ) : (
                   <ul className="space-y-2">
                     {futureInvites.map((inv) => (
-                      <li key={inv.invitation_code} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                        <p className="font-semibold text-white text-sm">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
-                        <p className="text-xs text-white/70 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
+                      <li key={inv.invitation_code} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                        <p className="font-semibold text-slate-900 text-sm">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
                         <Button variant="primary" className="mt-2 w-full text-xs h-8 py-1.5" onClick={() => openConfirmInviteModal(inv.invitation_code, inv)}>
                           Review & accept
                         </Button>
@@ -1130,7 +1137,7 @@ const TenantDashboard: React.FC<{
                 )
               ) : (filteredUnitCards.length === 0 && filteredStays.length === 0) ? (
                 <div className="py-4 space-y-2">
-                  <p className="text-white/80 text-sm">
+                  <p className="text-slate-600 text-sm">
                     {stayFilter === 'all' ? 'No assignments yet.' : stayFilter === 'completed' ? 'No completed assignments.' : `No ${stayFilter} assignments.`} Add an invitation link in the Add invitation tab.
                   </p>
                   <button
@@ -1143,7 +1150,7 @@ const TenantDashboard: React.FC<{
                         notify('error', 'Could not fetch debug info.');
                       }
                     }}
-                    className="text-xs text-white/70 hover:text-white underline"
+                    className="text-xs text-slate-500 hover:text-slate-700 underline"
                   >
                     Check if my accepted invite is in the database
                   </button>
@@ -1162,22 +1169,22 @@ const TenantDashboard: React.FC<{
                     const isOngoing = !isFuture && !isUpcoming && (!ed || td <= ed) && !isCancelled;
                     const statusLabel = isCancelled ? 'CANCELLED' : isFuture ? 'FUTURE' : isUpcoming ? 'UPCOMING' : 'ONGOING';
                     const statusClass = isCancelled
-                      ? 'bg-slate-500/40 text-white border border-slate-400/50'
+                      ? 'bg-slate-100 text-slate-600 border border-slate-200'
                       : isFuture
-                        ? 'bg-sky-500/30 text-white border border-sky-400/40'
+                        ? 'bg-sky-200 text-white border-0'
                         : isUpcoming
-                          ? 'bg-amber-500/30 text-white border border-amber-400/40'
-                          : 'bg-emerald-500/20 text-emerald-200 border border-emerald-100';
+                          ? 'bg-[#FFC107] text-white border-0'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-100';
                     const isSelected = !selectedStay && selected?.unit_id === card.unit_id;
                     const cardUnitData = unitsData.find((u) => u.unit?.id === card.unit_id);
                     const addressDisplay = card.property_address || `${card.property_name}${card.unit_label ? ` — Unit ${card.unit_label}` : ''}`;
                     return (
                       <div
                         key={`unit-${card.unit_id}-${card.stay_start_date ?? ''}-${card.stay_end_date ?? ''}`}
-                        className={`rounded-xl border text-left transition-all ${
+                        className={`rounded-xl border bg-white text-left transition-all ${
                           isSelected
-                            ? 'border-[hsl(265,89%,66%)]/40 border-l-4 border-l-[hsl(265,89%,66%)] bg-[hsl(265,89%,66%)]/10 shadow-sm'
-                            : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30'
+                            ? 'border-slate-300 border-l-4 border-l-[#6B90F2] bg-[#6B90F2]/10 shadow-sm'
+                            : 'border-slate-200 hover:border-slate-300'
                         }`}
                       >
                         <button
@@ -1190,19 +1197,19 @@ const TenantDashboard: React.FC<{
                               {statusLabel}
                             </span>
                             {cardUnitData?.region_code && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white/90 bg-white/10 border border-white/20">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-200">
                                 {cardUnitData.region_code}
                               </span>
                             )}
                           </div>
-                          <p className="text-sm font-semibold text-white">{addressDisplay}</p>
-                          <p className="text-sm text-white/80 mt-0.5">
+                          <p className="text-sm font-semibold text-slate-900">{addressDisplay}</p>
+                          <p className="text-sm text-slate-500 mt-0.5">
                             {sd && ed ? `${formatDate(sd)} – ${formatDate(ed)}` : sd ? `${formatDate(sd)} – Ongoing` : 'Your assigned unit'}
                           </p>
                         </button>
                         {isFuture && !isCancelled && (
                           <div className="px-4 pb-4 pt-0">
-                            <button type="button" className="w-full py-2.5 px-4 rounded-lg text-sm font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20 transition-colors flex items-center justify-center gap-2" onClick={(e) => { e.stopPropagation(); setSelectedUnitForCancel(card); setShowCancelStayConfirm(true); }}>
+                            <button type="button" className="w-full py-2.5 px-4 rounded-lg text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2" onClick={(e) => { e.stopPropagation(); setSelectedUnitForCancel(card); setShowCancelStayConfirm(true); }}>
                               <span className="text-red-500 font-semibold">X</span> Cancel assignment
                             </button>
                           </div>
@@ -1226,10 +1233,10 @@ const TenantDashboard: React.FC<{
                     return (
                       <div
                         key={s.stay_id}
-                        className={`rounded-xl border text-left transition-all ${
+                        className={`rounded-xl border bg-white text-left transition-all ${
                           isSelected
-                            ? 'border-[hsl(265,89%,66%)]/40 border-l-4 border-l-[hsl(265,89%,66%)] bg-[hsl(265,89%,66%)]/10 shadow-sm'
-                            : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/30'
+                            ? 'border-slate-300 border-l-4 border-l-[#6B90F2] bg-[#6B90F2]/10 shadow-sm'
+                            : 'border-slate-200 hover:border-slate-300'
                         }`}
                       >
                         <button
@@ -1242,16 +1249,16 @@ const TenantDashboard: React.FC<{
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide bg-red-50 text-red-700 border border-red-100">Revoked</span>
                             )}
                             <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${
-                              s.cancelled_at ? 'bg-amber-500/20 text-amber-200 border border-amber-400/30' : s.checked_out_at ? 'bg-white/10 text-white/80 border border-white/10' : isStayOngoing ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30' : isStayUpcoming ? 'bg-amber-400/30 text-amber-100 border border-amber-400/40' : isStayFuture ? 'bg-white/15 text-white/90 border border-white/20' : 'bg-white/10 text-white/80 border border-white/10'
+                              s.cancelled_at ? 'bg-amber-50 text-amber-700 border border-amber-100' : s.checked_out_at ? 'bg-slate-100 text-slate-600 border border-slate-200' : isStayOngoing ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : isStayUpcoming ? 'bg-[#FFC107] text-slate-900 border-0' : isStayFuture ? 'bg-slate-200 text-slate-700 border-0' : 'bg-slate-100 text-slate-600'
                             }`}>
                               {s.cancelled_at ? 'Cancelled' : s.checked_out_at ? 'Completed' : isStayOngoing ? 'Ongoing' : isStayUpcoming ? 'UPCOMING' : isStayFuture ? 'FUTURE' : 'Previous'}
                             </span>
-                            <span className="text-white/60 text-xs">{s.region_code}</span>
+                            <span className="text-slate-400 text-xs">{s.region_code}</span>
                           </div>
-                          <p className="text-sm text-white/80">
+                          <p className="text-sm text-slate-600">
                             {s.property_name}{s.unit_label ? ` — Unit ${s.unit_label}` : ''}
                           </p>
-                          <p className="text-sm text-white/70 mt-0.5">
+                          <p className="text-sm text-slate-500 mt-0.5">
                             {formatDate(s.approved_stay_start_date)} – {formatDate(s.approved_stay_end_date)}
                           </p>
                         </button>
@@ -1283,7 +1290,7 @@ const TenantDashboard: React.FC<{
                           <div className="px-4 pb-4 pt-0">
                             <button
                               type="button"
-                              className="w-full py-2.5 px-4 rounded-lg text-sm font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
+                              className="w-full py-2.5 px-4 rounded-lg text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
                               onClick={(e) => { e.stopPropagation(); setCancelStayConfirm(s); }}
                             >
                               <span className="text-red-500 font-semibold">X</span> Cancel stay
@@ -1303,8 +1310,8 @@ const TenantDashboard: React.FC<{
 
           {/* Detail panel placeholder */}
           {!selected && !selectedStay && stayFilter !== 'future_invites' && (
-            <div className="flex-1 min-w-0 flex items-center justify-center rounded-xl border border-dashed border-white/20 bg-white/5 p-12">
-              <p className="text-white/70 text-sm text-center">Select your unit or a guest stay to view details and actions.</p>
+            <div className="flex-1 min-w-0 flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-12">
+              <p className="text-slate-500 text-sm text-center">Select your unit or a guest stay to view details and actions.</p>
             </div>
           )}
 
@@ -1337,22 +1344,22 @@ const TenantDashboard: React.FC<{
               </div>
             </div>
           ) : null}
-          <section className="rounded-2xl glass border border-white/10 p-6 md:p-8 shadow-sm">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-4 flex-wrap">
                   <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold uppercase tracking-wide ${
                     stay.cancelled_at
-                      ? 'bg-amber-500/20 text-amber-200 border border-amber-400/30'
+                      ? 'bg-amber-50 text-amber-700 border border-amber-100'
                       : stay.checked_out_at
-                        ? 'bg-white/10 text-white/80'
+                        ? 'bg-slate-100 text-slate-600'
                         : detailHasCheckedIn && stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
-                          ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                           : !detailHasCheckedIn && stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
-                            ? 'bg-[#FFC107] text-white border-0'
+                            ? 'bg-[#FFC107] text-slate-900 border-0'
                             : stay.approved_stay_start_date > today
                               ? 'bg-slate-200 text-slate-700 border-0'
-                              : 'bg-white/10 text-white/80'
+                              : 'bg-slate-100 text-slate-600'
                   }`}>
                     {stay.cancelled_at
                       ? 'Cancelled'
@@ -1366,18 +1373,18 @@ const TenantDashboard: React.FC<{
                               ? 'FUTURE'
                               : 'Ended'}
                   </span>
-                  <span className="text-white/60">·</span>
-                  <span className="text-white/70 text-sm">{stay.property_name}{stay.unit_label ? ` — Unit ${stay.unit_label}` : ''}</span>
-                  <span className="text-white/60 text-sm">({stay.region_code})</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-500 text-sm">{stay.property_name}{stay.unit_label ? ` — Unit ${stay.unit_label}` : ''}</span>
+                  <span className="text-slate-400 text-sm">({stay.region_code})</span>
                   {stay.invite_id && (
                     <>
-                      <span className="text-white/60">·</span>
-                      <span className="text-white/70 text-sm font-mono">Invite ID: {stay.invite_id}</span>
+                      <span className="text-slate-400">·</span>
+                      <span className="text-slate-500 text-sm font-mono">Invite ID: {stay.invite_id}</span>
                       {stay.token_state && (
                         <span className={`ml-1 px-1.5 py-0.5 rounded text-xs font-medium ${
                           stay.token_state === 'BURNED' ? 'bg-[#28A745] text-white' :
-                          stay.token_state === 'EXPIRED' ? 'bg-white/10 text-white/80' :
-                          stay.token_state === 'REVOKED' ? 'bg-amber-50 text-amber-700' : 'bg-white/10 text-white/80'
+                          stay.token_state === 'EXPIRED' ? 'bg-slate-100 text-slate-600' :
+                          stay.token_state === 'REVOKED' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'
                         }`}>
                           {stay.token_state === 'BURNED' ? 'Active' : stay.token_state === 'STAGED' ? 'Pending' : stay.token_state === 'EXPIRED' ? 'Expired' : stay.token_state === 'REVOKED' ? 'Revoked' : stay.token_state}
                         </span>
@@ -1385,25 +1392,25 @@ const TenantDashboard: React.FC<{
                     </>
                   )}
                 </div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+                <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
                   {stay.cancelled_at ? 'Stay cancelled' : stay.checked_out_at ? 'Stay completed' : stay.approved_stay_end_date < today ? 'Stay ended' : stay.approved_stay_start_date > today ? 'Upcoming stay' : 'Current stay'}
                 </h1>
                 <div className="flex gap-6 mt-4">
                   <div>
-                    <p className="text-xs font-medium text-white/60 uppercase tracking-wide">CHECK-IN</p>
-                    <p className="text-white font-medium mt-0.5">{formatDate(stay.approved_stay_start_date)}</p>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">CHECK-IN</p>
+                    <p className="text-slate-900 font-medium mt-0.5">{formatDate(stay.approved_stay_start_date)}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-white/60 uppercase tracking-wide">CHECK-OUT</p>
-                    <p className="text-white font-medium mt-0.5">{formatDate(stay.approved_stay_end_date)}</p>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">CHECK-OUT</p>
+                    <p className="text-slate-900 font-medium mt-0.5">{formatDate(stay.approved_stay_end_date)}</p>
                   </div>
                 </div>
               </div>
               <div className="md:w-56 flex flex-col gap-4 shrink-0">
-                <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                   <div className="h-full bg-slate-800 rounded-full transition-all duration-500" style={{ width: `${stayProgressPercent}%` }} />
                 </div>
-                <p className="text-xs text-white/60 font-medium">Stay progress</p>
+                <p className="text-xs text-slate-400 font-medium">Stay progress</p>
                 {stay.property_live_slug && (
                   <Button
                     type="button"
@@ -1416,8 +1423,8 @@ const TenantDashboard: React.FC<{
                 {stay.invite_id && (
                   <Button
                     type="button"
-                    variant="secondary"
-                    className="w-full h-11 rounded-lg font-medium"
+                    variant="outline"
+                    className="w-full h-11 rounded-lg font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                     onClick={() => { setVerifyQRInviteId(stay.invite_id ?? null); setShowVerifyQRModal(true); }}
                   >
                     Verify with QR code
@@ -1446,7 +1453,7 @@ const TenantDashboard: React.FC<{
                 {!stay.cancelled_at && stay.approved_stay_start_date > today && (
                   <button
                     type="button"
-                    className="w-full h-11 rounded-lg font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
+                    className="w-full h-11 rounded-lg font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
                     onClick={() => setCancelStayConfirm(stay)}
                   >
                     <span className="text-red-500 font-semibold">X</span> Cancel stay
@@ -1461,21 +1468,21 @@ const TenantDashboard: React.FC<{
             const maxShow = 42;
             const showDays = total <= maxShow ? allDays : allDays.slice(-maxShow);
             return (
-              <section className="rounded-2xl glass border border-white/10 p-6 md:p-8 shadow-sm">
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 mb-4">TIME LEFT ON YOUR STAY</h3>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-8">
                   <div className="flex-shrink-0">
-                    <div className="inline-flex flex-col items-center justify-center rounded-2xl glass border border-white/10 shadow-inner px-8 py-6 min-w-[140px]">
-                      <span className="text-4xl md:text-5xl font-bold tabular-nums text-white">
+                    <div className="inline-flex flex-col items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-inner px-8 py-6 min-w-[140px]">
+                      <span className="text-4xl md:text-5xl font-bold tabular-nums text-slate-900">
                         {stayDLeft}
                       </span>
-                      <span className="text-xs font-semibold uppercase tracking-wider text-white/80 mt-1">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 mt-1">
                         {stayDLeft === 0 ? 'DAY (CHECK-OUT TODAY)' : stayDLeft === 1 ? 'DAY LEFT' : 'DAYS LEFT'}
                       </span>
                     </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-white/70 mb-2">
+                    <p className="text-xs font-medium text-slate-500 mb-2">
                       Stay timeline – {formatDate(stay.approved_stay_start_date)} → {formatDate(stay.approved_stay_end_date)}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
@@ -1492,10 +1499,10 @@ const TenantDashboard: React.FC<{
                               isToday
                                 ? 'bg-[#6F42C1] text-white ring-2 ring-[#6F42C1]/30 ring-offset-1'
                                 : isEnd
-                                  ? 'bg-[#FFC107] text-white font-semibold'
+                                  ? 'bg-[#FFC107] text-slate-900 font-semibold'
                                   : isPast
-                                    ? 'bg-slate-200 text-white/70'
-                                    : 'bg-white/10 text-white/90 border border-white/20'
+                                    ? 'bg-slate-200 text-slate-500'
+                                    : 'bg-slate-100 text-slate-700 border border-slate-200'
                             }`}
                           >
                             {dayNum}
@@ -1504,7 +1511,7 @@ const TenantDashboard: React.FC<{
                       })}
                     </div>
                     {total > maxShow && (
-                      <p className="text-xs text-white/60 mt-2">Showing last {maxShow} days of stay</p>
+                      <p className="text-xs text-slate-400 mt-2">Showing last {maxShow} days of stay</p>
                     )}
                   </div>
                 </div>
@@ -1519,7 +1526,7 @@ const TenantDashboard: React.FC<{
       {selected && selectedUnitData && !selectedStay && stayFilter !== 'future_invites' && (
         <div className="flex-1 min-w-0 space-y-6 overflow-y-auto">
           {/* Hero: Current stay card - same layout as reference (badge, address, Invite ID, BURNED, CHECK-IN/OUT, Stay progress, Open live link, Verify QR, Check in) */}
-          <section className="rounded-2xl glass border border-white/10 p-6 md:p-8 shadow-sm">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
             {(() => {
               const today = getTodayStr();
               const startDate = selectedUnitData.stay_start_date ?? null;
@@ -1544,27 +1551,27 @@ const TenantDashboard: React.FC<{
                     {/* Target: single horizontal line — UPCOMING / Cancelled · address (FL) · Invite ID: INV-XXX · REVOKED */}
                     <div className="flex items-center gap-2 mb-4 flex-nowrap overflow-x-hidden min-h-[2rem]">
                       <span className={`inline-flex items-center shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold uppercase tracking-wide ${
-                        isCancelled ? 'bg-white/10 text-white/80 border border-slate-200' :
-                        isUpcoming ? 'bg-amber-400/30 text-amber-100' : 'bg-emerald-500/20 text-emerald-200 border border-emerald-100'
+                        isCancelled ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                        isUpcoming ? 'bg-amber-200 text-amber-900' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                       }`}>
                         {isCancelled ? 'CANCELLED' : isUpcoming ? 'UPCOMING' : 'Ongoing'}
                       </span>
-                      <span className="text-white/60 shrink-0">·</span>
-                      <span className="text-white/70 text-sm shrink-0 min-w-0 truncate">
+                      <span className="text-slate-400 shrink-0">·</span>
+                      <span className="text-slate-500 text-sm shrink-0 min-w-0 truncate">
                         {selected.property_address || selected.property_name}{selected.unit_label ? ` — Unit ${selected.unit_label}` : ''}{selectedUnitData.region_code ? ` (${selectedUnitData.region_code})` : ''}
                       </span>
                       {selectedUnitData.invite_id && (
                         <>
-                          <span className="text-white/60 shrink-0">·</span>
-                          <span className="text-white/70 text-sm shrink-0">
-                            <span className="text-white/70">Invite ID: </span>
-                            <span className="text-white/80 font-medium font-mono">{selectedUnitData.invite_id}</span>
+                          <span className="text-slate-400 shrink-0">·</span>
+                          <span className="text-slate-500 text-sm shrink-0">
+                            <span className="text-slate-500">Invite ID: </span>
+                            <span className="text-slate-600 font-medium font-mono">{selectedUnitData.invite_id}</span>
                           </span>
                           {selectedUnitData.token_state && (
                             <span className={`shrink-0 ml-0.5 px-1.5 py-0.5 rounded text-xs font-medium ${
-                              selectedUnitData.token_state === 'BURNED' ? 'bg-emerald-500/20 text-emerald-200' :
-                              selectedUnitData.token_state === 'EXPIRED' ? 'bg-white/10 text-white/80' :
-                              (selectedUnitData.token_state === 'REVOKED' || selectedUnitData.token_state === 'CANCELLED') ? 'bg-white/10 text-white/80' : 'bg-white/10 text-white/80'
+                              selectedUnitData.token_state === 'BURNED' ? 'bg-emerald-100 text-emerald-800' :
+                              selectedUnitData.token_state === 'EXPIRED' ? 'bg-slate-100 text-slate-600' :
+                              (selectedUnitData.token_state === 'REVOKED' || selectedUnitData.token_state === 'CANCELLED') ? 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600'
                             }`}>
                               {selectedUnitData.token_state === 'BURNED' ? 'Active' : (selectedUnitData.token_state === 'REVOKED' || selectedUnitData.token_state === 'CANCELLED') ? 'Cancelled' : selectedUnitData.token_state === 'STAGED' ? 'Pending' : selectedUnitData.token_state === 'EXPIRED' ? 'Expired' : selectedUnitData.token_state}
                             </span>
@@ -1572,25 +1579,29 @@ const TenantDashboard: React.FC<{
                         </>
                       )}
                     </div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-                      Assigned residence
+                    <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+                      {selectedUnitData.assigned_by_name != null || selectedUnitData.accepted_by_name != null
+                        ? selectedUnitData.pending_acceptance
+                          ? `Assigned residence by ${selectedUnitData.assigned_by_name ?? '—'} (pending acceptance)`
+                          : `Assigned residence by ${selectedUnitData.assigned_by_name ?? '—'} and accepted by ${selectedUnitData.accepted_by_name ?? '—'}`
+                        : 'Assigned residence'}
                     </h1>
                     <div className="flex gap-6 mt-4">
                       <div>
-                        <p className="text-xs font-medium text-white/60 uppercase tracking-wide">START DATE</p>
-                        <p className="text-white font-medium mt-0.5">{startDate ? formatDate(startDate) : '—'}</p>
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">START DATE</p>
+                        <p className="text-slate-900 font-medium mt-0.5">{startDate ? formatDate(startDate) : '—'}</p>
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-white/60 uppercase tracking-wide">END DATE</p>
-                        <p className="text-white font-medium mt-0.5">{endDate ? formatDate(endDate) : 'Ongoing'}</p>
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">END DATE</p>
+                        <p className="text-slate-900 font-medium mt-0.5">{endDate ? formatDate(endDate) : 'Ongoing'}</p>
                       </div>
                     </div>
                   </div>
                   <div className="md:w-56 flex flex-col gap-4 shrink-0">
-                    <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div className="h-full bg-slate-800 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
                     </div>
-                    <p className="text-xs text-white/60 font-medium">Residency progress</p>
+                    <p className="text-xs text-slate-400 font-medium">Residency progress</p>
                     {selectedUnitData.live_slug && (
                       <Button
                         type="button"
@@ -1603,15 +1614,15 @@ const TenantDashboard: React.FC<{
                     {selectedUnitData.invite_id && (
                       <Button
                         type="button"
-                        variant="secondary"
-                        className="w-full h-11 rounded-lg font-medium"
+                        variant="outline"
+                        className="w-full h-11 rounded-lg font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                         onClick={() => { setVerifyQRInviteId(selectedUnitData.invite_id ?? null); setShowVerifyQRModal(true); }}
                       >
                         Verify with QR code
                       </Button>
                     )}
                     {!selectedUnitData.invite_id && (
-                      <Button type="button" variant="secondary" disabled className="w-full h-11 rounded-lg font-medium">
+                      <Button type="button" variant="outline" disabled className="w-full h-11 rounded-lg font-medium bg-white border border-slate-300 text-slate-400">
                         Verify with QR code
                       </Button>
                     )}
@@ -1626,10 +1637,10 @@ const TenantDashboard: React.FC<{
                       </button>
                     )}
                     {isPast && !isCancelled && (
-                      <p className="text-sm text-white/70 font-medium">Residency ended</p>
+                      <p className="text-sm text-slate-500 font-medium">Residency ended</p>
                     )}
                     {isCancelled && (
-                      <p className="text-sm text-white/80 font-medium">This assignment was cancelled.</p>
+                      <p className="text-sm text-slate-600 font-medium">This assignment was cancelled.</p>
                     )}
                   </div>
                 </div>
@@ -1637,113 +1648,24 @@ const TenantDashboard: React.FC<{
             })()}
           </section>
 
-          {/* Residency period - countdown + timeline (when we have dates); else ongoing fallback */}
-          <section className="rounded-2xl glass border border-white/10 p-6 md:p-8 shadow-sm">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 mb-4">RESIDENCY PERIOD</h3>
-            {selectedUnitData?.stay_start_date && selectedUnitData?.stay_end_date ? (
-              (() => {
-                const startDate = selectedUnitData.stay_start_date;
-                const endDate = selectedUnitData.stay_end_date;
-                const today = getTodayStr();
-                const dLeft = daysLeft(endDate);
-                const allDays = dateRange(startDate, endDate);
-                const total = allDays.length;
-                const maxShow = 42;
-                const showDays = total <= maxShow ? allDays : allDays.slice(-maxShow);
-                return (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-8">
-                    <div className="flex-shrink-0">
-                      <div className="inline-flex flex-col items-center justify-center rounded-2xl glass border border-white/10 shadow-inner px-8 py-6 min-w-[140px]">
-                        <span className="text-4xl md:text-5xl font-bold tabular-nums text-[#6F42C1]">
-                          {dLeft}
-                        </span>
-                        <span className="text-xs font-semibold uppercase tracking-wider text-[#6F42C1] mt-1">
-                          {dLeft === 0 && endDate >= today
-                            ? 'DAY (ENDS TODAY)'
-                            : dLeft === 1
-                              ? 'DAY LEFT'
-                              : 'DAYS LEFT'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-white/70 mb-2">
-                        Residency timeline – {formatDate(startDate)} → {formatDate(endDate)}
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {showDays.map((dayStr) => {
-                          const isToday = dayStr === today;
-                          const isEnd = dayStr === endDate;
-                          const isPast = dayStr < today;
-                          const dayNum = new Date(dayStr + 'T12:00:00').getDate();
-                          return (
-                            <div
-                              key={dayStr}
-                              title={`${dayStr}${isToday ? ' (today)' : ''}${isEnd ? ' (end date)' : ''}`}
-                              className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
-                                isToday
-                                  ? 'bg-[#6F42C1] text-white ring-2 ring-[#6F42C1]/30 ring-offset-1'
-                                  : isEnd
-                                    ? 'bg-[#FFC107] text-white font-semibold'
-                                    : isPast
-                                      ? 'bg-slate-200 text-white/70'
-                                      : 'bg-white/10 text-white/90 border border-white/20'
-                              }`}
-                            >
-                              {dayNum}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {total > maxShow && (
-                        <p className="text-xs text-white/60 mt-2">Showing last {maxShow} days of residency</p>
-                      )}
-                      <div className="flex flex-wrap gap-4 mt-3 text-xs text-white/70">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 rounded-full bg-[#6F42C1]" /> Today
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 rounded-full bg-[#FFC107]" /> End date
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 rounded-full bg-slate-200" /> Past
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-8">
-                <div className="flex-shrink-0">
-                  <div className="inline-flex flex-col items-center justify-center rounded-2xl glass border border-white/10 shadow-inner px-8 py-6 min-w-[140px]">
-                    <span className="text-4xl md:text-5xl font-bold tabular-nums text-white">—</span>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-white/80 mt-1">Ongoing</span>
-                  </div>
-                </div>
-                <p className="text-sm text-white/70">Your assigned unit has no fixed end date. Residency progress is shown above.</p>
-              </div>
-            )}
-          </section>
-
           {/* Guests & stays for this property - under property display */}
           {(invitations.length > 0 || guestHistory.length > 0) && (
-            <section className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-white mb-4">Guests & stays for this property</h3>
-              <p className="text-sm text-white/70 mb-4">Invitations you sent and stays that are pending, accepted, or completed.</p>
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-slate-900 mb-4">Guests & stays for this property</h3>
+              <p className="text-sm text-slate-500 mb-4">Invitations you sent and stays that are pending, accepted, or completed.</p>
               <div className="space-y-6">
                 {invitations.filter((inv) => inv.status === 'pending' || inv.status === 'ongoing').length > 0 && (
                   <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-white/70 mb-2">Pending / ongoing invitations</h4>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Pending / ongoing invitations</h4>
                     <ul className="space-y-2">
                       {invitations
                         .filter((inv) => inv.status === 'pending' || inv.status === 'ongoing')
                         .map((inv) => (
-                          <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-white/10 last:border-0 text-sm">
+                          <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0 text-sm">
                             <span className="text-slate-700">
                               {inv.guest_name || inv.guest_email || '—'} · {inv.status}
                               {inv.stay_start_date && inv.stay_end_date && (
-                                <span className="text-white/70 text-xs block"> {formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
+                                <span className="text-slate-500 text-xs block"> {formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
                               )}
                             </span>
                             <div className="flex items-center gap-2 shrink-0">
@@ -1772,15 +1694,15 @@ const TenantDashboard: React.FC<{
                 )}
                 {guestHistory.filter((h) => !h.checked_out_at).length > 0 && (
                   <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-white/70 mb-2">Accepted / ongoing stays</h4>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Accepted / ongoing stays</h4>
                     <ul className="space-y-2">
                       {guestHistory
                         .filter((h) => !h.checked_out_at)
                         .map((h) => (
-                          <li key={h.stay_id} className="py-2 border-b border-white/10 last:border-0 text-sm">
-                            <span className="font-medium text-white">{h.guest_name}</span>
-                            <span className="text-white/70"> · {formatDate(h.stay_start_date)} – {formatDate(h.stay_end_date)}</span>
-                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-200">Accepted</span>
+                          <li key={h.stay_id} className="py-2 border-b border-slate-100 last:border-0 text-sm">
+                            <span className="font-medium text-slate-900">{h.guest_name}</span>
+                            <span className="text-slate-500"> · {formatDate(h.stay_start_date)} – {formatDate(h.stay_end_date)}</span>
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700">Accepted</span>
                           </li>
                         ))}
                     </ul>
@@ -1788,15 +1710,15 @@ const TenantDashboard: React.FC<{
                 )}
                 {guestHistory.filter((h) => h.checked_out_at).length > 0 && (
                   <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-white/70 mb-2">Completed stays</h4>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Completed stays</h4>
                     <ul className="space-y-2">
                       {guestHistory
                         .filter((h) => h.checked_out_at)
                         .map((h) => (
-                          <li key={h.stay_id} className="py-2 border-b border-white/10 last:border-0 text-sm">
-                            <span className="font-medium text-white">{h.guest_name}</span>
-                            <span className="text-white/70"> · {formatDate(h.stay_start_date)} – {formatDate(h.stay_end_date)}</span>
-                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-white/10 text-white/80">Checked out</span>
+                          <li key={h.stay_id} className="py-2 border-b border-slate-100 last:border-0 text-sm">
+                            <span className="font-medium text-slate-900">{h.guest_name}</span>
+                            <span className="text-slate-500"> · {formatDate(h.stay_start_date)} – {formatDate(h.stay_end_date)}</span>
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">Checked out</span>
                           </li>
                         ))}
                     </ul>
@@ -1810,22 +1732,22 @@ const TenantDashboard: React.FC<{
             {/* Left: Presence (here/away) + Invite guest + Guest history */}
             <div className="lg:col-span-2 space-y-6">
               {/* Presence - same UI as Guest: here/away for this property (tenant keeps this) */}
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-                <h4 className="font-semibold text-white mb-3">Presence at this property</h4>
-                <p className="text-sm text-white/80 mb-4">Let your host know if you are at the property or away.</p>
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h4 className="font-semibold text-slate-900 mb-3">Presence at this property</h4>
+                <p className="text-sm text-slate-600 mb-4">Let your host know if you are at the property or away.</p>
                 <div className="flex flex-wrap items-center gap-4">
-                  <div className={`px-4 py-2 rounded-lg ${presence === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-white/10 text-white/80'}`}>
+                  <div className={`px-4 py-2 rounded-lg ${presence === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                     {presence === 'present' ? 'You are here' : awayStartedAt ? `Away since ${new Date(awayStartedAt).toLocaleDateString()}` : 'Away'}
                   </div>
                   {presence === 'away' && guestsAuthorizedDuringAway && (
-                    <span className="text-sm text-white/80">Guests authorized during this period</span>
+                    <span className="text-sm text-slate-600">Guests authorized during this period</span>
                   )}
                   <Button variant="outline" onClick={handlePresenceToggle} disabled={presenceUpdating} className="rounded-lg">
                     Set to {presence === 'present' ? 'Away' : 'Present'}
                   </Button>
                 </div>
                 {showAwayConfirm && (
-                  <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
+                  <div className="mt-4 p-4 rounded-lg bg-slate-50 border border-slate-200">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={awayGuestsAuthorized} onChange={(e) => setAwayGuestsAuthorized(e.target.checked)} className="rounded" />
                       <span className="text-sm text-slate-700">Guests authorized during this period</span>
@@ -1838,27 +1760,27 @@ const TenantDashboard: React.FC<{
                 )}
               </div>
 
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-white mb-1">Invite a guest to this property</h3>
-                <p className="text-sm text-white/70 mb-2">{selected.property_name}{selected.unit_label ? ` — Unit ${selected.unit_label}` : ''}</p>
-                <p className="text-sm text-white/80 mb-4">Generate an invitation link for a guest to sign and stay at this property.</p>
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900 mb-1">Invite a guest to this property</h3>
+                <p className="text-sm text-slate-500 mb-2">{selected.property_name}{selected.unit_label ? ` — Unit ${selected.unit_label}` : ''}</p>
+                <p className="text-sm text-slate-600 mb-4">Generate an invitation link for a guest to sign and stay at this property.</p>
                 <Button variant="primary" className="rounded-lg font-medium" onClick={() => setInviteModalOpen(true)}>
                   Invite guest to this property
                 </Button>
               </div>
 
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-white mb-4">Guest history</h3>
-                <p className="text-sm text-white/70 mb-3">Guests you invited and their stays.</p>
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900 mb-4">Guest history</h3>
+                <p className="text-sm text-slate-500 mb-3">Guests you invited and their stays.</p>
                 {guestHistory.length === 0 ? (
-                  <p className="text-sm text-white/70 py-2">No guest stays yet. Invite a guest to see their stays here.</p>
+                  <p className="text-sm text-slate-500 py-2">No guest stays yet. Invite a guest to see their stays here.</p>
                 ) : (
                   <ul className="space-y-2">
                     {guestHistory.map((h) => (
-                      <li key={h.stay_id} className="py-2 border-b border-white/10 last:border-0 text-sm">
-                        <span className="font-medium text-white">{h.guest_name}</span>
-                        <span className="text-white/70"> · {h.property_name}</span>
-                        <span className="text-white/70 text-xs block sm:inline sm:ml-1">
+                      <li key={h.stay_id} className="py-2 border-b border-slate-100 last:border-0 text-sm">
+                        <span className="font-medium text-slate-900">{h.guest_name}</span>
+                        <span className="text-slate-500"> · {h.property_name}</span>
+                        <span className="text-slate-500 text-xs block sm:inline sm:ml-1">
                           {formatDate(h.stay_start_date)} – {formatDate(h.stay_end_date)}
                           {h.checked_out_at ? ' (checked out)' : ''}
                         </span>
@@ -1871,12 +1793,12 @@ const TenantDashboard: React.FC<{
 
             {/* Right: Your invitations + Need help (same as Guest) */}
             <div className="space-y-6">
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-white mb-3">Your invitations</h3>
-                <p className="text-sm text-white/70 mb-3">Manage guest invitations you created.</p>
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900 mb-3">Your invitations</h3>
+                <p className="text-sm text-slate-500 mb-3">Manage guest invitations you created.</p>
                 {invitations.length === 0 ? (
                   <div className="py-2 space-y-3">
-                    <p className="text-sm text-white/70">No invitations yet.</p>
+                    <p className="text-sm text-slate-500">No invitations yet.</p>
                     <Button variant="primary" className="rounded-lg font-medium" onClick={() => setInviteModalOpen(true)}>
                       Invite guest to this property
                     </Button>
@@ -1886,11 +1808,11 @@ const TenantDashboard: React.FC<{
                     {invitations.map((inv) => {
                       const inviteUrl = `${APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inv.invitation_code}`;
                       return (
-                        <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-white/10 last:border-0">
+                        <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
                           <span className="text-sm text-slate-700">
                             {inv.guest_name || inv.guest_email || '—'} · {inv.status}
                             {inv.stay_start_date && inv.stay_end_date && (
-                              <span className="text-white/70 text-xs block"> {formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
+                              <span className="text-slate-500 text-xs block"> {formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
                             )}
                           </span>
                           <div className="flex items-center gap-2 shrink-0">
@@ -1932,15 +1854,15 @@ const TenantDashboard: React.FC<{
                   </ul>
                 )}
               </div>
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-                <h4 className="font-semibold text-white mb-3">Need help?</h4>
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h4 className="font-semibold text-slate-900 mb-3">Need help?</h4>
                 <div className="flex flex-col gap-2">
                   <Button type="button" variant="outline" className="w-full justify-center h-10 rounded-lg text-sm font-medium">Message host</Button>
                   <Button type="button" variant="outline" className="w-full justify-center h-10 rounded-lg text-sm font-medium">Contact support</Button>
                 </div>
               </div>
               {/* Applicable law from Jurisdiction SOT (same as guest dashboard and live property page) */}
-              <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-700 mb-2">
                   APPLICABLE LAW {selectedUnitData?.jurisdiction_state_name || selectedUnitData?.region_code ? `(${(selectedUnitData?.jurisdiction_state_name ?? selectedUnitData?.region_code ?? 'State').toUpperCase()})` : ''}
                 </p>
@@ -1949,24 +1871,24 @@ const TenantDashboard: React.FC<{
                     <ul className="mt-2 space-y-2">
                       {selectedUnitData.jurisdiction_statutes.map((s, i) => (
                         <li key={i} className="text-sm text-slate-700">
-                          <span className="font-medium text-white">{s.citation}</span>
-                          {s.plain_english && <span className="block text-white/80 mt-0.5">{s.plain_english}</span>}
+                          <span className="font-medium text-slate-900">{s.citation}</span>
+                          {s.plain_english && <span className="block text-slate-600 mt-0.5">{s.plain_english}</span>}
                         </li>
                       ))}
                     </ul>
                     {selectedUnitData.removal_guest_text && (
-                      <p className="text-white/80 text-sm mt-2">
+                      <p className="text-slate-600 text-sm mt-2">
                         <span className="font-medium text-slate-700">Guest removal: </span>{selectedUnitData.removal_guest_text}
                       </p>
                     )}
                     {selectedUnitData.removal_tenant_text && (
-                      <p className="text-white/80 text-sm mt-0.5">
+                      <p className="text-slate-600 text-sm mt-0.5">
                         <span className="font-medium text-slate-700">Tenant eviction: </span>{selectedUnitData.removal_tenant_text}
                       </p>
                     )}
                   </>
                 ) : (
-                  <p className="text-sm text-white/70">Jurisdiction and statutes for this property are available from your host or on the live property page.</p>
+                  <p className="text-sm text-slate-500">Jurisdiction and statutes for this property are available from your host or on the live property page.</p>
                 )}
               </div>
             </div>
@@ -1981,26 +1903,13 @@ const TenantDashboard: React.FC<{
 
       {/* Tenant invite confirmation modal */}
       {confirmInviteModal && (
-        <div
-          className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4"
-          onClick={() => {
-            if (confirmInviteModal?.code) dismissedInviteCodesRef.current.add(confirmInviteModal.code);
-            setConfirmInviteModal(null);
-          }}
-          role="presentation"
-        >
-          <div
-            className="max-w-lg w-full rounded-2xl glass shadow-xl border border-white/10 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="tenant-invite-modal-title"
-          >
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+          <div className="max-w-lg w-full rounded-2xl bg-white shadow-xl border border-slate-200 overflow-hidden">
             <div className="bg-gradient-to-r from-slate-800 to-slate-900 p-6 text-white relative">
               <div className="absolute top-0 right-0 w-40 h-full bg-[#6B90F2]/20 blur-[40px] rounded-full"></div>
               <div className="relative z-10">
                 <span className="inline-block px-3 py-1 rounded-full bg-[#6B90F2]/30 text-blue-300 text-xs font-bold uppercase tracking-widest mb-3">Tenant Invitation</span>
-                <h2 id="tenant-invite-modal-title" className="text-2xl font-bold">Accept this invitation?</h2>
+                <h2 className="text-2xl font-bold">Accept this invitation?</h2>
                 {confirmInviteModal.host_name && (
                   <p className="text-slate-300 text-sm mt-1">Invited by <span className="text-white font-semibold">{confirmInviteModal.host_name}</span></p>
                 )}
@@ -2008,18 +1917,18 @@ const TenantDashboard: React.FC<{
             </div>
 
             <div className="p-6 space-y-5">
-              <div className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-3">
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-3">
                 <div className="flex items-start gap-3">
                   <svg className="w-5 h-5 text-[#6B90F2] mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   <div>
-                    <p className="font-semibold text-white">{confirmInviteModal.property_name}</p>
-                    {confirmInviteModal.property_address && <p className="text-sm text-white/70">{confirmInviteModal.property_address}</p>}
+                    <p className="font-semibold text-slate-900">{confirmInviteModal.property_name}</p>
+                    {confirmInviteModal.property_address && <p className="text-sm text-slate-500">{confirmInviteModal.property_address}</p>}
                   </div>
                 </div>
                 {(confirmInviteModal.stay_start_date || confirmInviteModal.stay_end_date) && (
                   <div className="flex items-center gap-3 pl-8">
-                    <svg className="w-4 h-4 text-white/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    <p className="text-sm text-white/80">
+                    <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <p className="text-sm text-slate-600">
                       {confirmInviteModal.stay_start_date ? formatDate(confirmInviteModal.stay_start_date) : '—'}
                       {' — '}
                       {confirmInviteModal.stay_end_date ? formatDate(confirmInviteModal.stay_end_date) : 'Ongoing'}
@@ -2029,22 +1938,22 @@ const TenantDashboard: React.FC<{
               </div>
 
               <div className="space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-white/70">Agreements</p>
-                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-white/10 glass hover:border-white/20 transition-colors">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Agreements</p>
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-colors">
                   <input
                     type="checkbox"
                     checked={confirmTermsAgreed}
                     onChange={(e) => setConfirmTermsAgreed(e.target.checked)}
-                    className="w-5 h-5 rounded border-white/30 text-[hsl(265,89%,66%)] focus:ring-[hsl(265,89%,66%)] shrink-0 mt-0.5"
+                    className="w-5 h-5 rounded border-slate-300 text-[#6B90F2] focus:ring-[#6B90F2] shrink-0 mt-0.5"
                   />
                   <span className="text-sm text-slate-700">I agree to the <a href="#terms" target="_blank" rel="noopener noreferrer" className="text-[#6B90F2] font-semibold hover:underline">Terms of Service</a>.</span>
                 </label>
-                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-white/10 glass hover:border-white/20 transition-colors">
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-colors">
                   <input
                     type="checkbox"
                     checked={confirmPrivacyAgreed}
                     onChange={(e) => setConfirmPrivacyAgreed(e.target.checked)}
-                    className="w-5 h-5 rounded border-white/30 text-[hsl(265,89%,66%)] focus:ring-[hsl(265,89%,66%)] shrink-0 mt-0.5"
+                    className="w-5 h-5 rounded border-slate-300 text-[#6B90F2] focus:ring-[#6B90F2] shrink-0 mt-0.5"
                   />
                   <span className="text-sm text-slate-700">I agree to the <a href="#privacy" target="_blank" rel="noopener noreferrer" className="text-[#6B90F2] font-semibold hover:underline">Privacy Policy</a>.</span>
                 </label>
@@ -2053,11 +1962,8 @@ const TenantDashboard: React.FC<{
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  className="flex-1 h-11 rounded-lg font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20 transition-colors"
-                  onClick={() => {
-                    if (confirmInviteModal?.code) dismissedInviteCodesRef.current.add(confirmInviteModal.code);
-                    setConfirmInviteModal(null);
-                  }}
+                  className="flex-1 h-11 rounded-lg font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors"
+                  onClick={() => setConfirmInviteModal(null)}
                   disabled={confirmAccepting}
                 >
                   Cancel
@@ -2086,7 +1992,7 @@ const TenantDashboard: React.FC<{
         {logMessageModalEntry && (
           <div className="p-6">
             <p className="text-slate-700 whitespace-pre-wrap text-sm">{logMessageModalEntry.message}</p>
-            <p className="text-white/70 text-xs mt-4">
+            <p className="text-slate-500 text-xs mt-4">
               {logMessageModalEntry.created_at ? new Date(logMessageModalEntry.created_at).toLocaleString() : ''}
               {logMessageModalEntry.actor_email && ` · ${logMessageModalEntry.actor_email}`}
             </p>
@@ -2097,12 +2003,12 @@ const TenantDashboard: React.FC<{
       {/* Live link modal – same as Guest */}
       {showLiveLinkModal && liveLinkSlug && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="max-w-sm w-full rounded-2xl glass p-8 shadow-xl border border-white/10 relative">
-            <button type="button" onClick={() => { setShowLiveLinkModal(false); setLiveLinkSlug(null); setCopyToast(null); }} className="absolute top-4 right-4 text-white/60 hover:text-slate-700">
+          <div className="max-w-sm w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200 relative">
+            <button type="button" onClick={() => { setShowLiveLinkModal(false); setLiveLinkSlug(null); setCopyToast(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <h3 className="text-lg font-semibold text-white mb-1 text-center">Live link page</h3>
-            <p className="text-white/70 text-sm mb-4 text-center">Scan or share this link to open the property info page (no login).</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1 text-center">Live link page</h3>
+            <p className="text-slate-500 text-sm mb-4 text-center">Scan or share this link to open the property info page (no login).</p>
             <div className="flex justify-center mb-4">
               <div className="bg-slate-50 p-4 rounded-xl">
                 <img
@@ -2149,12 +2055,12 @@ const TenantDashboard: React.FC<{
       {/* Verify with QR code modal – same as Guest */}
       {showVerifyQRModal && verifyQRInviteId && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="max-w-sm w-full rounded-2xl glass p-8 shadow-xl border border-white/10 relative">
-            <button type="button" onClick={() => { setShowVerifyQRModal(false); setVerifyQRInviteId(null); setCopyToast(null); }} className="absolute top-4 right-4 text-white/60 hover:text-slate-700">
+          <div className="max-w-sm w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200 relative">
+            <button type="button" onClick={() => { setShowVerifyQRModal(false); setVerifyQRInviteId(null); setCopyToast(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <h3 className="text-lg font-semibold text-white mb-1 text-center">Verify with QR code</h3>
-            <p className="text-white/70 text-sm mb-4 text-center">Scan to open the Verify page with this stay&apos;s token pre-filled.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1 text-center">Verify with QR code</h3>
+            <p className="text-slate-500 text-sm mb-4 text-center">Scan to open the Verify page with this stay&apos;s token pre-filled.</p>
             <div className="flex justify-center mb-4">
               <div className="bg-slate-50 p-4 rounded-xl">
                 <img
@@ -2181,9 +2087,9 @@ const TenantDashboard: React.FC<{
       {/* End residency confirmation */}
       {showEndStayConfirm && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="max-w-md w-full rounded-2xl glass p-8 shadow-xl border border-white/10">
-            <h3 className="text-lg font-semibold text-white mb-2">End residency</h3>
-            <p className="text-sm text-white/80 mb-4">
+          <div className="max-w-md w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">End residency</h3>
+            <p className="text-sm text-slate-600 mb-4">
               Have you vacated the unit? Completing this will end your residency and set the end date to today ({selectedUnitData?.stay_start_date && selectedUnitData?.stay_end_date ? formatDate(getTodayStr()) : getTodayStr()}). This cannot be undone.
             </p>
             {selectedUnitData?.property && (
@@ -2212,9 +2118,9 @@ const TenantDashboard: React.FC<{
       {/* Cancel assignment confirmation */}
       {showCancelStayConfirm && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="max-w-md w-full rounded-2xl glass p-8 shadow-xl border border-white/10">
-            <h3 className="text-lg font-semibold text-white mb-2">Cancel assignment</h3>
-            <p className="text-sm text-white/80 mb-4">
+          <div className="max-w-md w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Cancel assignment</h3>
+            <p className="text-sm text-slate-600 mb-4">
               Cancel your upcoming assignment? This will remove the unit assignment from your dashboard and notify the host. This cannot be undone.
             </p>
             {selectedUnitForCancel && (
@@ -2242,13 +2148,13 @@ const TenantDashboard: React.FC<{
 
       {endStayConfirm && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="max-w-md w-full rounded-2xl glass p-8 shadow-xl border border-white/10">
-            <h3 className="text-lg font-bold text-white mb-2">Checkout of this stay?</h3>
-            <p className="text-white/80 text-sm mb-6">
+          <div className="max-w-md w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Checkout of this stay?</h3>
+            <p className="text-slate-600 text-sm mb-6">
               This will end your stay at <strong>{endStayConfirm.property_name}</strong>. This action cannot be undone.
             </p>
             <div className="flex gap-3">
-              <button type="button" className="flex-1 h-11 rounded-lg font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20" onClick={() => setEndStayConfirm(null)}>
+              <button type="button" className="flex-1 h-11 rounded-lg font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50" onClick={() => setEndStayConfirm(null)}>
                 Go back
               </button>
               <button
@@ -2266,13 +2172,13 @@ const TenantDashboard: React.FC<{
 
       {cancelStayConfirm && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="max-w-md w-full rounded-2xl glass p-8 shadow-xl border border-white/10">
-            <h3 className="text-lg font-bold text-white mb-2">Cancel this stay?</h3>
-            <p className="text-white/80 text-sm mb-6">
+          <div className="max-w-md w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Cancel this stay?</h3>
+            <p className="text-slate-600 text-sm mb-6">
               This will cancel your upcoming stay at <strong>{cancelStayConfirm.property_name}</strong>. This action cannot be undone.
             </p>
             <div className="flex gap-3">
-              <button type="button" className="flex-1 h-11 rounded-lg font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20" onClick={() => setCancelStayConfirm(null)}>
+              <button type="button" className="flex-1 h-11 rounded-lg font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50" onClick={() => setCancelStayConfirm(null)}>
                 Go back
               </button>
               <button
@@ -2315,8 +2221,8 @@ const TenantDashboard: React.FC<{
           className="max-w-lg"
         >
           <div className="p-6 space-y-4">
-            <p className="text-sm text-white/80">Share this link with your guest. They will sign in or create an account, then sign the agreement on their dashboard.</p>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-white/90 break-all">
+            <p className="text-sm text-slate-600">Share this link with your guest. They will sign in or create an account, then sign the agreement on their dashboard.</p>
+            <div className="bg-slate-100 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 break-all">
               {generatedInviteLink}
             </div>
             <div className="flex gap-3">

@@ -37,16 +37,16 @@ function TokenStateBadge({ tokenState }: { tokenState?: string | null }) {
   const state = (tokenState || 'STAGED').toUpperCase();
   const classes =
     state === 'BURNED'
-      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
       : state === 'STAGED'
-        ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
+        ? 'bg-sky-100 text-sky-700 border-sky-200'
         : state === 'EXPIRED'
-          ? 'bg-white/20 text-white/70 border-white/30'
+          ? 'bg-slate-100 text-slate-600 border-slate-200'
           : state === 'REVOKED'
-            ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+            ? 'bg-amber-100 text-amber-700 border-amber-200'
             : state === 'CANCELLED'
-              ? 'bg-white/20 text-white/70 border-white/30'
-              : 'bg-white/20 text-white/70 border-white/30';
+              ? 'bg-slate-100 text-slate-600 border-slate-200'
+              : 'bg-slate-100 text-slate-600 border-slate-200';
   const displayLabel = state === 'BURNED' ? 'Active' : state === 'STAGED' ? 'Pending' : state === 'REVOKED' ? 'Revoked' : state === 'CANCELLED' ? 'Cancelled' : state === 'EXPIRED' ? 'Expired' : state;
   return (
     <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${classes}`}>
@@ -103,6 +103,15 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
   const [shieldFilter, setShieldFilter] = useState<'all' | 'on' | 'off'>('all');
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<Set<number>>(new Set());
   const [bulkShieldLoading, setBulkShieldLoading] = useState(false);
+  /** Business mode overview: which list to show when a stat card is clicked (null = show overview CTA only). */
+  type OverviewFilter = 'properties' | 'units' | 'occupied' | 'vacant' | 'unknown' | 'shield_on' | null;
+  const [overviewFilter, setOverviewFilter] = useState<OverviewFilter>(null);
+  const [allUnitsList, setAllUnitsList] = useState<{ propertyId: number; propertyName: string; address: string; unit: { id: number; unit_label: string; occupancy_status: string; occupied_by?: string | null } }[]>([]);
+  const [unitsListLoading, setUnitsListLoading] = useState(false);
+  /** Properties tab (Business mode): filter list by status or show units. */
+  const [propertiesTabFilter, setPropertiesTabFilter] = useState<'all' | 'units' | 'occupied' | 'vacant' | 'unknown' | 'shield_on'>('all');
+  const [propertiesTabUnitsList, setPropertiesTabUnitsList] = useState<{ propertyId: number; propertyName: string; address: string; unit: { id: number; unit_label: string; occupancy_status: string; occupied_by?: string | null } }[]>([]);
+  const [propertiesTabUnitsLoading, setPropertiesTabUnitsLoading] = useState(false);
 
   const setLoadingWrapper = (x: boolean) => { setLoadingState(x); setLoading(x); };
 
@@ -153,6 +162,54 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
     return unsub;
   }, []);
 
+  // When user selects "Units" in overview, load all units across properties
+  useEffect(() => {
+    if (overviewFilter !== 'units' || properties.length === 0) {
+      setAllUnitsList([]);
+      return;
+    }
+    setUnitsListLoading(true);
+    Promise.all(
+      properties.map((p) =>
+        propertiesApi.getUnits(p.id).then((units) =>
+          (units || []).map((u) => ({
+            propertyId: p.id,
+            propertyName: p.name || [p.street, p.city, p.state].filter(Boolean).join(', ') || `Property #${p.id}`,
+            address: [p.street, p.city, p.state, p.zip_code].filter(Boolean).join(', '),
+            unit: { id: u.id, unit_label: u.unit_label || '—', occupancy_status: u.occupancy_status || 'unknown', occupied_by: u.occupied_by },
+          }))
+        )
+      )
+    )
+      .then((rows) => setAllUnitsList(rows.flat()))
+      .catch(() => setAllUnitsList([]))
+      .finally(() => setUnitsListLoading(false));
+  }, [overviewFilter, properties]);
+
+  // Properties tab: load all units when filter is "units"
+  useEffect(() => {
+    if (propertiesTabFilter !== 'units' || properties.length === 0) {
+      setPropertiesTabUnitsList([]);
+      return;
+    }
+    setPropertiesTabUnitsLoading(true);
+    Promise.all(
+      properties.map((p) =>
+        propertiesApi.getUnits(p.id).then((units) =>
+          (units || []).map((u) => ({
+            propertyId: p.id,
+            propertyName: p.name || [p.street, p.city, p.state].filter(Boolean).join(', ') || `Property #${p.id}`,
+            address: [p.street, p.city, p.state, p.zip_code].filter(Boolean).join(', '),
+            unit: { id: u.id, unit_label: u.unit_label || '—', occupancy_status: u.occupancy_status || 'unknown', occupied_by: u.occupied_by },
+          }))
+        )
+      )
+    )
+      .then((rows) => setPropertiesTabUnitsList(rows.flat()))
+      .catch(() => setPropertiesTabUnitsList([]))
+      .finally(() => setPropertiesTabUnitsLoading(false));
+  }, [propertiesTabFilter, properties]);
+
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab]);
@@ -180,6 +237,20 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
     };
     loadManagers();
   }, [activeTab, properties]);
+
+  // Filtered list for Properties tab (Business mode): by status card or shield
+  const propertiesTabFilteredProps = React.useMemo(() => {
+    const statusFiltered =
+      propertiesTabFilter === 'all' ? properties :
+      propertiesTabFilter === 'units' ? [] :
+      propertiesTabFilter === 'occupied' ? properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied') :
+      propertiesTabFilter === 'vacant' ? properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant') :
+      propertiesTabFilter === 'unknown' ? properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())) :
+      properties.filter((p) => p.shield_mode_enabled);
+    return propertiesTabFilter === 'all'
+      ? (shieldFilter === 'all' ? properties : shieldFilter === 'on' ? properties.filter((p) => p.shield_mode_enabled) : properties.filter((p) => !p.shield_mode_enabled))
+      : statusFiltered;
+  }, [properties, propertiesTabFilter, shieldFilter]);
 
   // Only checked-in stays count as active for occupancy, current guest, and DMS
   const activeStays = stays.filter((s) => s.checked_in_at && !s.checked_out_at && !s.cancelled_at);
@@ -301,8 +372,8 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
 
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
-      {/* Sidebar Navigation – cosmic theme */}
-      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col glass border-r border-white/10 p-6">
+      {/* Sidebar Navigation (fixed width so it does not shrink) */}
+      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 p-6">
         <div className="space-y-2 flex-shrink-0">
           {[
             { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -318,7 +389,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-[hsl(265,89%,66%)]/20 text-white border border-[hsl(265,89%,66%)]/40' : 'text-white/90 hover:text-white hover:bg-white/10'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon}></path></svg>
               {item.label}
@@ -329,7 +400,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         <div className="flex-grow min-h-0" />
 
         {/* Mode switcher at bottom */}
-        <div className="mt-6 pt-6 border-t border-white/10 flex-shrink-0">
+        <div className="mt-6 pt-6 border-t border-slate-200 flex-shrink-0">
           <ModeSwitcher
             contextMode={contextMode}
             personalModeUnits={personalModeUnits}
@@ -347,7 +418,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             id="mobile-tab-select"
             value={activeTab}
             onChange={(e) => setActiveTab(e.target.value)}
-            className="w-full max-w-xs rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
+            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="dashboard">Dashboard</option>
             <option value="properties">My Properties</option>
@@ -364,10 +435,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         {activeTab !== 'settings' && activeTab !== 'help' && (
           <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
             <div>
-              <h1 className="text-4xl font-extrabold text-white tracking-tight">
+              <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight">
                 {activeTab === 'properties' ? 'My Properties' : activeTab === 'guests' ? 'Guests' : activeTab === 'tenants' ? 'Tenants' : activeTab === 'invitations' ? 'Invitations' : activeTab === 'billing' ? 'Billing' : activeTab === 'logs' ? 'Event ledger' : 'Overview'}
               </h1>
-              <p className="text-white/90 mt-1">
+              <p className="text-slate-600 mt-1">
                 {activeTab === 'properties' ? 'View, edit, or remove your registered properties.' : activeTab === 'guests' ? 'Guests currently staying at your properties and their stay details.' : activeTab === 'tenants' ? 'Tenants assigned to your properties and their lease details.' : activeTab === 'invitations' ? (contextMode === 'business' ? 'Tenant invitations you have sent.' : 'Pending invitations waiting for guests to accept.') : activeTab === 'billing' ? 'Invoices and payment history. Onboarding and subscription charges appear here.' : activeTab === 'logs' ? 'Immutable event ledger: status changes, guest signatures, payment and billing activity, and failed attempts. Filter by time, category, or search.' : 'Documentation and authorization for your properties.'}
               </p>
             </div>
@@ -376,7 +447,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 <span className={!canInvite ? 'group relative inline-block cursor-not-allowed' : undefined}>
                   {!canInvite && (
                     <span
-                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-2 bg-[hsl(230,30%,12%)] border border-white/10 text-white text-xs rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-[200] group-hover:opacity-100"
+                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-[200] group-hover:opacity-100"
                       role="tooltip"
                     >
                       Go to Billing and pay your onboarding fee to invite guests.
@@ -407,7 +478,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                   <button
                     type="button"
                     onClick={() => setShowBulkUploadRulesModal(true)}
-                    className="p-1 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                    className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
                     aria-label="Bulk upload rules"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -430,31 +501,31 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         )}
 
         {error && (
-          <div className="mb-8 p-6 rounded-2xl glass border border-white/10 text-center">
-            <p className="text-white/95 mb-4">Something went wrong loading the dashboard.</p>
+          <div className="mb-8 p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+            <p className="text-slate-600 mb-4">Something went wrong loading the dashboard.</p>
             <Button variant="primary" onClick={() => { setError(null); loadData(); }}>Try again</Button>
           </div>
         )}
 
         {loading ? (
-          <p className="text-white/90">Loading dashboard…</p>
+          <p className="text-slate-600">Loading dashboard…</p>
         ) : activeTab === 'guests' && contextMode === 'personal' ? (
           /* Guests tab: pending invitations + active & expired stays (personal mode only; never show in business) */
           <div className="space-y-8">
-            <p className="text-white/70 text-sm">
+            <p className="text-slate-500 text-sm">
               Pending invitations, active stays, and past/expired stays. Data is loaded from your dashboard.
             </p>
 
             {/* Pending invitations */}
             {invitations.filter((i) => i.status === 'pending').length > 0 && (
               <Card className="overflow-hidden">
-                <div className="p-6 border-b border-white/10 bg-amber-500/10">
-                  <h3 className="text-xl font-bold text-white">Pending invitations</h3>
-                  <p className="text-xs text-white/60 mt-1">Invites not yet accepted by the guest</p>
+                <div className="p-6 border-b border-slate-200 bg-amber-50">
+                  <h3 className="text-xl font-bold text-slate-800">Pending invitations</h3>
+                  <p className="text-xs text-slate-500 mt-1">Invites not yet accepted by the guest</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
+                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
                       <tr>
                         <th className="px-6 py-4">Invited (email)</th>
                         <th className="px-6 py-4">Property</th>
@@ -465,26 +536,26 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/10">
+                    <tbody className="divide-y divide-gray-800">
                       {invitations.filter((i) => i.status === 'pending').map((inv) => (
-                        <tr key={inv.id} className="hover:bg-white/5 transition-colors">
+                        <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-5">
-                            <span className="text-sm font-medium text-white/95">{inv.guest_name || inv.guest_email || '—'}</span>
+                            <span className="text-sm font-medium text-slate-800">{inv.guest_name || inv.guest_email || '—'}</span>
                           </td>
                           <td className="px-6 py-5">
-                            <p className="text-sm font-medium text-white/95">{inv.property_name}</p>
-                            <p className="text-xs text-white/60">{inv.region_code}</p>
+                            <p className="text-sm font-medium text-slate-800">{inv.property_name}</p>
+                            <p className="text-xs text-slate-500">{inv.region_code}</p>
                           </td>
-                          <td className="px-6 py-5 text-sm text-white/70 whitespace-nowrap">
+                          <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
                             {formatStayDuration(inv.stay_start_date, inv.stay_end_date)}
                           </td>
-                          <td className="px-6 py-5 text-sm text-white/70">{inv.region_code}</td>
-                          <td className="px-6 py-5 text-xs font-mono text-white/70">{inv.invitation_code}</td>
+                          <td className="px-6 py-5 text-sm text-slate-600">{inv.region_code}</td>
+                          <td className="px-6 py-5 text-xs font-mono text-slate-600">{inv.invitation_code}</td>
                           <td className="px-6 py-5">
                             {inv.is_expired ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-white/20 text-white/70 border border-white/30">Expired</span>
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">Expired</span>
                             ) : (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/20 text-amber-300 border border-amber-400/40">Pending</span>
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-700 border border-amber-200">Pending</span>
                             )}
                           </td>
                           <td className="px-6 py-5 text-right">
@@ -511,16 +582,16 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
 
             {/* Stays: active and expired */}
             <Card className="overflow-hidden">
-              <div className="p-6 border-b border-white/10 bg-white/5">
-                <h3 className="text-xl font-bold text-white">Stays (active & past)</h3>
-                <p className="text-xs text-white/60 mt-1">Guests who accepted and their current or past stay</p>
+              <div className="p-6 border-b border-slate-200 bg-white/60 backdrop-blur-md">
+                <h3 className="text-xl font-bold text-slate-800">Stays (active & past)</h3>
+                <p className="text-xs text-slate-500 mt-1">Guests who accepted and their current or past stay</p>
               </div>
               {stays.length === 0 ? (
-                <div className="px-6 py-12 text-center text-white/60">No stays yet. When guests accept an invitation, they appear here.</div>
+                <div className="px-6 py-12 text-center text-slate-500">No stays yet. When guests accept an invitation, they appear here.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
+                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
                       <tr>
                         <th className="px-6 py-4">Guest</th>
                         <th className="px-6 py-4">Property</th>
@@ -531,7 +602,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/10">
+                    <tbody className="divide-y divide-gray-800">
                       {stays.map((stay) => {
                         const overstay = isOverstayed(stay.stay_end_date);
                         const dLeft = daysLeft(stay.stay_end_date);
@@ -540,34 +611,34 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         const cancelled = !!stay.cancelled_at;
                         const isActive = !completed && !cancelled;
                         return (
-                          <tr key={stay.stay_id} className="hover:bg-white/5 transition-colors">
+                          <tr key={stay.stay_id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-5">
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-white/20 text-white/90 flex items-center justify-center font-bold text-sm">
+                                <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-sm">
                                   {stay.guest_name.charAt(0)}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-bold text-white/95">{stay.guest_name}</p>
-                                  <p className="text-xs text-white/60">Stay #{stay.stay_id}</p>
+                                  <p className="text-sm font-bold text-slate-800">{stay.guest_name}</p>
+                                  <p className="text-xs text-slate-500">Stay #{stay.stay_id}</p>
                                 </div>
                               </div>
                             </td>
                             <td className="px-6 py-5">
-                              <p className="text-sm font-medium text-white/95">{stay.property_name}</p>
-                              <p className="text-xs text-white/60">{stay.region_code}</p>
+                              <p className="text-sm font-medium text-slate-800">{stay.property_name}</p>
+                              <p className="text-xs text-slate-500">{stay.region_code}</p>
                             </td>
-                            <td className="px-6 py-5 text-sm text-white/70 whitespace-nowrap">
+                            <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
                               {formatStayDuration(stay.stay_start_date, stay.stay_end_date)}
                             </td>
-                            <td className="px-6 py-5 text-sm text-white/70">{stay.region_code}</td>
+                            <td className="px-6 py-5 text-sm text-slate-600">{stay.region_code}</td>
                             <td className="px-6 py-5">
-                              <span className={`text-sm font-bold ${!isActive ? 'text-white/50' : revoked ? 'text-amber-400' : overstay ? 'text-red-400' : 'text-emerald-400'}`}>
+                              <span className={`text-sm font-bold ${!isActive ? 'text-slate-500' : revoked ? 'text-amber-600' : overstay ? 'text-red-600' : 'text-green-600'}`}>
                                 {completed || cancelled ? '—' : revoked ? '—' : overstay ? '—' : `${dLeft}d`}
                               </span>
                             </td>
                             <td className="px-6 py-5">
                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                                stay.invitation_only ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' : completed ? 'bg-white/20 text-white/70 border border-white/30' : cancelled ? 'bg-white/20 text-white/60 border border-white/30' : revoked ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' : overstay ? 'bg-red-500/20 text-red-300 border border-red-400/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                                stay.invitation_only ? 'bg-amber-50 text-amber-700 border border-amber-200' : completed ? 'bg-slate-100 text-slate-600 border border-slate-200' : cancelled ? 'bg-slate-100 text-slate-500 border border-slate-200' : revoked ? 'bg-amber-50 text-amber-700 border border-amber-500/20' : overstay ? 'bg-red-50 text-red-600 border border-red-500/20' : 'bg-green-50 text-green-700 border border-green-200'
                               }`}>
                                 {stay.invitation_only ? 'Pending sign-up' : completed ? 'Completed' : cancelled ? 'Cancelled' : revoked ? 'Revoked' : overstay ? 'Overstayed' : 'Active'}
                               </span>
@@ -577,11 +648,11 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                 <Button variant="outline" onClick={() => { setVerifyQRInviteId(stay.invite_id ?? null); setShowVerifyQRModal(true); }} className="text-xs py-2">Verify QR</Button>
                               )}
                               {stay.invitation_only ? (
-                                <span className="text-xs text-white/60"></span>
+                                <span className="text-xs text-slate-500"></span>
                               ) : completed || cancelled ? (
-                                <span className="text-xs text-white/60">—</span>
+                                <span className="text-xs text-slate-500">—</span>
                               ) : revoked ? (
-                                <span className="text-xs text-white/60">Revoked</span>
+                                <span className="text-xs text-slate-500">Revoked</span>
                               ) : overstay ? (
                                 <Button variant="danger" onClick={() => handleInitiateRemoval(stay)} className="text-xs py-2">Remove</Button>
                               ) : (
@@ -600,11 +671,11 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
 
             {stays.length === 0 && invitations.filter((i) => i.status === 'pending').length === 0 && (
               <Card className="p-12 text-center">
-                <p className="text-white/70 mb-6">No guests or pending invites yet. Invite someone to get started.</p>
+                <p className="text-slate-600 mb-6">No guests or pending invites yet. Invite someone to get started.</p>
                 <span className={!canInvite ? 'group relative inline-block cursor-not-allowed' : undefined}>
                   {!canInvite && (
                     <span
-                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-2 bg-[hsl(230,30%,12%)] border border-white/10 text-white text-xs rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-[200] group-hover:opacity-100"
+                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-[200] group-hover:opacity-100"
                       role="tooltip"
                     >
                       Go to Billing and pay your onboarding fee to invite guests.
@@ -630,18 +701,18 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
           <div className="space-y-8">
             {tenants.length === 0 ? (
               <Card className="p-12 text-center">
-                <p className="text-white/70 mb-6">No tenants or tenant invitations for your properties yet.</p>
+                <p className="text-slate-600 mb-6">No tenants or tenant invitations for your properties yet.</p>
                 <Button variant="outline" onClick={() => setShowInviteTenantModal(true)}>Invite Tenant</Button>
               </Card>
             ) : (
               <Card className="overflow-hidden">
-                <div className="p-6 border-b border-white/10 bg-white/5">
-                  <h3 className="text-xl font-bold text-white">Tenants</h3>
-                  <p className="text-xs text-white/60 mt-1">Active tenants and pending invitations for your properties</p>
+                <div className="p-6 border-b border-slate-200 bg-white/60 backdrop-blur-md">
+                  <h3 className="text-xl font-bold text-slate-800">Tenants</h3>
+                  <p className="text-xs text-slate-500 mt-1">Active tenants and pending invitations for your properties</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
+                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
                       <tr>
                         <th className="px-6 py-4">Tenant</th>
                         <th className="px-6 py-4">Property</th>
@@ -651,38 +722,38 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4">Invite code</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/10">
+                    <tbody className="divide-y divide-slate-100">
                       {tenants.map((t) => (
-                        <tr key={t.id} className="hover:bg-white/5 transition-colors">
+                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${t.status === 'pending_signup' ? 'bg-amber-500/20 text-amber-300' : 'bg-white/20 text-white/90'}`}>
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${t.status === 'pending_signup' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-700'}`}>
                                 {t.tenant_name.charAt(0).toUpperCase()}
                               </div>
                               <div>
-                                <p className="text-sm font-bold text-white/95">{t.tenant_name}</p>
-                                {t.tenant_email && <p className="text-xs text-white/60">{t.tenant_email}</p>}
+                                <p className="text-sm font-bold text-slate-800">{t.tenant_name}</p>
+                                {t.tenant_email && <p className="text-xs text-slate-500">{t.tenant_email}</p>}
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-5">
-                            <p className="text-sm font-medium text-white/95">{t.property_name}</p>
+                            <p className="text-sm font-medium text-slate-800">{t.property_name}</p>
                           </td>
-                          <td className="px-6 py-5 text-sm text-white/70">{t.unit_label || '—'}</td>
-                          <td className="px-6 py-5 text-sm text-white/70 whitespace-nowrap">
+                          <td className="px-6 py-5 text-sm text-slate-600">{t.unit_label || '—'}</td>
+                          <td className="px-6 py-5 text-sm text-slate-600 whitespace-nowrap">
                             {t.start_date && t.end_date ? formatStayDuration(t.start_date, t.end_date) : t.start_date ? `From ${new Date(t.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : '—'}
-                            {t.status === 'active' && !t.end_date && <span className="ml-1 text-xs text-white/50">(ongoing)</span>}
+                            {t.status === 'active' && !t.end_date && <span className="ml-1 text-xs text-slate-400">(ongoing)</span>}
                           </td>
                           <td className="px-6 py-5">
                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
                               t.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                               t.status === 'pending_signup' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                              'bg-white/20 text-white/70 border border-white/30'
+                              'bg-slate-100 text-slate-500 border border-slate-200'
                             }`}>
                               {t.status === 'active' ? 'Active' : t.status === 'pending_signup' ? 'Pending signup' : 'Ended'}
                             </span>
                           </td>
-                          <td className="px-6 py-5 text-xs font-mono text-white/70">
+                          <td className="px-6 py-5 text-xs font-mono text-slate-500">
                             {t.invitation_code || '—'}
                           </td>
                         </tr>
@@ -699,7 +770,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             
             {properties.length === 0 && inactiveProperties.length === 0 ? (
               <Card className="p-12 text-center">
-                <p className="text-white/70 mb-6">You haven’t registered any properties yet.</p>
+                <p className="text-slate-600 mb-6">You haven’t registered any properties yet.</p>
                 {contextMode !== 'personal' && (
                   <Button variant="primary" onClick={() => navigate('add-property')}>Register your first property</Button>
                 )}
@@ -709,42 +780,48 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
               {/* Active properties */}
               {properties.length > 0 && (
               <div>
-                {contextMode === 'business' && (
-                  <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-                    <Card className="p-6 border-l-4 border-blue-400">
-                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Properties</p>
-                      <p className="text-4xl font-extrabold text-white mt-1">{properties.length}</p>
-                    </Card>
-                    <Card className="p-6 border-l-4 border-emerald-400">
-                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Occupied</p>
-                      <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length}</p>
-                    </Card>
-                    <Card className="p-6 border-l-4 border-sky-400">
-                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Vacant</p>
-                      <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length}</p>
-                    </Card>
-                    <Card className="p-6 border-l-4 border-white/40">
-                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Unknown</p>
-                      <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length}</p>
-                    </Card>
-                    <Card className="p-6 border-l-4 border-amber-400">
-                      <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Shield On</p>
-                      <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => p.shield_mode_enabled).length}</p>
-                    </Card>
-                  </div>
-                )}
-                <h3 className="text-lg font-bold text-white mb-4">Active properties</h3>
+                {contextMode === 'business' && (() => {
+                  const totalUnits = properties.reduce((s, p) => s + (p.unit_count ?? 1), 0);
+                  const occupiedCount = properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length;
+                  const vacantCount = properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length;
+                  const unknownCount = properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length;
+                  const shieldOnCount = properties.filter((p) => p.shield_mode_enabled).length;
+                  const filters: { key: typeof propertiesTabFilter; label: string; count: number; border: string }[] = [
+                    { key: 'all', label: 'Properties', count: properties.length, border: 'border-blue-500' },
+                    { key: 'units', label: 'Units', count: totalUnits, border: 'border-indigo-500' },
+                    { key: 'occupied', label: 'Occupied', count: occupiedCount, border: 'border-emerald-500' },
+                    { key: 'vacant', label: 'Vacant', count: vacantCount, border: 'border-sky-500' },
+                    { key: 'unknown', label: 'Unknown', count: unknownCount, border: 'border-slate-400' },
+                    { key: 'shield_on', label: 'Shield On', count: shieldOnCount, border: 'border-amber-500' },
+                  ];
+                  return (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-6">
+                      {filters.map(({ key, label, count, border }) => (
+                        <Card
+                          key={key}
+                          role="button"
+                          className={`p-6 border-l-4 ${border} hover:scale-[1.02] transition-transform cursor-pointer ${propertiesTabFilter === key ? 'ring-2 ring-slate-400 ring-offset-2' : ''}`}
+                          onClick={() => setPropertiesTabFilter(key)}
+                        >
+                          <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">{label}</p>
+                          <p className="text-4xl font-extrabold text-slate-800 mt-1">{count}</p>
+                        </Card>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <h3 className="text-lg font-bold text-slate-800 mb-4">Active properties</h3>
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                  <span className="text-white/70 text-sm">Filter and manage Shield Mode for your properties.</span>
+                  <span className="text-slate-500 text-sm">Filter and manage Shield Mode for your properties.</span>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">Shield Mode:</span>
-                    <div className="flex rounded-lg border border-white/20 bg-white/10 p-0.5">
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Shield Mode:</span>
+                    <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
                       {(['all', 'on', 'off'] as const).map((f) => (
                         <button
                           key={f}
                           type="button"
                           onClick={() => setShieldFilter(f)}
-                          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${shieldFilter === f ? 'bg-[hsl(265,89%,66%)] text-white' : 'text-white/80 hover:bg-white/20'}`}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${shieldFilter === f ? 'bg-slate-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
                         >
                           {f === 'all' ? 'All' : f === 'on' ? 'Shield ON' : 'Shield OFF'}
                         </button>
@@ -752,26 +829,26 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                     </div>
                   </div>
                 </div>
-                {(() => {
-                  const filteredProps = shieldFilter === 'all' ? properties : shieldFilter === 'on' ? properties.filter((p) => p.shield_mode_enabled) : properties.filter((p) => !p.shield_mode_enabled);
-                  const allFilteredSelected = filteredProps.length > 0 && filteredProps.every((p) => selectedPropertyIds.has(p.id));
-                  return filteredProps.length > 0 && (
-                    <div className="mb-3 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPropertyIds(allFilteredSelected ? new Set() : new Set(filteredProps.map((p) => p.id)))}
-                        className="text-sm text-white/70 hover:text-white underline"
-                      >
-                        {allFilteredSelected ? 'Select none' : 'Select all'}
-                      </button>
-                      <span className="text-white/50">·</span>
-                      <span className="text-sm text-white/60">({filteredProps.length} propert{filteredProps.length === 1 ? 'y' : 'ies'} shown)</span>
-                    </div>
-                  );
-                })()}
+                {propertiesTabFilteredProps.length > 0 && propertiesTabFilter !== 'units' && (
+                  <div className="mb-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPropertyIds(
+                        propertiesTabFilteredProps.every((p) => selectedPropertyIds.has(p.id))
+                          ? new Set()
+                          : new Set(propertiesTabFilteredProps.map((p) => p.id))
+                      )}
+                      className="text-sm text-slate-600 hover:text-slate-800 underline"
+                    >
+                      {propertiesTabFilteredProps.every((p) => selectedPropertyIds.has(p.id)) ? 'Select none' : 'Select all'}
+                    </button>
+                    <span className="text-slate-400">·</span>
+                    <span className="text-sm text-slate-500">({propertiesTabFilteredProps.length} propert{propertiesTabFilteredProps.length === 1 ? 'y' : 'ies'} shown)</span>
+                  </div>
+                )}
                 {selectedPropertyIds.size > 0 && (
-                  <div className="mb-4 p-4 rounded-xl bg-white/10 border border-white/20 flex flex-wrap items-center justify-between gap-4">
-                    <span className="text-sm font-medium text-white/90">{selectedPropertyIds.size} propert{selectedPropertyIds.size === 1 ? 'y' : 'ies'} selected</span>
+                  <div className="mb-4 p-4 rounded-xl bg-slate-100 border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                    <span className="text-sm font-medium text-slate-700">{selectedPropertyIds.size} propert{selectedPropertyIds.size === 1 ? 'y' : 'ies'} selected</span>
                     <div className="flex items-center gap-2">
                       <Button variant="outline" size="sm" onClick={() => setSelectedPropertyIds(new Set())}>Clear selection</Button>
                       <Button
@@ -817,8 +894,53 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                     </div>
                   </div>
                 )}
+                {contextMode === 'business' && propertiesTabFilter === 'units' && (
+                  <Card className="p-6 overflow-hidden">
+                    {propertiesTabUnitsLoading ? (
+                      <p className="text-slate-500 text-sm">Loading units…</p>
+                    ) : propertiesTabUnitsList.length === 0 ? (
+                      <p className="text-slate-500 text-sm">No units found.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-slate-100 text-slate-600 uppercase text-xs font-semibold border-b border-slate-200">
+                            <tr>
+                              <th className="px-4 py-3">Property</th>
+                              <th className="px-4 py-3">Unit</th>
+                              <th className="px-4 py-3">Status</th>
+                              <th className="px-4 py-3">Address</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {propertiesTabUnitsList.map((row) => (
+                              <tr key={`${row.propertyId}-${row.unit.id}`} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 font-medium text-slate-800">{row.propertyName}</td>
+                                <td className="px-4 py-3 text-slate-700">{row.unit.unit_label}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                                    (row.unit.occupancy_status || '').toLowerCase() === 'occupied' ? 'bg-emerald-100 text-emerald-800' :
+                                    (row.unit.occupancy_status || '').toLowerCase() === 'vacant' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-700'
+                                  }`}>
+                                    {(row.unit.occupancy_status || 'unknown').toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600 truncate max-w-[200px]">{row.address}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </Card>
+                )}
+                {contextMode === 'business' && propertiesTabFilteredProps.length === 0 && propertiesTabFilter !== 'units' && (
+                  <Card className="p-6">
+                    <p className="text-slate-500 text-sm">No properties match this filter.</p>
+                  </Card>
+                )}
+                {!(contextMode === 'business' && propertiesTabFilter === 'units') && (
                 <div className="grid gap-6">
-                {(shieldFilter === 'all' ? properties : shieldFilter === 'on' ? properties.filter((p) => p.shield_mode_enabled) : properties.filter((p) => !p.shield_mode_enabled)).map((prop) => {
+                {propertiesTabFilteredProps.map((prop) => {
                   const address = [prop.street, prop.city, prop.state, prop.zip_code].filter(Boolean).join(', ');
                   const displayName = prop.name || address || `Property #${prop.id}`;
                   // Business mode: use property status only (no guest data). Personal mode: can use stays for occupancy.
@@ -830,7 +952,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                   const shieldStatus = shieldOn ? (isOccupied ? 'PASSIVE GUARD' : 'ACTIVE MONITORING') : null;
                   const isSelected = selectedPropertyIds.has(prop.id);
                   return (
-                    <Card key={prop.id} className="p-6 border border-white/10">
+                    <Card key={prop.id} className="p-6 border border-slate-200">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                         <div className="flex items-start gap-3 flex-shrink-0">
                           <input
@@ -845,7 +967,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                 return next;
                               });
                             }}
-                            className="mt-1 h-4 w-4 rounded border-white/30 text-[hsl(265,89%,66%)] focus:ring-[hsl(265,89%,66%)]"
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                             aria-label={`Select ${displayName}`}
                           />
                         <button
@@ -854,44 +976,44 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                           className="min-w-0 flex-1 text-left hover:opacity-90 transition-opacity"
                         >
                           <div className="flex flex-wrap items-center gap-2 gap-y-1">
-                            <h3 className="text-lg font-bold text-white truncate">{displayName}</h3>
+                            <h3 className="text-lg font-bold text-slate-800 truncate">{displayName}</h3>
                             {(() => {
                               const displayStatus = isOccupied ? 'OCCUPIED' : (prop.occupancy_status ?? 'unknown').toUpperCase();
                               return (
                                 <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase ${
-                                  displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300' :
-                                  displayStatus === 'VACANT' ? 'bg-white/20 text-white/80' :
-                                  displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300' :
-                                  'bg-white/20 text-white/70'
+                                  displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
+                                  displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                                  displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                                  'bg-slate-100 text-slate-600'
                                 }`}>
                                   <span className={`w-1.5 h-1.5 rounded-full ${
-                                    displayStatus === 'OCCUPIED' ? 'bg-emerald-400' :
-                                    displayStatus === 'VACANT' ? 'bg-white/50' :
-                                    displayStatus === 'UNCONFIRMED' ? 'bg-amber-400' : 'bg-white/50'
+                                    displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
+                                    displayStatus === 'VACANT' ? 'bg-slate-400' :
+                                    displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
                                   }`} />
                                   {displayStatus}
                                 </span>
                               );
                             })()}
                           </div>
-                          <p className="text-sm text-white/70 mt-1 truncate">{address || '—'}</p>
-                          <div className="flex flex-wrap gap-3 mt-3 text-xs text-white/60">
-                            <span>Region: <span className="text-white/80 font-medium">{prop.region_code}</span></span>
+                          <p className="text-sm text-slate-600 mt-1 truncate">{address || '—'}</p>
+                          <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-500">
+                            <span>Region: <span className="text-slate-600 font-medium">{prop.region_code}</span></span>
                             {(prop.property_type_label || prop.property_type) && (
-                              <span>Type: <span className="text-white/80 font-medium">{prop.property_type_label || prop.property_type}</span></span>
+                              <span>Type: <span className="text-slate-600 font-medium">{prop.property_type_label || prop.property_type}</span></span>
                             )}
                             {!prop.is_multi_unit && prop.bedrooms && (
-                              <span>Bedrooms: <span className="text-white/80 font-medium">{prop.bedrooms}</span></span>
+                              <span>Bedrooms: <span className="text-slate-600 font-medium">{prop.bedrooms}</span></span>
                             )}
                             {contextMode === 'personal' && isOccupied && activeStayForProp && (
                               <span>
-                                Stay end reminders: <span className={activeStayForProp.dead_mans_switch_enabled ? 'text-amber-400 font-medium' : 'text-white/70 font-medium'}>
+                                Stay end reminders: <span className={activeStayForProp.dead_mans_switch_enabled ? 'text-amber-600 font-medium' : 'text-slate-600 font-medium'}>
                                   {activeStayForProp.dead_mans_switch_enabled ? 'On' : 'Off'}
                                 </span>
                               </span>
                             )}
                           </div>
-                          <span className="inline-block mt-2 text-xs font-medium text-[hsl(265,89%,76%)]">View details →</span>
+                          <span className="inline-block mt-2 text-xs font-medium text-blue-400">View details →</span>
                         </button>
                         </div>
                         <div className="flex items-center gap-3 flex-shrink-0">
@@ -902,7 +1024,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                             <Button
                               variant="ghost"
                               onClick={() => { setDeleteConfirmProperty(prop); setDeleteError(null); }}
-                              className="px-4 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                              className="px-4 text-red-600 hover:text-red-700 hover:bg-red-50"
                             >
                               Remove Property
                             </Button>
@@ -910,40 +1032,40 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         </div>
                       </div>
                       {/* Occupancy status: VACANT | OCCUPIED | UNKNOWN | UNCONFIRMED */}
-                      <div className="mt-6 pt-6 border-t border-white/10 rounded-xl bg-white/5 p-4">
-                        <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-2">Occupancy status</p>
+                      <div className="mt-6 pt-6 border-t border-slate-200 rounded-xl bg-slate-50/80 p-4">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Occupancy status</p>
                         <div className="flex items-center gap-3 flex-wrap">
                           {(() => {
                             const displayStatus = isOccupied ? 'OCCUPIED' : (prop.occupancy_status ?? 'unknown').toUpperCase();
                             return (
                           <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${
-                            displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300' :
-                            displayStatus === 'VACANT' ? 'bg-white/20 text-white/80' :
-                            displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300' :
-                            'bg-white/20 text-white/70'
+                            displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
+                            displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                            displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                            'bg-slate-100 text-slate-600'
                           }`}>
                             <span className={`w-2 h-2 rounded-full ${
-                              displayStatus === 'OCCUPIED' ? 'bg-emerald-400' :
-                              displayStatus === 'VACANT' ? 'bg-white/50' :
-                              displayStatus === 'UNCONFIRMED' ? 'bg-amber-400' : 'bg-white/50'
+                              displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
+                              displayStatus === 'VACANT' ? 'bg-slate-400' :
+                              displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
                             }`} />
                             {displayStatus}
                           </span>
                             );
                           })()}
                           {contextMode === 'personal' && isOccupied && activeStayForProp && (
-                            <span className="text-sm text-white/70">
-                              Current guest: <span className="font-medium text-white/90">{activeStayForProp.guest_name}</span>
+                            <span className="text-sm text-slate-600">
+                              Current guest: <span className="font-medium text-slate-800">{activeStayForProp.guest_name}</span>
                               {' · '}
-                              Lease end: <span className="font-medium text-white/90">{activeStayForProp.stay_end_date}</span>
+                              Lease end: <span className="font-medium text-slate-800">{activeStayForProp.stay_end_date}</span>
                             </span>
                           )}
                         </div>
                       </div>
 
                       {/* Shield Mode: independent of vacant/occupied; owner can turn ON or OFF anytime. Auto ON: last day of stay, DMS run (48h after stay end). Auto OFF: when new guest accepts invitation. */}
-                      <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
-                        <p className="text-xs font-bold uppercase tracking-wider text-white/80 mb-2">Shield Mode</p>
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Shield Mode</p>
                         <div className="flex flex-wrap items-center gap-4">
                           <div className="flex items-center gap-2">
                             <button
@@ -964,47 +1086,47 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                   setShieldTogglePropertyId(null);
                                 }
                               }}
-                              className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)] focus:ring-offset-2 focus:ring-offset-[hsl(230,35%,4%)] ${shieldOn ? 'cursor-pointer bg-[hsl(265,89%,66%)]' : 'cursor-pointer bg-white/25 hover:bg-white/35'} ${shieldTogglePropertyId === prop.id ? 'opacity-50' : ''}`}
+                              className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${shieldOn ? 'cursor-pointer bg-emerald-600' : 'cursor-pointer bg-slate-200 hover:bg-slate-300'} ${shieldTogglePropertyId === prop.id ? 'opacity-50' : ''}`}
                             >
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${shieldOn ? 'translate-x-5' : 'translate-x-1'}`} />
                             </button>
-                            <span className="text-sm font-medium text-white">{shieldOn ? 'ON' : 'OFF'}</span>
+                            <span className="text-sm font-medium text-slate-800">{shieldOn ? 'ON' : 'OFF'}</span>
                           </div>
                           {shieldOn && shieldStatus && (
-                            <span className="text-sm text-white/80">
-                              Status: <span className="font-semibold text-white">{shieldStatus}</span>
+                            <span className="text-sm text-slate-600">
+                              Status: <span className="font-semibold text-slate-800">{shieldStatus}</span>
                             </span>
                           )}
                           {!shieldOn && (
-                            <span className="text-xs text-white/70">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when stay end reminders run (48h after stay end).</span>
+                            <span className="text-xs text-slate-500">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when stay end reminders run (48h after stay end).</span>
                           )}
-                          <span className="text-xs text-white/60">$10/month subscription</span>
+                          <span className="text-xs text-slate-400">$10/month subscription</span>
                         </div>
                       </div>
 
                       {/* Property managers: visible in both personal and business; remove only in business */}
-                      <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
-                        <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-2">Property managers</p>
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Property managers</p>
                         {(propertyManagersMap[prop.id]?.length ?? 0) === 0 ? (
-                          <p className="text-sm text-white/60">No managers assigned. Invite from property details.</p>
+                          <p className="text-sm text-slate-500">No managers assigned. Invite from property details.</p>
                         ) : (
                           <ul className="space-y-2">
                             {(propertyManagersMap[prop.id] || []).map((m) => (
-                              <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-white/10 last:border-0">
+                              <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
                                 <div>
-                                  <p className="text-sm font-medium text-white/95">{m.full_name || m.email}</p>
-                                  <p className="text-xs text-white/60">{m.email}</p>
+                                  <p className="text-sm font-medium text-slate-800">{m.full_name || m.email}</p>
+                                  <p className="text-xs text-slate-500">{m.email}</p>
                                   {m.has_resident_mode && m.resident_unit_label && (
                                     <>
-                                      <p className="text-xs text-emerald-400 mt-0.5">On-site resident · Unit {m.resident_unit_label}</p>
+                                      <p className="text-xs text-emerald-600 mt-0.5">On-site resident · Unit {m.resident_unit_label}</p>
                                       {m.presence_status && (
-                                        <p className="text-xs text-white/60 mt-0.5">
+                                        <p className="text-xs text-slate-600 mt-0.5">
                                           {m.presence_status === 'present' ? (
-                                            <span className="text-emerald-400">Present</span>
+                                            <span className="text-emerald-600">Present</span>
                                           ) : m.presence_away_started_at ? (
-                                            <span className="text-white/70">Away since {new Date(m.presence_away_started_at).toLocaleDateString()}</span>
+                                            <span className="text-slate-600">Away since {new Date(m.presence_away_started_at).toLocaleDateString()}</span>
                                           ) : (
-                                            <span className="text-white/70">Away</span>
+                                            <span className="text-slate-600">Away</span>
                                           )}
                                         </p>
                                       )}
@@ -1067,6 +1189,7 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                   );
                 })}
                 </div>
+                )}
               </div>
               )}
 
@@ -1138,17 +1261,17 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
         ) : activeTab === 'billing' ? (
           <div className="space-y-6">
             {paymentReturnMessage && (
-              <div className={`flex items-center justify-between gap-4 p-4 rounded-xl text-sm ${paymentReturnIsError ? 'bg-red-500/10 border border-red-400/30 text-red-200' : 'bg-emerald-500/10 border border-emerald-400/30 text-emerald-200'}`}>
+              <div className={`flex items-center justify-between gap-4 p-4 rounded-xl text-sm ${paymentReturnIsError ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'}`}>
                 <span>{paymentReturnMessage}</span>
-                <button type="button" onClick={() => { setPaymentReturnMessage(null); setPaymentReturnIsError(false); }} className={paymentReturnIsError ? 'text-red-300 hover:text-red-200 font-medium shrink-0' : 'text-emerald-300 hover:text-emerald-200 font-medium shrink-0'} aria-label="Dismiss">Dismiss</button>
+                <button type="button" onClick={() => { setPaymentReturnMessage(null); setPaymentReturnIsError(false); }} className={paymentReturnIsError ? 'text-red-600 hover:text-red-800 font-medium shrink-0' : 'text-emerald-600 hover:text-emerald-800 font-medium shrink-0'} aria-label="Dismiss">Dismiss</button>
               </div>
             )}
-            <Card className="p-6 border-white/10">
-              <h3 className="text-lg font-bold text-white mb-2">Billing</h3>
-              <p className="text-white/90 text-sm mb-4">Invoices and payment history. Onboarding and subscription charges appear here. Billing activity is also recorded in Event ledger.</p>
+            <Card className="p-6">
+              <h3 className="text-lg font-bold text-slate-800 mb-2">Billing</h3>
+              <p className="text-slate-500 text-sm mb-4">Invoices and payment history. Onboarding and subscription charges appear here. Billing activity is also recorded in Event ledger.</p>
               {billing && (billing.current_unit_count != null || billing.current_shield_count != null) && (
-                <p className="text-white/90 text-sm mb-4 p-3 bg-white/5 rounded-lg border border-white/10">
-                  <strong className="text-white">Current subscription:</strong> {billing.current_unit_count ?? 0} unit{(billing.current_unit_count ?? 0) !== 1 ? 's' : ''} (${(billing.current_unit_count ?? 0) * 1}/mo baseline)
+                <p className="text-slate-600 text-sm mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <strong>Current subscription:</strong> {billing.current_unit_count ?? 0} unit{(billing.current_unit_count ?? 0) !== 1 ? 's' : ''} (${(billing.current_unit_count ?? 0) * 1}/mo baseline)
                   {(billing.current_shield_count ?? 0) > 0 && (
                     <>, {(billing.current_shield_count ?? 0)} with Shield (${(billing.current_shield_count ?? 0) * 10}/mo)</>
                   )}
@@ -1156,19 +1279,19 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 </p>
               )}
               {billingLoading ? (
-                <p className="text-white/90">Loading billing…</p>
+                <p className="text-slate-500">Loading billing…</p>
               ) : (
                 <>
                   <div className="mb-6">
-                    <h4 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Invoices</h4>
+                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Invoices</h4>
                     {(() => {
                       const displayInvoices = (billing?.invoices ?? []).filter((inv: BillingInvoiceView) => inv.status !== 'draft');
                       return !billing || displayInvoices.length === 0 ? (
-                      <p className="text-white/90 text-sm">No invoices yet. Invoices are created when you add your first properties (onboarding fee) and for monthly subscription.</p>
+                      <p className="text-slate-500 text-sm">No invoices yet. Invoices are created when you add your first properties (onboarding fee) and for monthly subscription.</p>
                     ) : (
-                      <div className="overflow-x-auto border border-white/10 rounded-lg">
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
                         <table className="w-full text-left text-sm">
-                          <thead className="bg-white/5 text-white/80 uppercase text-xs tracking-wider">
+                          <thead className="bg-slate-100 text-slate-600 uppercase text-xs tracking-wider">
                             <tr>
                               <th className="px-4 py-3">Date</th>
                               <th className="px-4 py-3">Number</th>
@@ -1178,23 +1301,23 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                               <th className="px-4 py-3">Action</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-white/10">
+                          <tbody className="divide-y divide-slate-200">
                             {displayInvoices.map((inv: BillingInvoiceView) => (
-                              <tr key={inv.id} className="hover:bg-white/5">
-                                <td className="px-4 py-3 text-white/90">{new Date(inv.created).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
-                                <td className="px-4 py-3 font-mono text-white/90">{inv.number ?? inv.id.slice(0, 12)}</td>
-                                <td className="px-4 py-3 text-white/90 max-w-xs truncate">{inv.description ?? '—'}</td>
-                                <td className="px-4 py-3 text-white/90">${(inv.amount_due_cents / 100).toFixed(2)} {inv.currency.toUpperCase()}</td>
+                              <tr key={inv.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 text-slate-600">{new Date(inv.created).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                                <td className="px-4 py-3 font-mono text-slate-700">{inv.number ?? inv.id.slice(0, 12)}</td>
+                                <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{inv.description ?? '—'}</td>
+                                <td className="px-4 py-3">${(inv.amount_due_cents / 100).toFixed(2)} {inv.currency.toUpperCase()}</td>
                                 <td className="px-4 py-3">
                                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                                    inv.status === 'paid' ? 'bg-emerald-500/20 text-emerald-200' :
-                                    inv.status === 'open' ? 'bg-amber-500/20 text-amber-200' :
-                                    inv.status === 'past_due' ? 'bg-red-500/20 text-red-200' :
-                                    inv.status === 'void' ? 'bg-white/10 text-white/70' :
-                                    'bg-white/10 text-white/80'
+                                    inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
+                                    inv.status === 'open' ? 'bg-amber-100 text-amber-800' :
+                                    inv.status === 'past_due' ? 'bg-red-100 text-red-800' :
+                                    inv.status === 'void' ? 'bg-slate-200 text-slate-600' :
+                                    'bg-slate-100 text-slate-700'
                                   }`}>{inv.status === 'past_due' ? 'Payment failed' : inv.status}</span>
                                   {inv.status === 'past_due' && (
-                                    <p className="text-xs text-red-300 mt-1">Update your payment method and try again.</p>
+                                    <p className="text-xs text-red-600 mt-1">Update your payment method and try again.</p>
                                   )}
                                 </td>
                                 <td className="px-4 py-3">
@@ -1202,13 +1325,13 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                     <button
                                       type="button"
                                       onClick={() => setShowVoidInvoiceDialog(true)}
-                                      className="text-[hsl(265,89%,76%)] hover:underline"
+                                      className="text-blue-600 hover:underline"
                                     >
                                       Pay invoice
                                     </button>
                                   ) : inv.status !== 'paid' ? (
                                     inv.hosted_invoice_url ? (
-                                      <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-[hsl(265,89%,76%)] hover:underline">Pay invoice</a>
+                                      <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Pay invoice</a>
                                     ) : (
                                       <button
                                         type="button"
@@ -1217,13 +1340,13 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                                             .then((data) => { window.location.href = data.url; })
                                             .catch(() => notify('error', 'Could not open payment page. Try again.'));
                                         }}
-                                        className="text-[hsl(265,89%,76%)] hover:underline disabled:opacity-50"
+                                        className="text-blue-600 hover:underline disabled:opacity-50"
                                       >
                                         Pay invoice
                                       </button>
                                     )
                                   ) : inv.hosted_invoice_url ? (
-                                    <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-white/70 hover:underline">View</a>
+                                    <a href={inv.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:underline">View</a>
                                   ) : null}
                                 </td>
                               </tr>
@@ -1235,25 +1358,25 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                     })()}
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Payments</h4>
+                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Payments</h4>
                     {!billing || billing.payments.length === 0 ? (
-                      <p className="text-white/90 text-sm">No payments yet.</p>
+                      <p className="text-slate-500 text-sm">No payments yet.</p>
                     ) : (
-                      <div className="overflow-x-auto border border-white/10 rounded-lg">
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
                         <table className="w-full text-left text-sm">
-                          <thead className="bg-white/5 text-white/80 uppercase text-xs tracking-wider">
+                          <thead className="bg-slate-100 text-slate-600 uppercase text-xs tracking-wider">
                             <tr>
                               <th className="px-4 py-3">Paid at</th>
                               <th className="px-4 py-3">Description</th>
                               <th className="px-4 py-3">Amount</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-white/10">
+                          <tbody className="divide-y divide-slate-200">
                             {billing.payments.map((pay: BillingPaymentView) => (
-                              <tr key={pay.invoice_id} className="hover:bg-white/5">
-                                <td className="px-4 py-3 text-white/90">{new Date(pay.paid_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                                <td className="px-4 py-3 text-white/90 max-w-xs truncate">{pay.description ?? 'Payment'}</td>
-                                <td className="px-4 py-3 font-medium text-white/90">${(pay.amount_cents / 100).toFixed(2)} {pay.currency.toUpperCase()}</td>
+                              <tr key={pay.invoice_id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 text-slate-600">{new Date(pay.paid_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                                <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{pay.description ?? 'Payment'}</td>
+                                <td className="px-4 py-3 font-medium">${(pay.amount_cents / 100).toFixed(2)} {pay.currency.toUpperCase()}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1320,10 +1443,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 {logsLoading ? 'Loading…' : 'Apply filters'}
               </Button>
             </Card>
-            <Card className="overflow-hidden border-white/10">
-              <div className="p-6 border-b border-white/10 bg-white/5">
-                <h3 className="text-lg font-bold text-white">Event ledger (append-only)</h3>
-                <p className="text-white/90 text-sm mt-1">Status changes, Shield Mode and stay end reminders on/off, guest signatures, payment and billing activity (invoices created, paid), and failed attempts are recorded. Use the category filter to view Shield Mode, stay end reminders, or Billing events. Records cannot be edited or deleted.</p>
+            <Card className="overflow-hidden">
+              <div className="p-6 border-b border-slate-200 bg-slate-50">
+                <h3 className="text-lg font-bold text-slate-800">Event ledger (append-only)</h3>
+                <p className="text-slate-500 text-sm mt-1">Status changes, Shield Mode and stay end reminders on/off, guest signatures, payment and billing activity (invoices created, paid), and failed attempts are recorded. Use the category filter to view Shield Mode, stay end reminders, or Billing events. Records cannot be edited or deleted.</p>
               </div>
               <div className="overflow-x-auto">
                 {logsLoading && logs.length === 0 ? (
@@ -1342,9 +1465,9 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         <th className="px-6 py-4">Message</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/10">
+                    <tbody className="divide-y divide-slate-200">
                       {logs.map((entry) => (
-                        <tr key={entry.id} className="hover:bg-white/5">
+                        <tr key={entry.id} className="hover:bg-slate-50">
                           <td className="px-6 py-3 text-slate-600 text-sm whitespace-nowrap">
                             {entry.created_at ? new Date(entry.created_at).toISOString().replace('T', ' ').slice(0, 19) + 'Z' : '—'}
                           </td>
@@ -1418,27 +1541,27 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                 )}
 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-                  <Card className="p-6 border-l-4 border-blue-400 hover:scale-[1.02] transition-transform cursor-pointer" onClick={() => setActiveTab('properties')}>
-                    <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Properties</p>
-                    <p className="text-4xl font-extrabold text-white mt-1">{properties.length}</p>
+                  <Card className="p-6 border-l-4 border-blue-500 hover:scale-[1.02] transition-transform cursor-pointer" onClick={() => setActiveTab('properties')}>
+                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Properties</p>
+                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.length}</p>
                   </Card>
-                  <Card className="p-6 border-l-4 border-emerald-400 hover:scale-[1.02] transition-transform cursor-pointer">
-                    <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Guests</p>
-                    <p className="text-4xl font-extrabold text-white mt-1">{activeCount}</p>
+                  <Card className="p-6 border-l-4 border-green-500 hover:scale-[1.02] transition-transform cursor-pointer">
+                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Guests</p>
+                    <p className="text-4xl font-extrabold text-slate-800 mt-1">{activeCount}</p>
                   </Card>
-                  <Card className="p-6 border-l-4 border-red-400 hover:scale-[1.02] transition-transform cursor-pointer">
-                    <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Overstays</p>
-                    <p className="text-4xl font-extrabold text-red-300 mt-1">{overstays.length}</p>
+                  <Card className="p-6 border-l-4 border-red-500 hover:scale-[1.02] transition-transform cursor-pointer">
+                    <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Overstays</p>
+                    <p className="text-4xl font-extrabold text-red-600 mt-1">{overstays.length}</p>
                   </Card>
                 </div>
 
                 <Card className="mb-10 overflow-hidden">
-                  <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
-                    <h3 className="text-xl font-bold text-white">Guests</h3>
+                  <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-white/60 backdrop-blur-md">
+                    <h3 className="text-xl font-bold text-slate-800">Guests</h3>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
+                      <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
                         <tr>
                           <th className="px-6 py-4">Guest Name</th>
                           <th className="px-6 py-4">Property</th>
@@ -1447,10 +1570,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                           <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/10">
+                      <tbody className="divide-y divide-gray-800">
                         {activeStays.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-6 py-12 text-center text-white/60">No active stays. Invite a guest to get started.</td>
+                            <td colSpan={5} className="px-6 py-12 text-center text-slate-500">No active stays. Invite a guest to get started.</td>
                           </tr>
                         ) : (
                           activeStays.map((stay) => {
@@ -1458,27 +1581,27 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
                         const dLeft = daysLeft(stay.stay_end_date);
                         const revoked = !!stay.revoked_at;
                         return (
-                          <tr key={stay.stay_id} className="hover:bg-white/5 transition-colors group">
+                          <tr key={stay.stay_id} className="hover:bg-slate-50 transition-colors group">
                             <td className="px-6 py-5">
                               <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-white/20 text-white/90 flex items-center justify-center font-bold text-xs">{stay.guest_name.charAt(0)}</div>
-                                <span className="text-sm font-bold text-white/95">{stay.guest_name}</span>
+                                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs">{stay.guest_name.charAt(0)}</div>
+                                <span className="text-sm font-bold text-slate-800">{stay.guest_name}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-5 text-sm text-white/70">{stay.property_name}</td>
+                            <td className="px-6 py-5 text-sm text-slate-600">{stay.property_name}</td>
                             <td className="px-6 py-5">
-                              <span className={`text-sm font-bold ${revoked ? 'text-amber-400' : overstay ? 'text-red-400' : 'text-emerald-400'}`}>{revoked ? '—' : overstay ? 'EXPIRED' : `${dLeft}d`}</span>
+                              <span className={`text-sm font-bold ${revoked ? 'text-amber-600' : overstay ? 'text-red-600' : 'text-green-600'}`}>{revoked ? '—' : overstay ? 'EXPIRED' : `${dLeft}d`}</span>
                             </td>
                             <td className="px-6 py-5">
                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                                revoked ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' : overstay ? 'bg-red-500/20 text-red-300 border border-red-400/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                                revoked ? 'bg-amber-50 text-amber-700 border border-amber-500/20' : overstay ? 'bg-red-50 text-red-600 border border-red-500/20' : 'bg-green-50 text-green-700 border border-green-200'
                               }`}>
                                 {revoked ? 'Revoked' : overstay ? 'Overstayed' : 'Active'}
                               </span>
                             </td>
                             <td className="px-6 py-5 text-right space-x-3">
                               {revoked ? (
-                                <span className="text-xs text-white/60">Revoked</span>
+                                <span className="text-xs text-slate-500">Revoked</span>
                               ) : overstay ? (
                                 <Button variant="danger" onClick={() => handleInitiateRemoval(stay)} className="text-xs py-2">Remove</Button>
                               ) : (
@@ -1496,36 +1619,135 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             </Card>
               </>
             ) : (
-              /* Business mode: property/unit status only, no guest data – cosmic */
+              /* Business mode: property/unit status only, no guest data */
               <div className="space-y-8">
-                <p className="text-white/90 text-sm">Property and unit status. Switch to Personal mode to view guest invitations, stays, and overstays.</p>
-                <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6">
-                  <Card className="p-6 border-l-4 border-[hsl(265,89%,66%)] hover:scale-[1.02] transition-transform cursor-pointer border-white/10" onClick={() => setActiveTab('properties')}>
-                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Properties</p>
-                    <p className="text-4xl font-extrabold text-white mt-1">{properties.length}</p>
+                <p className="text-slate-500 text-sm">Property and unit status. Switch to Personal mode to view guest invitations, stays, and overstays.</p>
+                {(() => {
+                  const totalUnits = properties.reduce((s, p) => s + (p.unit_count ?? 1), 0);
+                  const occupiedCount = properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length;
+                  const vacantCount = properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length;
+                  const unknownCount = properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length;
+                  const shieldOnCount = properties.filter((p) => p.shield_mode_enabled).length;
+                  const cards: { key: OverviewFilter; label: string; count: number; border: string }[] = [
+                    { key: 'properties', label: 'Properties', count: properties.length, border: 'border-blue-500' },
+                    { key: 'units', label: 'Units', count: totalUnits, border: 'border-indigo-500' },
+                    { key: 'occupied', label: 'Occupied', count: occupiedCount, border: 'border-emerald-500' },
+                    { key: 'vacant', label: 'Vacant', count: vacantCount, border: 'border-sky-500' },
+                    { key: 'unknown', label: 'Unknown', count: unknownCount, border: 'border-slate-400' },
+                    { key: 'shield_on', label: 'Shield On', count: shieldOnCount, border: 'border-amber-500' },
+                  ];
+                  return (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+                      {cards.map(({ key, label, count, border }) => (
+                        <Card
+                          key={key}
+                          role="button"
+                          className={`p-6 border-l-4 ${border} hover:scale-[1.02] transition-transform cursor-pointer ${overviewFilter === key ? 'ring-2 ring-slate-400 ring-offset-2' : ''}`}
+                          onClick={() => setOverviewFilter(overviewFilter === key ? null : key)}
+                        >
+                          <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">{label}</p>
+                          <p className="text-4xl font-extrabold text-slate-800 mt-1">{count}</p>
+                        </Card>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <h3 className="text-lg font-bold text-slate-800">Property status overview</h3>
+                {overviewFilter == null ? (
+                  <Card className="p-6">
+                    <p className="text-slate-600 text-sm">Click a card above to see the list of properties or units. View full property details in the Properties tab.</p>
+                    <Button variant="outline" onClick={() => setActiveTab('properties')} className="mt-4">View Properties</Button>
                   </Card>
-                  <Card className="p-6 border-l-4 border-emerald-500 border-white/10">
-                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Occupied</p>
-                    <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length}</p>
+                ) : overviewFilter === 'units' ? (
+                  <Card className="p-6 overflow-hidden">
+                    {unitsListLoading ? (
+                      <p className="text-slate-500 text-sm">Loading units…</p>
+                    ) : allUnitsList.length === 0 ? (
+                      <p className="text-slate-500 text-sm">No units found.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-slate-100 text-slate-600 uppercase text-xs font-semibold border-b border-slate-200">
+                            <tr>
+                              <th className="px-4 py-3">Property</th>
+                              <th className="px-4 py-3">Unit</th>
+                              <th className="px-4 py-3">Status</th>
+                              <th className="px-4 py-3">Address</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {allUnitsList.map((row) => (
+                              <tr key={`${row.propertyId}-${row.unit.id}`} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 font-medium text-slate-800">{row.propertyName}</td>
+                                <td className="px-4 py-3 text-slate-700">{row.unit.unit_label}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                                    (row.unit.occupancy_status || '').toLowerCase() === 'occupied' ? 'bg-emerald-100 text-emerald-800' :
+                                    (row.unit.occupancy_status || '').toLowerCase() === 'vacant' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-700'
+                                  }`}>
+                                    {(row.unit.occupancy_status || 'unknown').toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600 truncate max-w-[200px]">{row.address}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </Card>
-                  <Card className="p-6 border-l-4 border-sky-400 border-white/10">
-                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Vacant</p>
-                    <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length}</p>
-                  </Card>
-                  <Card className="p-6 border-l-4 border-white/30 border-white/10">
-                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Unknown</p>
-                    <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length}</p>
-                  </Card>
-                  <Card className="p-6 border-l-4 border-amber-400 border-white/10">
-                    <p className="text-white/90 text-sm font-bold uppercase tracking-wider">Shield On</p>
-                    <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => p.shield_mode_enabled).length}</p>
-                  </Card>
-                </div>
-                <Card className="p-6 border-white/10">
-                  <h3 className="text-lg font-bold text-white mb-4">Property status overview</h3>
-                  <p className="text-white/90 text-sm">View properties and unit-level occupancy in the Properties tab. Business mode does not display guest names, invitations, or stay details.</p>
-                  <Button variant="outline" onClick={() => setActiveTab('properties')} className="mt-4">View Properties</Button>
-                </Card>
+                ) : (
+                  (() => {
+                    const filtered =
+                      overviewFilter === 'properties' ? properties :
+                      overviewFilter === 'occupied' ? properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied') :
+                      overviewFilter === 'vacant' ? properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant') :
+                      overviewFilter === 'unknown' ? properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())) :
+                      properties.filter((p) => p.shield_mode_enabled);
+                    return (
+                      <Card className="p-6 overflow-hidden">
+                        {filtered.length === 0 ? (
+                          <p className="text-slate-500 text-sm">No properties match this filter.</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                              <thead className="bg-slate-100 text-slate-600 uppercase text-xs font-semibold border-b border-slate-200">
+                                <tr>
+                                  <th className="px-4 py-3">Property</th>
+                                  <th className="px-4 py-3">Address</th>
+                                  <th className="px-4 py-3">Status</th>
+                                  <th className="px-4 py-3">Shield</th>
+                                  <th className="px-4 py-3"></th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {filtered.map((p) => {
+                                  const addr = [p.street, p.city, p.state, p.zip_code].filter(Boolean).join(', ');
+                                  const status = (p.occupancy_status || 'unknown').toUpperCase();
+                                  return (
+                                    <tr key={p.id} className="hover:bg-slate-50">
+                                      <td className="px-4 py-3 font-medium text-slate-800">{p.name || addr || `Property #${p.id}`}</td>
+                                      <td className="px-4 py-3 text-slate-600 truncate max-w-[220px]">{addr || '—'}</td>
+                                      <td className="px-4 py-3">
+                                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                                          status === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' : status === 'VACANT' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-700'
+                                        }`}>{status}</span>
+                                      </td>
+                                      <td className="px-4 py-3">{p.shield_mode_enabled ? 'On' : 'Off'}</td>
+                                      <td className="px-4 py-3">
+                                        <Button variant="outline" size="sm" onClick={() => navigate(`property/${p.id}`)}>View</Button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })()
+                )}
               </div>
             )}
           </>
@@ -1623,6 +1845,10 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
             bulkUploadResult.failed_from_row == null ? (
               <p className="text-slate-600 text-sm">
                 <strong>{bulkUploadResult.created}</strong> propert{bulkUploadResult.created === 1 ? 'y' : 'ies'} created, <strong>{bulkUploadResult.updated}</strong> updated.
+              </p>
+            ) : bulkUploadResult.created === 0 && bulkUploadResult.updated === 0 ? (
+              <p className="text-slate-600 text-sm">
+                No properties were uploaded. Row <strong>{bulkUploadResult.failed_from_row}</strong>: {bulkUploadResult.failure_reason ?? 'Unknown error.'}
               </p>
             ) : (
               <p className="text-slate-600 text-sm">

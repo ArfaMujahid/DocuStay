@@ -114,6 +114,7 @@ def get_live_property_page(slug: str, db: Session = Depends(get_db)):
     # POA for Authority layer
     poa_signed_at: datetime | None = None
     poa_signature_id: int | None = None
+    poa_typed_signature: str | None = None
     if profile and profile.user_id:
         poa_sig = (
             db.query(OwnerPOASignature)
@@ -123,6 +124,7 @@ def get_live_property_page(slug: str, db: Session = Depends(get_db)):
         if poa_sig:
             poa_signed_at = poa_sig.signed_at
             poa_signature_id = poa_sig.id
+            poa_typed_signature = (poa_sig.typed_signature or "").strip() or None
 
     today = date.today()
     # Current stay: active (not checked out, not cancelled) and not in the past only by end date
@@ -215,6 +217,7 @@ def get_live_property_page(slug: str, db: Session = Depends(get_db)):
             generated_at=datetime.now(timezone.utc),
             poa_signed_at=poa_signed_at,
             poa_signature_id=poa_signature_id,
+            poa_typed_signature=poa_typed_signature,
             jurisdiction_wrap=jurisdiction_wrap,
         )
 
@@ -275,6 +278,7 @@ def get_live_property_page(slug: str, db: Session = Depends(get_db)):
         generated_at=datetime.now(timezone.utc),
         poa_signed_at=poa_signed_at,
         poa_signature_id=poa_signature_id,
+        poa_typed_signature=poa_typed_signature,
         jurisdiction_wrap=jurisdiction_wrap,
     )
 

@@ -63,8 +63,18 @@ const ManagerDashboard: React.FC<{
   const [inviteGuestOpen, setInviteGuestOpen] = useState(false);
   const [inviteGuestUnitId, setInviteGuestUnitId] = useState<number | null>(null);
   const [shieldFilter, setShieldFilter] = useState<'all' | 'on' | 'off'>('all');
+  const [propertiesCountFilter, setPropertiesCountFilter] = useState<null | 'properties' | 'occupied' | 'vacant' | 'unknown' | 'shield_on'>(null);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<Set<number>>(new Set());
   const [bulkShieldLoading, setBulkShieldLoading] = useState(false);
+
+  const managerFilteredProperties = React.useMemo(() => {
+    let list = shieldFilter === 'all' ? properties : shieldFilter === 'on' ? properties.filter((p) => p.shield_mode_enabled) : properties.filter((p) => !p.shield_mode_enabled);
+    if (propertiesCountFilter === 'occupied') list = list.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied');
+    else if (propertiesCountFilter === 'vacant') list = list.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant');
+    else if (propertiesCountFilter === 'unknown') list = list.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase()));
+    else if (propertiesCountFilter === 'shield_on') list = list.filter((p) => p.shield_mode_enabled);
+    return list;
+  }, [properties, shieldFilter, propertiesCountFilter]);
 
   const setLoadingWrapper = (x: boolean) => {
     setLoadingState(x);
@@ -191,10 +201,10 @@ const ManagerDashboard: React.FC<{
   const statusBadge = (status: string) => {
     const s = (status || '').toLowerCase();
     const cls =
-      s === 'occupied' ? 'bg-emerald-500/20 text-emerald-300'
-      : s === 'vacant' ? 'bg-sky-500/20 text-sky-300'
-      : s === 'unconfirmed' ? 'bg-amber-500/20 text-amber-300'
-      : 'bg-white/20 text-white/70';
+      s === 'occupied' ? 'bg-emerald-100 text-emerald-700'
+      : s === 'vacant' ? 'bg-sky-100 text-sky-700'
+      : s === 'unconfirmed' ? 'bg-amber-100 text-amber-700'
+      : 'bg-slate-100 text-slate-600';
     return <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{status}</span>;
   };
 
@@ -214,13 +224,13 @@ const ManagerDashboard: React.FC<{
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
       {/* Sidebar – same layout as Owner dashboard */}
-      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col glass border-r border-white/10 p-6">
+      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 p-6">
         <div className="space-y-2 flex-shrink-0">
           {sidebarNav.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-[hsl(265,89%,66%)]/20 text-white border border-[hsl(265,89%,66%)]/40' : 'text-white/90 hover:text-white hover:bg-white/10'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon}></path></svg>
               {item.label}
@@ -228,7 +238,7 @@ const ManagerDashboard: React.FC<{
           ))}
         </div>
         <div className="flex-grow min-h-0" />
-        <div className="mt-6 pt-6 border-t border-white/10 flex-shrink-0">
+        <div className="mt-6 pt-6 border-t border-slate-200 flex-shrink-0">
           <ModeSwitcher
             contextMode={contextMode}
             personalModeUnits={personalModeUnits}
@@ -247,7 +257,7 @@ const ManagerDashboard: React.FC<{
             id="manager-mobile-tab"
             value={activeTab}
             onChange={(e) => setActiveTab(e.target.value as ManagerTab)}
-            className="w-full max-w-xs rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
+            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             {sidebarNav.map((item) => (
               <option key={item.id} value={item.id}>{item.label}</option>
@@ -267,10 +277,10 @@ const ManagerDashboard: React.FC<{
           <>
             <header className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-8">
               <div>
-                <h1 className="text-4xl font-extrabold text-white tracking-tight">
+                <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight">
                   {activeTab === 'properties' ? 'Properties' : activeTab === 'guests' ? 'Guests' : activeTab === 'invitations' ? 'Invitations' : activeTab === 'logs' ? 'Event ledger' : 'Billing'}
                 </h1>
-                <p className="text-white/70 mt-1">
+                <p className="text-slate-600 mt-1">
                   {activeTab === 'properties' ? 'Properties assigned to you.' : activeTab === 'guests' ? 'Guests currently staying at managed properties and their stay details.' : activeTab === 'invitations' ? 'Pending invitations for properties you manage.' : activeTab === 'logs' ? 'Event ledger for managed properties.' : 'Billing visibility for the properties you manage.'}
                 </p>
               </div>
@@ -296,16 +306,16 @@ const ManagerDashboard: React.FC<{
 
       {activeTab === 'guests' && contextMode === 'personal' && (
         <Card className="p-6">
-          <h2 className="font-semibold text-white mb-4">Guests</h2>
-          <p className="text-white/70 text-sm mb-4">Guests who accepted and their current or past stay at properties you manage.</p>
+          <h2 className="font-semibold text-gray-900 mb-4">Guests</h2>
+          <p className="text-slate-500 text-sm mb-4">Guests who accepted and their current or past stay at properties you manage.</p>
           {stays.filter((s: any) => !s.invitation_only).length === 0 ? (
-            <p className="text-white/60 text-sm">No stays yet. When guests accept an invitation, they appear here.</p>
+            <p className="text-slate-500 text-sm">No stays yet. When guests accept an invitation, they appear here.</p>
           ) : (
             <ul className="space-y-2">
               {stays.filter((s: any) => !s.invitation_only).map((s: any) => (
-                <li key={s.stay_id} className="flex justify-between items-center py-2 border-b border-white/10 last:border-0">
-                  <span className="text-sm text-white/90">{s.guest_name} · {s.property_name} · {s.stay_start_date} – {s.stay_end_date}</span>
-                  {s.checked_in_at && !s.checked_out_at && !s.cancelled_at && <span className="text-xs font-medium text-emerald-400">Active</span>}
+                <li key={s.stay_id} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
+                  <span className="text-sm">{s.guest_name} · {s.property_name} · {s.stay_start_date} – {s.stay_end_date}</span>
+                  {s.checked_in_at && !s.checked_out_at && !s.cancelled_at && <span className="text-xs font-medium text-emerald-700">Active</span>}
                 </li>
               ))}
             </ul>
@@ -334,29 +344,29 @@ const ManagerDashboard: React.FC<{
           <Card className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div>
-                <label className="block text-xs font-semibold text-white/70 uppercase tracking-wider mb-1">From (UTC)</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">From (UTC)</label>
                 <input
                   type="datetime-local"
                   value={logsFromTs}
                   onChange={(e) => setLogsFromTs(e.target.value)}
-                  className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-white/70 uppercase tracking-wider mb-1">To (UTC)</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">To (UTC)</label>
                 <input
                   type="datetime-local"
                   value={logsToTs}
                   onChange={(e) => setLogsToTs(e.target.value)}
-                  className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-white/70 uppercase tracking-wider mb-1">Category</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Category</label>
                 <select
                   value={logsCategory}
                   onChange={(e) => setLogsCategory(e.target.value)}
-                  className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 >
                   <option value="">All</option>
                   <option value="status_change">Status change</option>
@@ -370,13 +380,13 @@ const ManagerDashboard: React.FC<{
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-white/70 uppercase tracking-wider mb-1">Search (title/message)</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Search (title/message)</label>
                 <input
                   type="text"
                   placeholder="Search…"
                   value={logsSearch}
                   onChange={(e) => setLogsSearch(e.target.value)}
-                  className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
             </div>
@@ -385,18 +395,18 @@ const ManagerDashboard: React.FC<{
             </Button>
           </Card>
           <Card className="overflow-hidden">
-            <div className="p-6 border-b border-white/10 bg-white/5">
-              <h3 className="text-lg font-bold text-white">Event ledger (append-only)</h3>
-              <p className="text-white/70 text-sm mt-1">Status changes, Shield Mode and stay end reminders on/off, guest signatures, payment and billing activity (invoices created, paid), and failed attempts are recorded. Use the category filter to view Shield Mode, stay end reminders, or Billing events. Records cannot be edited or deleted.</p>
+            <div className="p-6 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-lg font-bold text-slate-800">Event ledger (append-only)</h3>
+              <p className="text-slate-500 text-sm mt-1">Status changes, Shield Mode and stay end reminders on/off, guest signatures, payment and billing activity (invoices created, paid), and failed attempts are recorded. Use the category filter to view Shield Mode, stay end reminders, or Billing events. Records cannot be edited or deleted.</p>
             </div>
             <div className="overflow-x-auto">
               {logsLoading && logs.length === 0 ? (
-                <p className="p-8 text-white/60 text-center">Loading logs…</p>
+                <p className="p-8 text-slate-500 text-center">Loading logs…</p>
               ) : logs.length === 0 ? (
-                <p className="p-8 text-white/60 text-center">No logs match your filters. Adjust filters and click Apply, or ensure you have property-related activity.</p>
+                <p className="p-8 text-slate-500 text-center">No logs match your filters. Adjust filters and click Apply, or ensure you have property-related activity.</p>
               ) : (
                 <table className="w-full text-left">
-                  <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
+                  <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
                     <tr>
                       <th className="px-6 py-4">Time (UTC)</th>
                       <th className="px-6 py-4">Category</th>
@@ -406,10 +416,10 @@ const ManagerDashboard: React.FC<{
                       <th className="px-6 py-4">Message</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/10">
+                  <tbody className="divide-y divide-slate-200">
                     {logs.map((entry) => (
-                      <tr key={entry.id} className="hover:bg-white/5">
-                        <td className="px-6 py-3 text-white/70 text-sm whitespace-nowrap">
+                      <tr key={entry.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-3 text-slate-600 text-sm whitespace-nowrap">
                           {entry.created_at ? new Date(entry.created_at).toISOString().replace('T', ' ').slice(0, 19) + 'Z' : '—'}
                         </td>
                         <td className="px-6 py-3">
@@ -418,16 +428,16 @@ const ManagerDashboard: React.FC<{
                             entry.category === 'guest_signature' ? 'bg-emerald-100 text-emerald-800' :
                             entry.category === 'shield_mode' ? 'bg-violet-100 text-violet-800' :
                             entry.category === 'dead_mans_switch' ? 'bg-amber-100 text-amber-800' :
-                            entry.category === 'billing' ? 'bg-white/20 text-white/90' :
+                            entry.category === 'billing' ? 'bg-slate-200 text-slate-800' :
                             'bg-sky-100 text-sky-800'
                           }`}>
                             {entry.category === 'shield_mode' ? 'Shield Mode' : entry.category === 'dead_mans_switch' ? 'Stay end reminders' : entry.category === 'billing' ? 'Billing' : entry.category?.replace('_', ' ') ?? '—'}
                           </span>
                         </td>
-                        <td className="px-6 py-3 font-medium text-white/95">{entry.title}</td>
-                        <td className="px-6 py-3 text-white/70 text-sm">{entry.property_name ?? '—'}</td>
-                        <td className="px-6 py-3 text-white/70 text-sm">{entry.actor_email ?? '—'}</td>
-                        <td className="px-6 py-3 text-white/70 text-sm max-w-xs">
+                        <td className="px-6 py-3 font-medium text-slate-800">{entry.title}</td>
+                        <td className="px-6 py-3 text-slate-600 text-sm">{entry.property_name ?? '—'}</td>
+                        <td className="px-6 py-3 text-slate-600 text-sm">{entry.actor_email ?? '—'}</td>
+                        <td className="px-6 py-3 text-slate-600 text-sm max-w-xs">
                           <span className="truncate block">{entry.message}</span>
                           <button
                             type="button"
@@ -449,64 +459,84 @@ const ManagerDashboard: React.FC<{
 
       {activeTab === 'billing' && (
         <Card className="p-6">
-          <h2 className="font-semibold text-white mb-2">Billing (read-only)</h2>
-          <p className="text-white/70 text-sm mb-4">Billing visibility for the properties you manage. You cannot modify billing or payment methods. Contact the property owner for changes.</p>
+          <h2 className="font-semibold text-gray-900 mb-2">Billing (read-only)</h2>
+          <p className="text-slate-500 text-sm mb-4">Billing visibility for the properties you manage. You cannot modify billing or payment methods. Contact the property owner for changes.</p>
           {billing?.invoices?.length ? (
             <ul className="space-y-2">
               {billing.invoices.slice(0, 10).map((inv: any) => (
-                <li key={inv.id} className="text-sm py-2 border-b border-white/10 text-white/90">{inv.number || inv.id} · ${((inv.amount_paid_cents || 0) / 100).toFixed(2)}</li>
+                <li key={inv.id} className="text-sm py-2 border-b border-slate-100">{inv.number || inv.id} · ${((inv.amount_paid_cents || 0) / 100).toFixed(2)}</li>
               ))}
             </ul>
-          ) : <p className="text-white/60 text-sm">No invoices.</p>}
+          ) : <p className="text-slate-500 text-sm">No invoices.</p>}
         </Card>
       )}
 
       {activeTab === 'properties' && (
         <div className="space-y-6">
           {loading ? (
-            <div className="text-center py-12 text-white/60">Loading...</div>
+            <div className="text-center py-12 text-slate-500">Loading...</div>
           ) : properties.length === 0 ? (
             <Card className="p-8 text-center">
-              <p className="text-white/80">No properties assigned yet.</p>
-              <p className="text-sm text-white/60 mt-2">Owners can assign you to manage their properties.</p>
+              <p className="text-slate-600">No properties assigned yet.</p>
+              <p className="text-sm text-slate-500 mt-2">Owners can assign you to manage their properties.</p>
             </Card>
           ) : (
             <>
           {contextMode === 'business' && (
             <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-              <Card className="p-6 border-l-4 border-blue-400">
-                <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Properties</p>
-                <p className="text-4xl font-extrabold text-white mt-1">{properties.length}</p>
+              <Card
+              role="button"
+              className={`p-6 border-l-4 border-blue-500 cursor-pointer hover:scale-[1.02] transition-transform ${propertiesCountFilter === 'properties' ? 'ring-2 ring-slate-400 ring-offset-2' : ''}`}
+              onClick={() => setPropertiesCountFilter(propertiesCountFilter === 'properties' ? null : 'properties')}
+            >
+                <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Properties</p>
+                <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.length}</p>
               </Card>
-              <Card className="p-6 border-l-4 border-emerald-400">
-                <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Occupied</p>
-                <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length}</p>
+              <Card
+              role="button"
+              className={`p-6 border-l-4 border-emerald-500 cursor-pointer hover:scale-[1.02] transition-transform ${propertiesCountFilter === 'occupied' ? 'ring-2 ring-slate-400 ring-offset-2' : ''}`}
+              onClick={() => setPropertiesCountFilter(propertiesCountFilter === 'occupied' ? null : 'occupied')}
+            >
+                <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Occupied</p>
+                <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'occupied').length}</p>
               </Card>
-              <Card className="p-6 border-l-4 border-sky-400">
-                <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Vacant</p>
-                <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length}</p>
+              <Card
+              role="button"
+              className={`p-6 border-l-4 border-sky-500 cursor-pointer hover:scale-[1.02] transition-transform ${propertiesCountFilter === 'vacant' ? 'ring-2 ring-slate-400 ring-offset-2' : ''}`}
+              onClick={() => setPropertiesCountFilter(propertiesCountFilter === 'vacant' ? null : 'vacant')}
+            >
+                <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Vacant</p>
+                <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => (p.occupancy_status || '').toLowerCase() === 'vacant').length}</p>
               </Card>
-              <Card className="p-6 border-l-4 border-white/40">
-                <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Unknown</p>
-                <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length}</p>
+              <Card
+              role="button"
+              className={`p-6 border-l-4 border-slate-400 cursor-pointer hover:scale-[1.02] transition-transform ${propertiesCountFilter === 'unknown' ? 'ring-2 ring-slate-400 ring-offset-2' : ''}`}
+              onClick={() => setPropertiesCountFilter(propertiesCountFilter === 'unknown' ? null : 'unknown')}
+            >
+                <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Unknown</p>
+                <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => !['occupied', 'vacant', 'unconfirmed'].includes((p.occupancy_status || '').toLowerCase())).length}</p>
               </Card>
-              <Card className="p-6 border-l-4 border-amber-400">
-                <p className="text-white/70 text-sm font-bold uppercase tracking-wider">Shield On</p>
-                <p className="text-4xl font-extrabold text-white mt-1">{properties.filter((p) => p.shield_mode_enabled).length}</p>
+              <Card
+              role="button"
+              className={`p-6 border-l-4 border-amber-500 cursor-pointer hover:scale-[1.02] transition-transform ${propertiesCountFilter === 'shield_on' ? 'ring-2 ring-slate-400 ring-offset-2' : ''}`}
+              onClick={() => setPropertiesCountFilter(propertiesCountFilter === 'shield_on' ? null : 'shield_on')}
+            >
+                <p className="text-slate-600 text-sm font-bold uppercase tracking-wider">Shield On</p>
+                <p className="text-4xl font-extrabold text-slate-800 mt-1">{properties.filter((p) => p.shield_mode_enabled).length}</p>
               </Card>
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <span className="text-white/70 text-sm">Filter and manage Shield Mode for assigned properties.</span>
+            <span className="text-slate-500 text-sm">Filter and manage Shield Mode for assigned properties.</span>
             <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">Shield Mode:</span>
-              <div className="flex rounded-lg border border-white/20 bg-white/10 p-0.5">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Shield Mode:</span>
+              <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
                 {(['all', 'on', 'off'] as const).map((f) => (
                   <button
                     key={f}
                     type="button"
                     onClick={() => setShieldFilter(f)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${shieldFilter === f ? 'bg-[hsl(265,89%,66%)] text-white' : 'text-white/80 hover:bg-white/20'}`}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${shieldFilter === f ? 'bg-slate-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
                   >
                     {f === 'all' ? 'All' : f === 'on' ? 'Shield ON' : 'Shield OFF'}
                   </button>
@@ -514,26 +544,22 @@ const ManagerDashboard: React.FC<{
               </div>
             </div>
           </div>
-          {(() => {
-            const filteredProps = shieldFilter === 'all' ? properties : shieldFilter === 'on' ? properties.filter((p) => p.shield_mode_enabled) : properties.filter((p) => !p.shield_mode_enabled);
-            const allFilteredSelected = filteredProps.length > 0 && filteredProps.every((p) => selectedPropertyIds.has(p.id));
-            return filteredProps.length > 0 && (
+          {managerFilteredProperties.length > 0 && (
               <div className="mb-3 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectedPropertyIds(allFilteredSelected ? new Set() : new Set(filteredProps.map((p) => p.id)))}
-                  className="text-sm text-white/70 hover:text-white underline"
+                  onClick={() => setSelectedPropertyIds(managerFilteredProperties.every((p) => selectedPropertyIds.has(p.id)) ? new Set() : new Set(managerFilteredProperties.map((p) => p.id)))}
+                  className="text-sm text-slate-600 hover:text-slate-800 underline"
                 >
-                  {allFilteredSelected ? 'Select none' : 'Select all'}
+                  {managerFilteredProperties.every((p) => selectedPropertyIds.has(p.id)) ? 'Select none' : 'Select all'}
                 </button>
-                <span className="text-white/50">·</span>
-                <span className="text-sm text-white/60">({filteredProps.length} propert{filteredProps.length === 1 ? 'y' : 'ies'} shown)</span>
+                <span className="text-slate-400">·</span>
+                <span className="text-sm text-slate-500">({managerFilteredProperties.length} propert{managerFilteredProperties.length === 1 ? 'y' : 'ies'} shown)</span>
               </div>
-            );
-          })()}
+            )}
           {selectedPropertyIds.size > 0 && (
-            <div className="mb-4 p-4 rounded-xl bg-white/10 border border-white/20 flex flex-wrap items-center justify-between gap-4">
-              <span className="text-sm font-medium text-white/90">{selectedPropertyIds.size} propert{selectedPropertyIds.size === 1 ? 'y' : 'ies'} selected</span>
+            <div className="mb-4 p-4 rounded-xl bg-slate-100 border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+              <span className="text-sm font-medium text-slate-700">{selectedPropertyIds.size} propert{selectedPropertyIds.size === 1 ? 'y' : 'ies'} selected</span>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setSelectedPropertyIds(new Set())}>Clear selection</Button>
                 <Button
@@ -579,8 +605,11 @@ const ManagerDashboard: React.FC<{
               </div>
             </div>
           )}
+          {managerFilteredProperties.length === 0 && (
+            <p className="text-slate-500 text-center py-8">No properties match the current filter. Clear the count bar selection or change Shield Mode filter to see more.</p>
+          )}
           <div className="grid gap-6">
-            {(shieldFilter === 'all' ? properties : shieldFilter === 'on' ? properties.filter((p) => p.shield_mode_enabled) : properties.filter((p) => !p.shield_mode_enabled)).map((p) => {
+            {managerFilteredProperties.map((p) => {
               // Business mode: use property status only (no guest data). Personal mode: can use stays for occupancy.
               const activeStayForProp = contextMode === 'personal' ? activeStays.find((s: any) => s.property_id === p.id) : null;
               const isOccupied = contextMode === 'business'
@@ -590,7 +619,7 @@ const ManagerDashboard: React.FC<{
               const displayName = p.name || p.address || `Property #${p.id}`;
               const isSelected = selectedPropertyIds.has(p.id);
               return (
-                <Card key={p.id} className="p-6 border border-white/10">
+                <Card key={p.id} className="p-6 border border-slate-200">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                     <div className="flex items-start gap-3 flex-shrink-0">
                       <input
@@ -605,7 +634,7 @@ const ManagerDashboard: React.FC<{
                             return next;
                           });
                         }}
-                        className="mt-1 h-4 w-4 rounded border-white/30 text-[hsl(265,89%,66%)] focus:ring-[hsl(265,89%,66%)]"
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                         aria-label={`Select ${displayName}`}
                       />
                     <button
@@ -614,26 +643,26 @@ const ManagerDashboard: React.FC<{
                       className="min-w-0 flex-1 text-left hover:opacity-90 transition-opacity"
                     >
                       <div className="flex flex-wrap items-center gap-2 gap-y-1">
-                        <h3 className="text-lg font-bold text-white truncate">{displayName}</h3>
+                        <h3 className="text-lg font-bold text-slate-800 truncate">{displayName}</h3>
                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase ${
-                          displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300' :
-                          displayStatus === 'VACANT' ? 'bg-white/20 text-white/80' :
-                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300' :
-                          'bg-white/20 text-white/70'
+                          displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
+                          displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                          'bg-slate-100 text-slate-600'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${
                             displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
-                            displayStatus === 'VACANT' ? 'bg-white/50' :
-                            displayStatus === 'UNCONFIRMED' ? 'bg-amber-400' : 'bg-white/50'
+                            displayStatus === 'VACANT' ? 'bg-slate-400' :
+                            displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
                           }`} />
                           {displayStatus}
                         </span>
                       </div>
-                      <p className="text-sm text-white/70 mt-1 truncate">{p.address || '—'}</p>
-                      <div className="flex flex-wrap gap-3 mt-3 text-xs text-white/60">
+                      <p className="text-sm text-slate-600 mt-1 truncate">{p.address || '—'}</p>
+                      <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-500">
                         <span>{p.occupied_count}/{p.unit_count} units occupied</span>
                         {contextMode === 'personal' && isOccupied && activeStayForProp && (
-                          <span>Current guest: <span className="font-medium text-white/80">{activeStayForProp.guest_name}</span></span>
+                          <span>Current guest: <span className="font-medium text-slate-700">{activeStayForProp.guest_name}</span></span>
                         )}
                       </div>
                       <span className="inline-block mt-2 text-xs font-medium text-blue-400">View details →</span>
@@ -649,43 +678,43 @@ const ManagerDashboard: React.FC<{
                     </div>
                   </div>
                   {/* Occupancy status – same UI as owner */}
-                  <div className="mt-6 pt-6 border-t border-white/10 rounded-xl bg-white/5 p-4">
-                    <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-2">Occupancy status</p>
+                  <div className="mt-6 pt-6 border-t border-slate-200 rounded-xl bg-slate-50/80 p-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Occupancy status</p>
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${
                         displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
-                        displayStatus === 'VACANT' ? 'bg-white/20 text-white/80' :
-                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300' :
-                        'bg-white/20 text-white/70'
+                        displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                        'bg-slate-100 text-slate-600'
                       }`}>
                         <span className={`w-2 h-2 rounded-full ${
                           displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
-                          displayStatus === 'VACANT' ? 'bg-white/50' :
-                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-400' : 'bg-white/50'
+                          displayStatus === 'VACANT' ? 'bg-slate-400' :
+                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
                         }`} />
                         {displayStatus}
                       </span>
                       {contextMode === 'personal' && isOccupied && activeStayForProp && (
-                        <span className="text-sm text-white/70">
-                          Lease end: <span className="font-medium text-white/90">{activeStayForProp.stay_end_date}</span>
+                        <span className="text-sm text-slate-600">
+                          Lease end: <span className="font-medium text-slate-800">{activeStayForProp.stay_end_date}</span>
                         </span>
                       )}
-                      <span className={`text-sm ${p.shield_mode_enabled ? 'text-emerald-400 font-medium' : 'text-white/60'}`}>
+                      <span className={`text-sm ${p.shield_mode_enabled ? 'text-emerald-600 font-medium' : 'text-slate-500'}`}>
                         Shield: {p.shield_mode_enabled ? 'ON' : 'OFF'}
                       </span>
                     </div>
                   </div>
                   {/* Units – expandable, same function as owner property detail */}
                   {expandedPropertyId === p.id && (
-                    <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
-                      <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-3">Units</p>
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Units</p>
                       {unitsLoading ? (
-                        <p className="text-sm text-white/60">Loading units...</p>
+                        <p className="text-sm text-slate-500">Loading units...</p>
                       ) : (
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           {units.map((u) => (
-                            <div key={u.id} className="bg-white/10 rounded-lg p-3 border border-white/20 flex flex-col gap-2">
-                              <p className="font-medium text-white/90">Unit {u.unit_label}</p>
+                            <div key={u.id} className="bg-white rounded-lg p-3 border border-slate-200 flex flex-col gap-2">
+                              <p className="font-medium text-slate-900">Unit {u.unit_label}</p>
                               {statusBadge(u.occupancy_status)}
                               {(u.occupancy_status || '').toLowerCase() === 'vacant' && u.id > 0 && (
                                 <Button variant="outline" onClick={() => { setInviteRoleChoiceUnit({ unitId: u.id, unitLabel: u.unit_label }); }}>Invite</Button>
@@ -713,9 +742,9 @@ const ManagerDashboard: React.FC<{
           className="max-w-md"
         >
           <div className="p-6 space-y-4">
-            <label className="block text-sm font-medium text-white/80">Property</label>
+            <label className="block text-sm font-medium text-slate-700">Property</label>
             <select
-              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900"
               value={inviteSelectPropertyId ?? ''}
               onChange={(e) => {
                 const id = Number(e.target.value) || null;
@@ -728,9 +757,9 @@ const ManagerDashboard: React.FC<{
                 <option key={p.id} value={p.id}>{p.name || p.address || `Property #${p.id}`}</option>
               ))}
             </select>
-            <label className="block text-sm font-medium text-white/80">Unit</label>
+            <label className="block text-sm font-medium text-slate-700">Unit</label>
             <select
-              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900"
               value={inviteSelectUnitId ?? ''}
               onChange={(e) => setInviteSelectUnitId(Number(e.target.value) || null)}
               disabled={inviteSelectUnitsLoading || !inviteSelectPropertyId}
@@ -817,16 +846,16 @@ const ManagerDashboard: React.FC<{
 
       {logMessageModalEntry && (
         <>
-          <div className="fixed inset-0 bg-black/60 z-40" onClick={() => setLogMessageModalEntry(null)} aria-hidden="true" />
+          <div className="fixed inset-0 bg-slate-900/60 z-40" onClick={() => setLogMessageModalEntry(null)} aria-hidden="true" />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="log-message-title">
             <Card className="w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
               <div className="p-6 flex-1 overflow-y-auto">
-                <h3 id="log-message-title" className="text-lg font-semibold text-white mb-4">
+                <h3 id="log-message-title" className="text-lg font-semibold text-slate-800 mb-4">
                   Full message — {logMessageModalEntry.title}
                 </h3>
-                <p className="text-white/90 text-sm whitespace-pre-wrap break-words">{logMessageModalEntry.message}</p>
+                <p className="text-slate-700 text-sm whitespace-pre-wrap break-words">{logMessageModalEntry.message}</p>
               </div>
-              <div className="p-4 border-t border-white/10">
+              <div className="p-4 border-t border-slate-200">
                 <Button variant="outline" onClick={() => setLogMessageModalEntry(null)}>Close</Button>
               </div>
             </Card>

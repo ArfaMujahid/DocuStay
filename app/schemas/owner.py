@@ -101,6 +101,8 @@ class PropertyResponse(BaseModel):
 
     # Multi-unit: when True, property has Unit rows (apartment, duplex, triplex, quadplex)
     is_multi_unit: bool = False
+    # Number of units (1 for single-unit; from Unit table for multi-unit). Included in list response for dashboard counts.
+    unit_count: int | None = None
 
     # Smarty standardized address (ZIP-code utility bucket / authority letters)
     smarty_delivery_line_1: str | None = None

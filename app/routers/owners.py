@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User, UserRole
@@ -179,7 +180,21 @@ def list_my_properties(
         if not p.usat_token:
             _ensure_property_usat_token(p, db)
     db.commit()
-    return [PropertyResponse.model_validate(p) for p in props]
+    if not props:
+        return []
+    unit_count_rows = (
+        db.query(Unit.property_id, func.count(Unit.id).label("cnt"))
+        .filter(Unit.property_id.in_([p.id for p in props]))
+        .group_by(Unit.property_id)
+        .all()
+    )
+    unit_count_map = {r.property_id: r.cnt for r in unit_count_rows}
+    out = []
+    for p in props:
+        data = PropertyResponse.model_validate(p).model_dump()
+        data["unit_count"] = unit_count_map.get(p.id) or 1
+        out.append(PropertyResponse(**data))
+    return out
 
 
 @router.post("/verify-address-and-utilities", response_model=VerifyAddressAndUtilitiesResponse)
@@ -631,10 +646,7 @@ def bulk_upload_properties(
                 failed_from_row = row_num
                 failure_reason = "Lease End must be after Lease Start."
                 break
-            if lease_start < date.today():
-                failed_from_row = row_num
-                failure_reason = "Lease start cannot be in the past."
-                break
+            # Allow past lease start (e.g. existing tenancies / backfilled data)
 
         state_norm = _normalize_addr(state)
         existing_match = None
@@ -833,10 +845,7 @@ def bulk_upload_properties(
                 updated += 1
             # When updating to occupied with tenant info, create invite (BURNED) if none exists for this property+tenant+dates
             if occupied and (tenant_name or "").strip() and lease_start and lease_end:
-                if lease_start < date.today():
-                    failed_from_row = row_num
-                    failure_reason = "Lease start cannot be in the past."
-                    break
+                # Allow past lease start for existing tenancies
                 existing_inv = (
                     db.query(Invitation)
                     .filter(
@@ -1977,6 +1986,7 @@ def update_property(
             user_agent=ua,
             meta={"property_id": property_id, "property_name": property_name, "changes": changes_meta},
         )
+        changes_summary = "; ".join(changes) if changes else "details updated"
         create_ledger_event(
             db,
             ACTION_PROPERTY_UPDATED,
@@ -1986,7 +1996,12 @@ def update_property(
             actor_user_id=current_user.id,
             previous_value=old,
             new_value=new,
-            meta={"property_id": property_id, "property_name": property_name, "changes": changes_meta},
+            meta={
+                "property_id": property_id,
+                "property_name": property_name,
+                "changes": changes_meta,
+                "message": f"Property updated: {property_name}. {changes_summary}",
+            },
             ip_address=ip,
             user_agent=ua,
         )
@@ -2004,6 +2019,7 @@ def update_property(
                 user_agent=ua,
                 meta={"property_id": property_id, "property_name": property_name},
             )
+            shield_label = "turned off" if new_shield == 0 else "turned on"
             create_ledger_event(
                 db,
                 ACTION_SHIELD_MODE_OFF if new_shield == 0 else ACTION_SHIELD_MODE_ON,
@@ -2011,7 +2027,11 @@ def update_property(
                 target_object_id=prop.id,
                 property_id=prop.id,
                 actor_user_id=current_user.id,
-                meta={"property_id": property_id, "property_name": property_name},
+                meta={
+                    "property_id": property_id,
+                    "property_name": property_name,
+                    "message": f"Shield Mode {shield_label} for {property_name}.",
+                },
                 ip_address=ip,
                 user_agent=ua,
             )

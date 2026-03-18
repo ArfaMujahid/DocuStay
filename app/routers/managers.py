@@ -70,7 +70,7 @@ def list_assigned_properties(
         .filter(PropertyManagerAssignment.user_id == current_user.id)
         .all()
     )
-    property_ids = [a.property_id for a in assignments]
+    property_ids = list({a.property_id for a in assignments})
     if not property_ids:
         return []
     if context_mode == "personal":

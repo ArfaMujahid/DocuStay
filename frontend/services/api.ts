@@ -698,6 +698,7 @@ export interface LivePropertyPagePayload {
   generated_at: string;
   poa_signed_at: string | null;
   poa_signature_id: number | null;
+  poa_typed_signature?: string | null;
   jurisdiction_wrap?: JurisdictionWrap | null;
 }
 
@@ -886,6 +887,9 @@ export const dashboardApi = {
       jurisdiction_statutes: Array<{ citation: string; plain_english?: string | null }>;
       removal_guest_text: string | null;
       removal_tenant_text: string | null;
+      assigned_by_name?: string | null;
+      accepted_by_name?: string | null;
+      pending_acceptance?: boolean;
     }>;
   }>("/dashboard/tenant/unit"),
   /** Cancel the tenant's future unit assignment (before start date). Pass unit_id when tenant has multiple assignments. */
@@ -1257,6 +1261,8 @@ export interface Property {
   occupancy_status?: string;  // vacant | occupied | unknown | unconfirmed
   /** True when property has multiple units (apartment, duplex, triplex, quadplex). */
   is_multi_unit?: boolean;
+  /** Number of units (1 for single-unit; backend may include this for list). */
+  unit_count?: number | null;
   ownership_proof_filename?: string | null;
   ownership_proof_type?: string | null;
   ownership_proof_uploaded_at?: string | null;

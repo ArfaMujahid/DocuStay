@@ -21,12 +21,12 @@ export const InviteRoleChoiceModal: React.FC<InviteRoleChoiceModalProps> = ({
   return (
     <Modal open={open} onClose={onClose} title="Who are you inviting?" className="max-w-md">
       <div className="p-6 space-y-4">
-        {contextLabel && <p className="text-sm text-white/70">{contextLabel}</p>}
-        <p className="text-white/85">
-          <strong className="text-white">Tenant</strong> — occupies the unit; they will sign up, verify email, and get access to invite guests and set presence for that unit.
+        {contextLabel && <p className="text-sm text-slate-600">{contextLabel}</p>}
+        <p className="text-slate-700">
+          <strong>Tenant</strong> — occupies the unit; they will sign up, verify email, and get access to invite guests and set presence for that unit.
         </p>
-        <p className="text-white/85">
-          <strong className="text-white">Guest</strong> — temporary stay with check-in and check-out dates; they sign the agreement and get a stay record.
+        <p className="text-slate-700">
+          <strong>Guest</strong> — temporary stay with check-in and check-out dates; they sign the agreement and get a stay record.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 pt-2">
           <Button

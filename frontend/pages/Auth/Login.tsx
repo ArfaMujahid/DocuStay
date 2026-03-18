@@ -131,8 +131,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate, in
       <AuthCardLayout
         leftPanel={
           <>
-            <h2 className="text-2xl font-semibold text-white mb-3">{roleTitle}</h2>
-            <p className="text-white/90 text-sm mb-8">
+            <h2 className="text-2xl font-semibold text-slate-900 mb-3">{roleTitle}</h2>
+            <p className="text-slate-600 text-sm mb-8">
               {formData.role === 'guest' ? 'Access your stays and invitations.' : 'Manage properties, invitations, and stays in one place.'}
             </p>
             <ul className="space-y-3">
@@ -144,8 +144,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, setLoading, notify, navigate, in
         }
       >
           <div className="max-w-sm mx-auto w-full">
-            <h1 className="text-xl font-semibold text-white mb-1 lg:hidden">{roleTitle}</h1>
-            <p className="text-white/90 text-sm mb-6">
+            <h1 className="text-xl font-semibold text-slate-900 mb-1 lg:hidden">{roleTitle}</h1>
+            <p className="text-slate-600 text-sm mb-6">
               {managerInviteInfo ? (
                 <>Sign in to accept your invitation to manage <strong>{managerInviteInfo.property_name}</strong>.</>
               ) : (

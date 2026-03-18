@@ -199,6 +199,7 @@ OWNER_BUSINESS_ACTIONS: set[str] = {
     ACTION_MASTER_POA_SIGNED,
     ACTION_OVERSTAY_OCCURRED,
     ACTION_INVITATION_EXPIRED,
+    ACTION_AWAY_ACTIVATED, ACTION_AWAY_ENDED, ACTION_PRESENCE_STATUS_CHANGED,
 }
 
 TENANT_ALLOWED_ACTIONS: set[str] = {
@@ -226,6 +227,7 @@ GUEST_ALLOWED_ACTIONS: set[str] = {
     ACTION_GUEST_AUTHORIZATION_REVOKED, ACTION_GUEST_AUTHORIZATION_EXPIRED,
     ACTION_OVERSTAY_OCCURRED,
     ACTION_VERIFY_ATTEMPT_VALID,
+    ACTION_AWAY_ACTIVATED, ACTION_AWAY_ENDED, ACTION_PRESENCE_STATUS_CHANGED,
 }
 
 
@@ -259,6 +261,8 @@ def ledger_event_to_display(entry: EventLedger, db: Session | None = None) -> tu
     meta = entry.meta or {}
     if isinstance(meta, dict) and meta.get("message"):
         msg = str(meta["message"])
+    elif isinstance(meta, dict) and meta.get("property_name"):
+        msg = f"{title} for {meta['property_name']}"
     else:
         msg = title
     # User attribution

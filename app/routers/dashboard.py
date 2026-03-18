@@ -27,6 +27,7 @@ from app.services.event_ledger import (
     create_ledger_event,
     ledger_event_to_display,
     get_actor_email,
+    get_actor_display_name,
     _CATEGORY_TO_ACTION_TYPES,
     OWNER_BUSINESS_ACTIONS,
     TENANT_ALLOWED_ACTIONS,
@@ -863,6 +864,7 @@ def bulk_shield_mode(
             user_agent=ua,
             meta={"property_id": property_id, "property_name": property_name},
         )
+        shield_label = "turned off" if new_val == 0 else "turned on"
         create_ledger_event(
             db,
             ACTION_SHIELD_MODE_OFF if new_val == 0 else ACTION_SHIELD_MODE_ON,
@@ -870,7 +872,11 @@ def bulk_shield_mode(
             target_object_id=prop.id,
             property_id=prop.id,
             actor_user_id=current_user.id,
-            meta={"property_id": property_id, "property_name": property_name},
+            meta={
+                "property_id": property_id,
+                "property_name": property_name,
+                "message": f"Shield Mode {shield_label} for {property_name}.",
+            },
             ip_address=ip,
             user_agent=ua,
         )
@@ -2356,6 +2362,7 @@ def _tenant_unit_item(db: Session, ta: TenantAssignment, current_user: "User") -
             "live_slug": None, "region_code": None,
             "jurisdiction_state_name": None, "jurisdiction_statutes": [],
             "removal_guest_text": None, "removal_tenant_text": None,
+            "assigned_by_name": None, "accepted_by_name": (getattr(current_user, "full_name", None) or "").strip() or (current_user.email or ""),
         }
     prop = db.query(Property).filter(Property.id == unit.property_id).first()
     address = ", ".join(filter(None, [prop.street, prop.city, prop.state])) if prop else ""
@@ -2397,6 +2404,8 @@ def _tenant_unit_item(db: Session, ta: TenantAssignment, current_user: "User") -
             jurisdiction_statutes = [JurisdictionStatuteInDashboard(citation=st.citation, plain_english=st.plain_english) for st in jinfo.statutes]
             removal_guest_text = jinfo.removal_guest_text
             removal_tenant_text = jinfo.removal_tenant_text
+    assigned_by_name = get_actor_display_name(db, getattr(tenant_inv, "invited_by_user_id", None)) if tenant_inv else None
+    accepted_by_name = (getattr(current_user, "full_name", None) or "").strip() or (current_user.email or "")
     return {
         "unit": {"id": unit.id, "unit_label": unit.unit_label, "occupancy_status": unit.occupancy_status} if unit else None,
         "property": {"id": prop.id, "name": prop.name, "address": address} if prop else None,
@@ -2410,6 +2419,8 @@ def _tenant_unit_item(db: Session, ta: TenantAssignment, current_user: "User") -
         "jurisdiction_statutes": jurisdiction_statutes,
         "removal_guest_text": removal_guest_text,
         "removal_tenant_text": removal_tenant_text,
+        "assigned_by_name": assigned_by_name,
+        "accepted_by_name": accepted_by_name,
     }
 
 
@@ -2427,6 +2438,8 @@ def _tenant_unit_item_from_invitation(db: Session, inv: Invitation, current_user
     region_code = getattr(prop, "region_code", None) or "US"
     jinfo = get_jurisdiction_for_property(db, getattr(prop, "zip_code", None), region_code)
     jurisdiction_statutes = [JurisdictionStatuteInDashboard(citation=st.citation, plain_english=st.plain_english) for st in jinfo.statutes] if jinfo and jinfo.statutes else []
+    assigned_by_name = get_actor_display_name(db, getattr(inv, "invited_by_user_id", None))
+    accepted_by_name = (getattr(current_user, "full_name", None) or "").strip() or (current_user.email or "") if current_user else None
     return {
         "unit": {"id": unit.id, "unit_label": unit.unit_label, "occupancy_status": unit.occupancy_status},
         "property": {"id": prop.id, "name": prop.name, "address": address},
@@ -2441,6 +2454,8 @@ def _tenant_unit_item_from_invitation(db: Session, inv: Invitation, current_user
         "removal_guest_text": jinfo.removal_guest_text if jinfo else None,
         "removal_tenant_text": jinfo.removal_tenant_text if jinfo else None,
         "pending_acceptance": True,
+        "assigned_by_name": assigned_by_name,
+        "accepted_by_name": accepted_by_name,
     }
 
 

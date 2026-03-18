@@ -22,11 +22,11 @@ export const AuthCardLayout: React.FC<{
   const showLeftPanel = !singleColumn && leftPanel;
   return (
     <div
-      className={`w-full ${maxW} flex rounded-2xl overflow-hidden glass border border-white/10 shadow-xl ${singleColumn ? 'flex-col' : ''}`}
+      className={`w-full ${maxW} flex rounded-2xl overflow-hidden bg-white/80 backdrop-blur-md border border-slate-200/80 shadow-xl ${singleColumn ? 'flex-col' : ''}`}
       style={{ minHeight: singleColumn ? undefined : minHeight }}
     >
       {showLeftPanel && (
-        <div className="hidden lg:flex w-[38%] min-w-[300px] flex-col justify-center p-10 border-r border-white/10">
+        <div className="hidden lg:flex w-[38%] min-w-[300px] flex-col justify-center p-10 bg-gradient-to-br from-slate-50/90 via-white/90 to-slate-50/90 backdrop-blur-sm border-r border-slate-200/80">
           {leftPanel}
         </div>
       )}
@@ -39,8 +39,8 @@ export const AuthCardLayout: React.FC<{
 
 /** Bullet list item for left panel. */
 export const AuthBullet: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <li className="flex items-center gap-3 text-sm text-white/80">
-    <span className="flex h-2 w-2 shrink-0 rounded-full bg-[hsl(265,89%,66%)]" />
+  <li className="flex items-center gap-3 text-sm text-slate-600">
+    <span className="flex h-2 w-2 shrink-0 rounded-full bg-[#6B90F2]" />
     {children}
   </li>
 );

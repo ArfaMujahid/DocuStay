@@ -1,14 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../components/UI';
-import { StarField } from '../components/StarField';
 
-/** Role config with icons (Heroicons paths) and theme accent class */
+/** Role config with icons (Heroicons paths) */
 const ROLES = [
-  { id: 'owner', label: 'Owner', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4', accent: 'role-owner-accent' },
-  { id: 'property_manager', label: 'Property Manager', icon: 'M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z', accent: 'role-manager-accent' },
-  { id: 'tenant', label: 'Tenant', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', accent: 'role-tenant-accent' },
-  { id: 'guest', label: 'Guest', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', accent: 'role-guest-accent' },
+  { id: 'owner', label: 'Owner', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
+  { id: 'property_manager', label: 'Property Manager', icon: 'M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+  { id: 'tenant', label: 'Tenant', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+  { id: 'guest', label: 'Guest', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
 ];
+
+/** High-quality property/home images (Unsplash – free to use, no watermark) */
+const HERO_IMAGES = [
+  'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1920&q=80',
+  'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1920&q=80',
+  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1920&q=80',
+  'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1920&q=80',
+  'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=1920&q=80',
+];
+
+const CAROUSEL_INTERVAL_MS = 5000;
 
 const VALUE_PROPS = [
   {
@@ -49,11 +59,19 @@ type LandingProps = {
 };
 
 const Landing: React.FC<LandingProps> = ({ navigate }) => {
+  const [activeIndex, setActiveIndex] = useState(0);
   const [roleSelector, setRoleSelector] = useState<'signup' | 'login' | null>(null);
 
   useEffect(() => {
     if (roleSelector) window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [roleSelector]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setActiveIndex((i) => (i + 1) % HERO_IMAGES.length);
+    }, CAROUSEL_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, []);
 
   const onRoleSelect = (roleId: string) => {
     if (roleSelector === 'signup') {
@@ -70,34 +88,47 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[hsl(230,35%,4%)]">
-      {/* Hero: starry background + content */}
+    <div className="min-h-screen flex flex-col">
+      {/* Hero: full-viewport background carousel + overlay + content */}
       <section className="relative min-h-[90vh] flex items-center justify-center overflow-hidden">
-        <StarField />
-        <div className="absolute inset-0 bg-gradient-to-b from-[hsl(230,35%,4%)]/40 via-transparent to-[hsl(230,35%,4%)]/60 z-[1]" />
+        {/* Background slideshow */}
+        <div className="absolute inset-0">
+          {HERO_IMAGES.map((src, i) => (
+            <div
+              key={src}
+              className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ease-out ${
+                i === activeIndex ? 'opacity-100 z-0' : 'opacity-0 z-[-1]'
+              }`}
+              style={{ backgroundImage: `url(${src})` }}
+              aria-hidden={i !== activeIndex}
+            />
+          ))}
+          {/* Gradient overlay for text readability */}
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/70 via-slate-900/60 to-slate-900/80 z-[1]" />
+        </div>
 
         {/* Hero content */}
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center text-white">
-          <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass-light text-base font-medium mb-8">
-            <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-cosmic-twinkle" />
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-slate-200 text-sm font-medium mb-6">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             Property documentation platform
           </div>
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-bold tracking-tight mb-6 drop-shadow-lg leading-tight">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-4 drop-shadow-lg">
             Your property,{' '}
-            <span className="gradient-text">documented.</span>
+            <span className="text-sky-300">documented.</span>
           </h1>
-          <p className="text-lg sm:text-xl md:text-2xl text-white/85 max-w-2xl mx-auto mb-12 leading-relaxed">
+          <p className="text-base sm:text-lg text-slate-200/90 max-w-2xl mx-auto mb-10 leading-relaxed">
             DocuStay is a neutral documentation platform for property status: occupancy, authorized presence, and an immutable audit trail over time. Guest authorization is one use case among many.
           </p>
 
           {roleSelector ? (
             <div className="w-full max-w-lg mx-auto">
-              <div className="glass rounded-2xl shadow-2xl overflow-hidden animate-cosmic-pulse-glow">
+              <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden">
                 <div className="px-8 pt-8 pb-6">
-                  <h2 className="text-2xl font-semibold text-white mb-2">
+                  <h2 className="text-xl font-semibold text-slate-900 mb-1">
                     {roleSelector === 'signup' ? 'Create an account as' : 'Sign in as'}
                   </h2>
-                  <p className="text-base text-white/90 mb-6">
+                  <p className="text-sm text-slate-500 mb-6">
                     {roleSelector === 'signup'
                       ? 'Choose your role to get started'
                       : 'Select your account type to continue'}
@@ -107,14 +138,14 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
                       <button
                         key={r.id}
                         onClick={() => onRoleSelect(r.id)}
-                        className={`group flex items-center gap-3 px-5 py-4 rounded-xl border border-white/10 glass-light hover:border-[hsl(265,89%,66%)]/40 hover:shadow-lg hover:shadow-[hsl(265,89%,66%)]/15 transition-all duration-200 text-left ${r.accent}`}
+                        className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-[#6B90F2]/30 hover:shadow-lg hover:shadow-[#6B90F2]/10 transition-all duration-200 text-left"
                       >
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/10 group-hover:bg-[hsl(265,89%,66%)]/20 text-white/80 group-hover:text-[hsl(265,89%,66%)] transition-colors">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-200/80 group-hover:bg-[#6B90F2]/15 text-slate-600 group-hover:text-[#6B90F2] transition-colors">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={r.icon} />
                           </svg>
                         </span>
-                        <span className="font-medium text-white group-hover:text-white text-base">{r.label}</span>
+                        <span className="font-medium text-slate-800 group-hover:text-slate-900">{r.label}</span>
                       </button>
                     ))}
                   </div>
@@ -123,7 +154,7 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
                   <button
                     type="button"
                     onClick={() => setRoleSelector(null)}
-                    className="flex items-center gap-2 text-base font-medium text-white/85 hover:text-white transition-colors"
+                    className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
@@ -138,57 +169,71 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
               <Button
                 variant="primary"
                 onClick={() => setRoleSelector('signup')}
-                className="px-8 py-4 text-lg bg-[hsl(265,89%,66%)] hover:bg-[hsl(265,75%,58%)] border-0 text-white font-semibold shadow-lg rounded-xl hover:shadow-[0_0_30px_hsl(265,89%,66%,0.4)] transition-all"
+                className="px-8 py-3.5 bg-[#6B90F2] hover:bg-[#5a7ed9] border-0 text-white font-semibold shadow-lg shadow-slate-900/20 rounded-xl hover:shadow-xl hover:shadow-[#6B90F2]/20 transition-all"
               >
                 Get started
               </Button>
               <button
                 type="button"
                 onClick={() => setRoleSelector('login')}
-                className="px-8 py-4 rounded-xl text-base font-medium border-2 border-white/50 text-white glass-light hover:bg-white/15 transition-colors"
+                className="px-8 py-3.5 rounded-xl text-sm font-medium border-2 border-white/80 text-white bg-white/5 hover:bg-white/15 backdrop-blur-sm transition-colors"
               >
                 Already have an account?
               </button>
             </div>
           )}
         </div>
+
+        {/* Carousel indicators */}
+        <div className="absolute bottom-8 left-0 right-0 z-10 flex justify-center gap-2">
+          {HERO_IMAGES.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setActiveIndex(i)}
+              className={`h-2 rounded-full transition-all duration-300 ${
+                i === activeIndex ? 'w-8 bg-white' : 'w-2 bg-white/50 hover:bg-white/70'
+              }`}
+              aria-label={`Slide ${i + 1}`}
+            />
+          ))}
+        </div>
       </section>
 
-      {/* Trust / stats bar – same base as starfield */}
-      <section className="py-8 px-6 bg-[hsl(230,35%,4%)] border-b border-white/5">
+      {/* Trust / stats bar */}
+      <section className="py-6 px-6 bg-white border-b border-slate-100">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-wrap justify-center gap-x-12 gap-y-4 text-center">
             <div>
-              <p className="text-2xl md:text-3xl lg:text-4xl font-bold text-white">Immutable</p>
-              <p className="text-sm md:text-base text-white/85">Audit trail</p>
+              <p className="text-2xl md:text-3xl font-bold text-slate-900">Immutable</p>
+              <p className="text-sm text-slate-500">Audit trail</p>
             </div>
-            <div className="hidden sm:block w-px bg-white/20" />
+            <div className="hidden sm:block w-px bg-slate-200" />
             <div>
-              <p className="text-2xl md:text-3xl lg:text-4xl font-bold text-white">Region-aware</p>
-              <p className="text-sm md:text-base text-white/85">Agreements</p>
+              <p className="text-2xl md:text-3xl font-bold text-slate-900">Region-aware</p>
+              <p className="text-sm text-slate-500">Agreements</p>
             </div>
-            <div className="hidden sm:block w-px bg-white/20" />
+            <div className="hidden sm:block w-px bg-slate-200" />
             <div>
-              <p className="text-2xl md:text-3xl lg:text-4xl font-bold text-white">Verified</p>
-              <p className="text-sm md:text-base text-white/85">Identity</p>
+              <p className="text-2xl md:text-3xl font-bold text-slate-900">Verified</p>
+              <p className="text-sm text-slate-500">Identity</p>
             </div>
-            <div className="hidden sm:block w-px bg-white/20" />
+            <div className="hidden sm:block w-px bg-slate-200" />
             <div>
-              <p className="text-2xl md:text-3xl lg:text-4xl font-bold text-white">Documented</p>
-              <p className="text-sm md:text-base text-white/85">Status changes</p>
+              <p className="text-2xl md:text-3xl font-bold text-slate-900">Documented</p>
+              <p className="text-sm text-slate-500">Status changes</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Value props – same base as starfield */}
-      <section className="py-20 px-6 bg-[hsl(230,35%,4%)]">
+      {/* Value props */}
+      <section className="py-20 px-6 bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
               Why DocuStay?
             </h2>
-            <p className="text-white/75 max-w-2xl mx-auto text-lg md:text-xl">
+            <p className="text-slate-600 max-w-2xl mx-auto text-lg">
               Built for owners who want clear documentation of property status—vacant or occupied, authorized presence, and status changes over time.
             </p>
           </div>
@@ -196,17 +241,17 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
             {VALUE_PROPS.map((item) => (
               <div
                 key={item.title}
-                className="group relative glass rounded-2xl border border-white/10 hover:border-[hsl(265,89%,66%)]/30 transition-all duration-300 overflow-hidden"
+                className="group relative bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 hover:border-slate-200 transition-all duration-300 overflow-hidden"
               >
-                <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${item.color} opacity-10 group-hover:opacity-20 transition-opacity`} />
-                <div className="relative p-6 md:p-8">
-                  <div className={`inline-flex h-12 w-12 md:h-14 md:w-14 items-center justify-center rounded-xl bg-gradient-to-br ${item.color} mb-4`}>
-                    <svg className="w-6 h-6 md:w-7 md:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${item.color} opacity-5 group-hover:opacity-10 transition-opacity`} />
+                <div className="relative p-6">
+                  <div className={`inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${item.color} mb-4`}>
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} />
                     </svg>
                   </div>
-                  <h3 className="font-semibold text-white mb-2 text-xl md:text-2xl lg:text-2xl">{item.title}</h3>
-                  <p className="text-white/90 text-base md:text-lg lg:text-xl leading-relaxed">{item.desc}</p>
+                  <h3 className="font-semibold text-slate-900 mb-2 text-lg">{item.title}</h3>
+                  <p className="text-slate-600 text-sm leading-relaxed">{item.desc}</p>
                 </div>
               </div>
             ))}
@@ -214,30 +259,30 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
         </div>
       </section>
 
-      {/* How it works – same base as starfield */}
-      <section className="py-20 px-6 bg-[hsl(230,35%,4%)]">
+      {/* How it works */}
+      <section className="py-20 px-6 bg-white">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
               Simple flow for owners
             </h2>
-            <p className="text-white/75 max-w-xl mx-auto text-lg md:text-xl">
+            <p className="text-slate-600 max-w-xl mx-auto text-lg">
               Register your property, verify your identity, document status, and invite guests when needed.
             </p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {STEPS.map((step, i) => (
               <div key={step.label} className="relative">
-                <div className="glass rounded-2xl border border-white/10 p-6 h-full hover:border-[hsl(265,89%,66%)]/30 transition-all">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[hsl(265,89%,66%)] text-white font-bold text-lg mb-4">
+                <div className="bg-slate-50 rounded-2xl border border-slate-200/80 p-6 h-full hover:border-[#6B90F2]/30 hover:shadow-lg hover:shadow-[#6B90F2]/5 transition-all">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#6B90F2] text-white font-bold text-lg mb-4">
                     {i + 1}
                   </span>
-                  <h3 className="font-semibold text-white mb-2 text-lg">{step.label}</h3>
-                  <p className="text-white/90 text-base leading-relaxed">{step.desc}</p>
+                  <h3 className="font-semibold text-slate-900 mb-2">{step.label}</h3>
+                  <p className="text-slate-600 text-sm leading-relaxed">{step.desc}</p>
                 </div>
                 {i < STEPS.length - 1 && (
                   <div className="hidden lg:flex absolute top-1/2 -right-3 transform -translate-y-1/2 z-10">
-                    <svg className="w-6 h-6 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
@@ -248,27 +293,28 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
         </div>
       </section>
 
-      {/* Final CTA – same base as starfield */}
-      <section className="relative py-24 px-6 overflow-hidden bg-[hsl(230,35%,4%)]">
+      {/* Final CTA */}
+      <section className="relative py-24 px-6 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
         <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.03\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-50" />
         <div className="relative max-w-3xl mx-auto text-center text-white">
-          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">
             Ready to document your property?
           </h2>
-          <p className="text-white/90 text-lg md:text-xl mb-10">
+          <p className="text-slate-300 text-lg mb-10">
             Join DocuStay and document property status with confidence. Get started in minutes.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
             <Button
               variant="primary"
               onClick={() => setRoleSelector('signup')}
-              className="px-10 py-4 bg-[hsl(265,89%,66%)] hover:bg-[hsl(265,75%,58%)] border-0 text-white font-semibold rounded-xl text-base shadow-lg"
+              className="px-10 py-4 bg-[#6B90F2] hover:bg-[#5a7ed9] border-0 text-white font-semibold rounded-xl text-base shadow-lg"
             >
               Get started
             </Button>
             <a
               href="#terms"
-              className="inline-flex items-center justify-center px-10 py-4 rounded-xl text-base font-medium border-2 border-white/30 text-white hover:bg-white/10 transition-colors"
+              className="inline-flex items-center justify-center px-10 py-4 rounded-xl text-sm font-medium border-2 border-white/30 text-white hover:bg-white/10 transition-colors"
             >
               Terms & Privacy
             </a>
@@ -276,22 +322,22 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
         </div>
       </section>
 
-      <footer className="py-12 px-6 bg-[hsl(230,35%,4%)] border-t border-white/5">
+      <footer className="py-12 px-6 bg-slate-950">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-[hsl(265,89%,66%)] rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-[#6B90F2] rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-lg">D</span>
               </div>
               <span className="text-lg font-semibold text-white">DocuStay</span>
             </div>
             <div className="flex flex-wrap justify-center gap-x-8 gap-y-2">
-              <a href="#terms" className="text-white/85 hover:text-white transition-colors text-sm md:text-base font-medium">Terms of Service</a>
-              <a href="#privacy" className="text-white/85 hover:text-white transition-colors text-sm md:text-base font-medium">Privacy Policy</a>
+              <a href="#terms" className="text-slate-400 hover:text-white transition-colors text-sm font-medium">Terms of Service</a>
+              <a href="#privacy" className="text-slate-400 hover:text-white transition-colors text-sm font-medium">Privacy Policy</a>
             </div>
           </div>
-          <div className="mt-8 pt-8 border-t border-white/10 text-center">
-            <p className="text-white/75 text-sm md:text-base">
+          <div className="mt-8 pt-8 border-t border-slate-800 text-center">
+            <p className="text-slate-500 text-sm">
               © {new Date().getFullYear()} DocuStay. Documentation platform—not a law firm.
             </p>
           </div>

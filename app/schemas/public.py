@@ -123,6 +123,7 @@ class LivePropertyPagePayload(BaseModel):
     # Authority layer (Master POA)
     poa_signed_at: datetime | None = None
     poa_signature_id: int | None = None  # for View POA link
+    poa_typed_signature: str | None = None  # signature text to display on live page
     # Jurisdictional wrap: applicable law for this property (by zip)
     jurisdiction_wrap: JurisdictionWrap | None = None
 

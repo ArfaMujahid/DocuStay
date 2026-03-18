@@ -375,14 +375,14 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
 
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
-      {/* Sidebar – cosmic theme (same as OwnerDashboard) */}
-      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col glass border-r border-white/10 p-6">
+      {/* Sidebar - same as OwnerDashboard (fixed width so it does not shrink) */}
+      <aside className="hidden lg:flex w-72 min-w-[18rem] flex-shrink-0 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 p-6">
         <div className="space-y-2 flex-shrink-0">
           {sidebarNav.map((item) => (
             <button
               key={item.id}
               onClick={() => onNav(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${item.id === 'properties' ? 'bg-[hsl(265,89%,66%)]/20 text-white border border-[hsl(265,89%,66%)]/40' : 'text-white/90 hover:text-white hover:bg-white/10'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${item.id === 'properties' ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} /></svg>
               {item.label}
@@ -390,24 +390,24 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
           ))}
         </div>
         {contextMode === 'personal' && (
-        <div className="mt-6 pt-6 border-t border-white/10 flex-grow min-h-0 flex flex-col">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-white/70 mb-3 px-1">Your guests</h3>
+        <div className="mt-6 pt-6 border-t border-slate-200 flex-grow min-h-0 flex flex-col">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 px-1">Your guests</h3>
           {loading ? (
-            <p className="text-white/60 text-sm">Loading…</p>
+            <p className="text-slate-500 text-sm">Loading…</p>
           ) : activeStays.length === 0 ? (
-            <p className="text-white/60 text-sm">No active guests.</p>
+            <p className="text-slate-500 text-sm">No active guests.</p>
           ) : (
             <ul className="space-y-3 overflow-y-auto no-scrollbar pr-1">
               {activeStays.map((stay) => (
-                <li key={stay.stay_id} className="rounded-xl p-3 border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
+                <li key={stay.stay_id} className="rounded-xl p-3 border border-slate-200 bg-slate-100 hover:bg-slate-100">
                   <div className="flex items-start gap-2">
-                    <div className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
                       {stay.guest_name.charAt(0)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-white truncate">{stay.guest_name}</p>
-                      <p className="text-xs text-white/70 truncate mt-0.5">{stay.property_name}</p>
-                      <p className="text-xs text-white/60 mt-1">{formatStayDuration(stay.stay_start_date, stay.stay_end_date)}</p>
+                      <p className="text-sm font-semibold text-slate-800 truncate">{stay.guest_name}</p>
+                      <p className="text-xs text-slate-600 truncate mt-0.5">{stay.property_name}</p>
+                      <p className="text-xs text-slate-500 mt-1">{formatStayDuration(stay.stay_start_date, stay.stay_end_date)}</p>
                     </div>
                   </div>
                 </li>
@@ -418,7 +418,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         )}
 
         {/* Mode switcher at bottom (same as OwnerDashboard) */}
-        <div className="mt-6 pt-6 border-t border-white/10 flex-shrink-0">
+        <div className="mt-6 pt-6 border-t border-slate-200 flex-shrink-0">
           <ModeSwitcher
             contextMode={contextMode}
             personalModeUnits={personalModeUnits}
@@ -429,10 +429,10 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
 
       <main className="flex-grow overflow-y-auto bg-transparent p-6 lg:p-8">
         {loading ? (
-          <p className="text-white/80">Loading property…</p>
+          <p className="text-slate-600">Loading property…</p>
         ) : error || !property ? (
-          <Card className="p-8 text-center max-w-md mx-auto border-white/10">
-            <p className="text-white/90 mb-4">Something went wrong loading this property.</p>
+          <Card className="p-8 text-center max-w-md mx-auto border-slate-200">
+            <p className="text-slate-600 mb-4">Something went wrong loading this property.</p>
             <div className="flex gap-3 justify-center">
               <Button variant="outline" onClick={() => navigate('dashboard/properties')}>Back to My Properties</Button>
               <Button variant="primary" onClick={() => { setError(null); loadData(); }}>Try again</Button>
@@ -441,21 +441,21 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         ) : (
           <>
       <header className="mb-8">
-        <button onClick={() => navigate('dashboard/properties')} className="flex items-center gap-2 text-white/80 hover:text-white mb-6 text-sm font-medium transition-colors">
+        <button onClick={() => navigate('dashboard/properties')} className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-6 text-sm font-medium transition-colors">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
           Back to My Properties
         </button>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl lg:text-3xl font-bold text-white tracking-tight">{property.name || address || 'Property'}</h1>
+              <h1 className="text-2xl lg:text-3xl font-bold text-slate-800 tracking-tight">{property.name || address || 'Property'}</h1>
               {isInactive && (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
                   Inactive
                 </span>
               )}
             </div>
-            <p className="text-white/70 mt-1">{address || '—'}</p>
+            <p className="text-slate-600 mt-1">{address || '—'}</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Button variant="outline" onClick={openEdit}>Edit Property</Button>
@@ -537,7 +537,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                 onClick={() => { setDeleteConfirmOpen(true); setDeleteError(null); }}
                 disabled={hasActiveStay}
                 title={hasActiveStay ? 'Cannot remove property while it has an active guest stay. Wait for the stay to end or be cancelled.' : 'Remove from dashboard (moves to Inactive properties)'}
-                className="text-red-300 hover:text-red-200 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Remove Property
               </Button>
@@ -546,7 +546,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         </div>
       </header>
 
-      <div className="flex border-b border-white/10 mb-8 overflow-x-auto no-scrollbar">
+      <div className="flex border-b border-slate-200 mb-8 overflow-x-auto no-scrollbar">
         {(contextMode === 'personal'
           ? (['Overview', 'Stay', 'Guests', 'Documentation', 'Event ledger'] as const)
           : (['Overview', 'Documentation', 'Event ledger'] as const)).map((tab) => {
@@ -555,7 +555,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
             <button
               key={tabId}
               onClick={() => setActiveTab(tabId)}
-              className={`px-6 py-3 text-sm font-medium whitespace-nowrap transition-all border-b-2 ${activeTab === tabId ? 'text-white border-white' : 'text-white/60 border-transparent hover:text-white/90'}`}
+              className={`px-6 py-3 text-sm font-medium whitespace-nowrap transition-all border-b-2 ${activeTab === tabId ? 'text-slate-800 border-slate-800' : 'text-slate-500 border-transparent hover:text-slate-700'}`}
             >
               {tab}
             </button>
@@ -568,15 +568,15 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
           <div className="space-y-8">
             {/* Presence card when in Personal Mode (shows for any property where owner has a personal-mode unit) */}
             {contextMode === 'personal' && personalModeUnitId != null && (
-              <Card className="p-6 border-white/10">
-                <h3 className="font-medium text-white mb-3">Presence</h3>
-                <p className="text-sm text-white/70 mb-4">Let others know if you are at the property or away.</p>
+              <Card className="p-6 border-slate-200">
+                <h3 className="font-medium text-gray-900 mb-3">Presence</h3>
+                <p className="text-sm text-gray-600 mb-4">Let others know if you are at the property or away.</p>
                 <div className="flex flex-wrap items-center gap-4">
-                  <div className={`px-4 py-2 rounded-lg ${presence === 'present' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' : 'bg-white/10 text-white/70 border border-white/20'}`}>
+                  <div className={`px-4 py-2 rounded-lg ${presence === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                     {presence === 'present' ? 'You are here' : presenceAwayStartedAt ? `Away since ${new Date(presenceAwayStartedAt).toLocaleDateString()}` : 'Away'}
                   </div>
                   {presence === 'away' && presenceGuestsAuthorized && (
-                    <span className="text-sm text-white/70">Guests authorized during this period</span>
+                    <span className="text-sm text-slate-600">Guests authorized during this period</span>
                   )}
                   {!isOccupied && (
                     <Button
@@ -593,6 +593,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                               setPresenceAwayStartedAt(null);
                               setPresenceGuestsAuthorized(res.guests_authorized_during_away ?? false);
                               notify('success', 'Status set to present');
+                              window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                             })
                             .catch((e) => notify('error', (e as Error)?.message || 'Failed to update status'))
                             .finally(() => setPresenceUpdating(false));
@@ -605,15 +606,15 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                   )}
                 </div>
                 {isOccupied && (
-                  <p className="text-sm text-amber-300 mt-3">
+                  <p className="text-sm text-amber-700 mt-3">
                     You can&apos;t change your presence (here/away) because a guest or tenant is currently staying at this property.
                   </p>
                 )}
                 {presenceShowAwayConfirm && (
-                  <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
+                  <div className="mt-4 p-4 rounded-lg bg-slate-50 border border-slate-200">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={presenceAwayGuestsAuthorized} onChange={(e) => setPresenceAwayGuestsAuthorized(e.target.checked)} className="rounded" />
-                      <span className="text-sm text-white/90">Guests authorized during this period</span>
+                      <span className="text-sm text-gray-700">Guests authorized during this period</span>
                     </label>
                     <div className="flex gap-2 mt-3">
                       <Button
@@ -626,6 +627,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                             setPresenceAwayStartedAt(res.away_started_at ?? null);
                             setPresenceGuestsAuthorized(res.guests_authorized_during_away ?? false);
                             notify('success', 'Status set to away');
+                            window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
                           } catch (e) {
                             notify('error', (e as Error)?.message || 'Failed to update status');
                           } finally {
@@ -647,25 +649,25 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
               {property && (
                 <>
                 {/* Primary residence status – standalone section */}
-                <Card className="p-6 border-white/10">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-3">Primary residence</h3>
+                <Card className="p-6 border-slate-200">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Primary residence</h3>
                   <div className="flex items-center gap-3">
                     <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${
-                      property.owner_occupied ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' : 'bg-white/10 text-white/70 border border-white/20'
+                      property.owner_occupied ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
                     }`}>
-                      <span className={`w-2 h-2 rounded-full ${property.owner_occupied ? 'bg-emerald-500' : 'bg-white/50'}`} />
+                      <span className={`w-2 h-2 rounded-full ${property.owner_occupied ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                       {property.owner_occupied ? 'Yes — you live at this property' : 'No'}
                     </span>
                   </div>
-                  <p className="text-xs text-white/60 mt-2">
+                  <p className="text-xs text-slate-500 mt-2">
                     {property.owner_occupied
                       ? 'You live at this property. You can set your presence (here/away) on the Overview tab in Personal Mode.'
                       : 'You can set your presence (here/away) for this property in Personal Mode.'}
                   </p>
                 </Card>
 
-                <Card className="p-6 border-white/10">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-4">Address & property details</h3>
+                <Card className="p-6 border-slate-200">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Address & property details</h3>
                   <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     {[
                       { label: 'Street', value: property.street },
@@ -679,26 +681,26 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                         : [{ label: 'Bedrooms', value: property.bedrooms }]),
                     ].map(({ label, value }) => (
                       <div key={label} className="flex flex-col gap-1">
-                        <dt className="text-xs font-medium uppercase tracking-wider text-white/60">{label}</dt>
-                        <dd className="text-sm font-medium text-white">{value ?? '—'}</dd>
+                        <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">{label}</dt>
+                        <dd className="text-sm font-medium text-slate-800">{value ?? '—'}</dd>
                       </div>
                     ))}
                   </dl>
                 </Card>
                 {((property.is_multi_unit && propertyUnits.length > 0) || (!property.is_multi_unit && property)) && (
-                  <Card className="p-6 border-white/10">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-4">Units</h3>
+                  <Card className="p-6 border-slate-200">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Units</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       {(property.is_multi_unit ? propertyUnits : [{ id: 0, unit_label: '1', occupancy_status: property.occupancy_status ?? 'unknown' }]).map((u) => {
                         const status = (u.occupancy_status ?? 'unknown').toLowerCase();
-                        const statusCls = status === 'occupied' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' : status === 'vacant' ? 'bg-sky-500/20 text-sky-300 border border-sky-400/40' : status === 'unconfirmed' ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' : 'bg-white/10 text-white/70 border border-white/20';
+                        const statusCls = status === 'occupied' ? 'bg-emerald-100 text-emerald-700' : status === 'vacant' ? 'bg-sky-100 text-sky-700' : status === 'unconfirmed' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600';
                         const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : (u.occupancy_status ?? 'unknown');
                         return (
-                          <div key={u.id} className="rounded-lg p-3 border border-white/10 bg-white/5 flex flex-col gap-2">
-                            <p className="font-medium text-white">Unit {u.unit_label}</p>
+                          <div key={u.id} className="bg-slate-50 rounded-lg p-3 border border-slate-200 flex flex-col gap-2">
+                            <p className="font-medium text-slate-900">Unit {u.unit_label}</p>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusCls}`}>{label}</span>
-                            {contextMode === 'personal' && u.occupied_by && <p className="text-xs text-white/70">Occupied by {u.occupied_by}</p>}
-                            {contextMode === 'personal' && u.invite_id && <p className="text-xs text-white/60">Invite ID {u.invite_id}</p>}
+                            {contextMode === 'personal' && u.occupied_by && <p className="text-xs text-slate-600">Occupied by {u.occupied_by}</p>}
+                            {contextMode === 'personal' && u.invite_id && <p className="text-xs text-slate-500">Invite ID {u.invite_id}</p>}
                           </div>
                         );
                       })}
@@ -706,25 +708,25 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                   </Card>
                 )}
                 {assignedManagers.length > 0 && (
-                  <Card className="p-6 border-white/10">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-4">Assigned managers</h3>
+                  <Card className="p-6 border-slate-200">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Assigned managers</h3>
                     <ul className="space-y-3">
                       {assignedManagers.map((m) => (
-                        <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-white/10 last:border-0">
+                        <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
                           <div>
-                            <p className="text-sm font-medium text-white">{m.full_name || m.email}</p>
-                            <p className="text-xs text-white/60">{m.email}</p>
+                            <p className="text-sm font-medium text-slate-800">{m.full_name || m.email}</p>
+                            <p className="text-xs text-slate-500">{m.email}</p>
                             {m.has_resident_mode && m.resident_unit_label && (
                               <>
-                                <p className="text-xs text-emerald-400 mt-0.5">On-site resident · Unit {m.resident_unit_label}</p>
+                                <p className="text-xs text-emerald-600 mt-0.5">On-site resident · Unit {m.resident_unit_label}</p>
                                 {m.presence_status && (
-                                  <p className="text-xs text-white/70 mt-0.5">
+                                  <p className="text-xs text-slate-600 mt-0.5">
                                     {m.presence_status === 'present' ? (
-                                      <span className="text-emerald-400">Present</span>
+                                      <span className="text-emerald-600">Present</span>
                                     ) : m.presence_away_started_at ? (
-                                      <span className="text-white/70">Away since {new Date(m.presence_away_started_at).toLocaleDateString()}</span>
+                                      <span className="text-slate-600">Away since {new Date(m.presence_away_started_at).toLocaleDateString()}</span>
                                     ) : (
-                                      <span className="text-white/70">Away</span>
+                                      <span className="text-slate-600">Away</span>
                                     )}
                                   </p>
                                 )}
@@ -765,7 +767,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                                       return next;
                                     });
                                   }}
-                                  className="text-sm border border-white/20 bg-white/10 rounded-lg px-2 py-1.5 text-white"
+                                  className="text-sm border border-slate-300 rounded-lg px-2 py-1.5"
                                 >
                                   <option value="">Select unit</option>
                                   {propertyUnits.map((u) => (
@@ -800,13 +802,13 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                         </li>
                       ))}
                     </ul>
-                    <p className="text-xs text-white/60 mt-3">On-site residents get Personal Mode (presence, invite guests for their unit).</p>
+                    <p className="text-xs text-slate-500 mt-3">On-site residents get Personal Mode (presence, invite guests for their unit).</p>
                   </Card>
                 )}
                 {property.live_slug && (
-                  <Card className="p-6 border-white/10">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-4">Live link page</h3>
-                    <p className="text-sm text-white/70 mb-4">Anyone with this link can view property info, owner contact, current or last stay, and activity log (no login required).</p>
+                  <Card className="p-6 border-slate-200">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Live link page</h3>
+                    <p className="text-sm text-slate-600 mb-4">Anyone with this link can view property info, owner contact, current or last stay, and activity log (no login required).</p>
                     <Button
                       type="button"
                       variant="primary"
@@ -817,14 +819,14 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                     </Button>
                   </Card>
                 )}
-                <Card className="p-6 border-white/10">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-4">Ownership proof</h3>
+                <Card className="p-6 border-slate-200">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Ownership proof</h3>
                   {property.ownership_proof_filename ? (
                     <div className="space-y-2">
-                      <p className="text-sm text-white/80">
+                      <p className="text-sm text-slate-600">
                         {property.ownership_proof_filename}
                         {property.ownership_proof_type && (
-                          <span className="ml-2 text-white/60">({property.ownership_proof_type.replace(/_/g, ' ')})</span>
+                          <span className="ml-2 text-slate-500">({property.ownership_proof_type.replace(/_/g, ' ')})</span>
                         )}
                       </p>
                       <Button
@@ -850,23 +852,23 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                       </Button>
                     </div>
                   ) : (
-                    <p className="text-sm text-white/60">You do not have any proof uploaded.</p>
+                    <p className="text-sm text-slate-500">You do not have any proof uploaded.</p>
                   )}
                 </Card>
                 {stayForOccupancyActions && (
-                  <Card className={`mb-6 p-5 md:p-6 ${stayNeedingConfirmation ? 'border-amber-400/50 bg-amber-500/10' : 'border-white/10'}`}>
-                    <h3 className={`text-xs font-bold uppercase tracking-wider mb-2 ${stayNeedingConfirmation ? 'text-amber-300' : 'text-white/80'}`}>
+                  <Card className={`mb-6 p-5 md:p-6 ${stayNeedingConfirmation ? 'border-amber-200 bg-amber-50/80' : 'border-slate-200'}`}>
+                    <h3 className={`text-xs font-bold uppercase tracking-wider mb-2 ${stayNeedingConfirmation ? 'text-amber-800' : 'text-slate-600'}`}>
                       {stayNeedingConfirmation ? 'Confirm occupancy status' : 'Update stay or confirm occupancy'}
                     </h3>
                     {stayNeedingConfirmation ? (
-                      <p className="text-sm text-amber-200 mb-3">
+                      <p className="text-sm text-amber-900 mb-3">
                         {stayNeedingConfirmation.needs_occupancy_confirmation
                           ? `Please confirm the status of this unit before ${stayNeedingConfirmation.confirmation_deadline_at ? new Date(stayNeedingConfirmation.confirmation_deadline_at).toLocaleString() : 'the deadline'}.`
                           : 'No response was received by the deadline. Status is UNCONFIRMED. Please confirm now.'}
                       </p>
                     ) : (
-                      <p className="text-sm text-white/80 mb-3">
-                        Extend the lease, mark the unit vacated, or confirm holdover for <strong className="text-white">{stayForOccupancyActions.guest_name}</strong>.
+                      <p className="text-sm text-slate-600 mb-3">
+                        Extend the lease, mark the unit vacated, or confirm holdover for <strong>{stayForOccupancyActions.guest_name}</strong>.
                       </p>
                     )}
                     <div className="flex flex-wrap gap-3">
@@ -931,7 +933,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                           type="date"
                           value={renewEndDate}
                           onChange={(e) => setRenewEndDate(e.target.value)}
-                          className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
                           min={stayForOccupancyActions?.stay_end_date ?? undefined}
                         />
                         <Button
@@ -958,7 +960,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                         </Button>
                         <button
                           type="button"
-                          className="text-sm text-white/70 hover:text-white"
+                          className="text-sm text-slate-600 hover:text-slate-800"
                           onClick={() => { setConfirmOccupancyAction(null); setRenewEndDate(''); }}
                         >
                           Cancel
@@ -968,35 +970,35 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                   </Card>
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-                  <Card className="p-5 md:p-6 border-white/10 flex flex-col">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-3">Occupancy status</h3>
+                  <Card className="p-5 md:p-6 border-slate-200 bg-slate-50/80 flex flex-col">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Occupancy status</h3>
                     <div className="flex flex-col gap-3 flex-1 min-h-0">
                       <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium w-fit ${
-                        displayStatus === 'OCCUPIED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' :
-                        displayStatus === 'VACANT' ? 'bg-white/10 text-white/70 border border-white/20' :
-                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' :
-                        'bg-white/10 text-white/70 border border-white/20'
+                        displayStatus === 'OCCUPIED' ? 'bg-emerald-100 text-emerald-800' :
+                        displayStatus === 'VACANT' ? 'bg-slate-200 text-slate-700' :
+                        displayStatus === 'UNCONFIRMED' ? 'bg-amber-100 text-amber-800' :
+                        'bg-slate-100 text-slate-600'
                       }`}>
                         <span className={`w-2 h-2 rounded-full shrink-0 ${
                           displayStatus === 'OCCUPIED' ? 'bg-emerald-500' :
-                          displayStatus === 'VACANT' ? 'bg-white/50' :
-                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-white/50'
+                          displayStatus === 'VACANT' ? 'bg-slate-400' :
+                          displayStatus === 'UNCONFIRMED' ? 'bg-amber-500' : 'bg-slate-400'
                         }`} />
                         {displayStatus}
                       </span>
                       {contextMode === 'personal' && isOccupied && activeStay && (
-                        <div className="text-sm text-white/80 space-y-0.5">
-                          <p>Current guest: <span className="font-medium text-white">{activeStay.guest_name}</span></p>
-                          <p>Lease end: <span className="font-medium text-white">{activeStay.stay_end_date}</span></p>
+                        <div className="text-sm text-slate-600 space-y-0.5">
+                          <p>Current guest: <span className="font-medium text-slate-800">{activeStay.guest_name}</span></p>
+                          <p>Lease end: <span className="font-medium text-slate-800">{activeStay.stay_end_date}</span></p>
                         </div>
                       )}
                       {displayStatus === 'UNCONFIRMED' && (
-                        <p className="text-xs text-amber-300">Confirmation requested but no response received by deadline. Use the confirmation options above.</p>
+                        <p className="text-xs text-amber-700">Confirmation requested but no response received by deadline. Use the confirmation options above.</p>
                       )}
                     </div>
                   </Card>
-                  <Card className="p-5 md:p-6 border-white/10 flex flex-col">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/80 mb-3">Shield Mode</h3>
+                  <Card className="p-5 md:p-6 border-slate-200 flex flex-col">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Shield Mode</h3>
                     <div className="flex flex-col gap-3 flex-1 min-h-0">
                       <div className="flex items-center gap-2">
                         <button
@@ -1018,37 +1020,37 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                               setShieldToggling(false);
                             }
                           }}
-                          className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[hsl(265,89%,66%)] focus:ring-offset-2 focus:ring-offset-[hsl(230,35%,4%)] ${shieldOn ? 'cursor-pointer bg-[hsl(265,89%,66%)]' : 'cursor-pointer bg-white/25 hover:bg-white/35'} ${shieldToggling ? 'opacity-50' : ''}`}
+                          className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${shieldOn ? 'cursor-pointer bg-emerald-600' : 'cursor-pointer bg-slate-200 hover:bg-slate-300'} ${shieldToggling ? 'opacity-50' : ''}`}
                         >
                           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${shieldOn ? 'translate-x-5' : 'translate-x-1'}`} />
                         </button>
-                        <span className="text-sm font-medium text-white">{shieldOn ? 'ON' : 'OFF'}</span>
+                        <span className="text-sm font-medium text-slate-800">{shieldOn ? 'ON' : 'OFF'}</span>
                       </div>
                       {shieldOn && shieldStatus && (
-                        <span className="text-sm text-white/80">Status: <span className="font-semibold text-white">{shieldStatus}</span></span>
+                        <span className="text-sm text-slate-600">Status: <span className="font-semibold text-slate-800">{shieldStatus}</span></span>
                       )}
                       {!shieldOn && (
-                        <span className="text-xs text-white/70">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when stay end reminders run (48h after stay end).</span>
+                        <span className="text-xs text-slate-500">Turn on anytime. Also turns on automatically on the last day of a guest&apos;s stay and when stay end reminders run (48h after stay end).</span>
                       )}
                     </div>
                   </Card>
-                  <Card className="p-5 md:p-6 border-white/10 flex flex-col">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-3">Stay end reminders</h3>
+                  <Card className="p-5 md:p-6 border-slate-200 flex flex-col">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Stay end reminders</h3>
                     <div className="flex flex-col gap-2 flex-1 min-h-0">
                       {contextMode === 'personal' && isOccupied && activeStay ? (
                         <>
-                          <span className={`text-sm font-medium ${activeStay.dead_mans_switch_enabled ? 'text-amber-300' : 'text-white/70'}`}>
+                          <span className={`text-sm font-medium ${activeStay.dead_mans_switch_enabled ? 'text-amber-700' : 'text-slate-600'}`}>
                             {activeStay.dead_mans_switch_enabled ? 'On' : 'Off'}
                           </span>
-                          <p className="text-xs text-white/60">Alerts you if the stay ends without checkout or renewal. Shown for current guest stay.</p>
+                          <p className="text-xs text-slate-500">Alerts you if the stay ends without checkout or renewal. Shown for current guest stay.</p>
                         </>
                       ) : contextMode === 'personal' && upcomingStayForProperty ? (
                         <>
-                          <span className="text-sm font-medium text-white/70">Off</span>
-                          <p className="text-xs text-white/60">Activates when the guest checks in. Alerts you if the stay ends without checkout or renewal.</p>
+                          <span className="text-sm font-medium text-slate-600">Off</span>
+                          <p className="text-xs text-slate-500">Activates when the guest checks in. Alerts you if the stay ends without checkout or renewal.</p>
                         </>
                       ) : (
-                        <span className="text-sm text-white/60">No active stay at this property.</span>
+                        <span className="text-sm text-slate-500">No active stay at this property.</span>
                       )}
                     </div>
                   </Card>
@@ -1060,11 +1062,11 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         )}
 
         {activeTab === 'stay' && contextMode === 'personal' && (
-          <Card className="overflow-hidden border-white/10">
+          <Card className="overflow-hidden border-slate-200">
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Stay (Invite token)</h3>
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">Stay (Invite token)</h3>
               {propertyStays.length === 0 ? (
-                <p className="text-white/70">No stays for this property yet. When you invite a guest and they accept, the current stay will appear here with its Invite ID and token state.</p>
+                <p className="text-slate-500">No stays for this property yet. When you invite a guest and they accept, the current stay will appear here with its Invite ID and assignment state.</p>
               ) : (
                 <div className="space-y-6">
                   {propertyStays.map((stay) => {
@@ -1072,53 +1074,53 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                     const stateLabel = (stay.token_state ?? '—').toUpperCase();
                     const stateClass =
                       stateLabel === 'BURNED'
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : stateLabel === 'STAGED'
-                          ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
+                          ? 'bg-sky-50 text-sky-700 border-sky-200'
                           : stateLabel === 'EXPIRED'
-                            ? 'bg-white/10 text-white/70 border-white/20'
+                            ? 'bg-slate-100 text-slate-600 border-slate-200'
                             : stateLabel === 'REVOKED'
-                              ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
                               : stateLabel === 'CANCELLED'
-                                ? 'bg-white/10 text-white/70 border-white/20'
-                                : 'bg-white/10 text-white/70 border-white/20';
+                                ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200';
                     const displayLabel = stateLabel === 'BURNED' ? 'Active' : stateLabel === 'STAGED' ? 'Pending' : stateLabel === 'REVOKED' ? 'Revoked' : stateLabel === 'CANCELLED' ? 'Cancelled' : stateLabel === 'EXPIRED' ? 'Expired' : stateLabel;
                     return (
-                      <div key={stay.stay_id} className={`rounded-xl border p-5 ${isActive ? 'border-white/20 bg-white/5' : 'border-white/10 bg-white/5'}`}>
+                      <div key={stay.stay_id} className={`rounded-xl border p-5 ${isActive ? 'border-slate-200 bg-slate-50/50' : 'border-slate-100 bg-white'}`}>
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold uppercase tracking-wide border ${stateClass}`}>
                             {displayLabel}
                           </span>
                           {stay.invitation_only && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-400/40">Pending sign-up</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">Pending sign-up</span>
                           )}
                           {stay.invite_id && (
-                            <span className="text-white/60 text-sm font-mono">Invite ID: {stay.invite_id}</span>
+                            <span className="text-slate-500 text-sm font-mono">Invite ID: {stay.invite_id}</span>
                           )}
-                          {isActive && !stay.invitation_only && <span className="text-xs text-emerald-400 font-medium">Current stay</span>}
+                          {isActive && !stay.invitation_only && <span className="text-xs text-emerald-600 font-medium">Current stay</span>}
                         </div>
                         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                           <div>
-                            <dt className="text-white/60">Guest</dt>
-                            <dd className="font-medium text-white">{stay.guest_name}</dd>
+                            <dt className="text-slate-500">Guest</dt>
+                            <dd className="font-medium text-slate-800">{stay.guest_name}</dd>
                           </div>
                           <div>
-                            <dt className="text-white/60">Check-in</dt>
-                            <dd className="font-medium text-white">{stay.stay_start_date}</dd>
+                            <dt className="text-slate-500">Check-in</dt>
+                            <dd className="font-medium text-slate-800">{stay.stay_start_date}</dd>
                           </div>
                           <div>
-                            <dt className="text-white/60">Check-out</dt>
-                            <dd className="font-medium text-white">{stay.stay_end_date}</dd>
+                            <dt className="text-slate-500">Check-out</dt>
+                            <dd className="font-medium text-slate-800">{stay.stay_end_date}</dd>
                           </div>
                           <div>
-                            <dt className="text-white/60">Status</dt>
-                            <dd className="font-medium text-white">
+                            <dt className="text-slate-500">Status</dt>
+                            <dd className="font-medium text-slate-800">
                               {stay.invitation_only ? 'Pending sign-up' : stay.cancelled_at ? 'Cancelled' : stay.checked_out_at ? 'Completed' : stay.revoked_at ? 'Revoked' : isOverstayed(stay.stay_end_date) ? 'Overstayed' : 'Active'}
                             </dd>
                           </div>
                         </dl>
                         {stay.invite_id && (
-                          <div className="mt-3 pt-3 border-t border-white/10">
+                          <div className="mt-3 pt-3 border-t border-slate-100">
                             <Button variant="outline" className="text-sm" onClick={() => { setVerifyQRInviteId(stay.invite_id ?? null); setShowVerifyQRModal(true); }}>Verify with QR code</Button>
                           </div>
                         )}
@@ -1132,9 +1134,9 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         )}
 
         {activeTab === 'guests' && contextMode === 'personal' && (
-          <Card className="overflow-hidden border-white/10">
+          <Card className="overflow-hidden border-slate-200">
             <table className="w-full text-left">
-              <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-black">
+              <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-black">
                 <tr>
                   <th className="px-6 py-4 text-center w-20">Risk</th>
                   <th className="px-6 py-4">Guest</th>
@@ -1144,31 +1146,31 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/10">
+              <tbody className="divide-y divide-slate-200">
                 {propertyStays.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-white/60">No guests at this property.</td>
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">No guests at this property.</td>
                   </tr>
                 ) : (
                   propertyStays.map((stay) => {
                     const overstay = isOverstayed(stay.stay_end_date);
                     return (
-                      <tr key={stay.stay_id} className="hover:bg-white/5 transition-colors group">
+                      <tr key={stay.stay_id} className="hover:bg-slate-50 transition-colors group">
                         <td className="px-6 py-5 text-center">
                           <div className={`w-3 h-3 rounded-full mx-auto ${stay.risk_indicator === 'high' ? 'bg-red-500' : stay.risk_indicator === 'medium' ? 'bg-yellow-500' : 'bg-green-500'} shadow-[0_0_8px_rgba(34,197,94,0.6)]`}></div>
                         </td>
                         <td className="px-6 py-5">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-[hsl(265,89%,66%)]/30 text-[hsl(265,89%,66%)] flex items-center justify-center font-black text-xs">{stay.guest_name.charAt(0)}</div>
+                            <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-600 flex items-center justify-center font-black text-xs">{stay.guest_name.charAt(0)}</div>
                             <div>
-                              <p className="text-sm font-bold text-white">{stay.guest_name}</p>
+                              <p className="text-sm font-bold text-slate-800">{stay.guest_name}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-5 text-sm text-white/80 font-mono">{stay.stay_start_date}</td>
-                        <td className="px-6 py-5 text-sm text-white/80 font-mono">{stay.stay_end_date}</td>
+                        <td className="px-6 py-5 text-sm text-slate-600 font-mono">{stay.stay_start_date}</td>
+                        <td className="px-6 py-5 text-sm text-slate-600 font-mono">{stay.stay_end_date}</td>
                         <td className="px-6 py-5">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${stay.invitation_only ? 'bg-amber-500/20 text-amber-300 border-amber-400/40' : overstay ? 'bg-red-500/20 text-red-300 border-red-400/40' : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'}`}>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${stay.invitation_only ? 'bg-amber-50 text-amber-600 border-amber-200' : overstay ? 'bg-red-50 text-red-600 border-red-200' : 'bg-green-50 text-green-600 border-green-200'}`}>
                             {stay.invitation_only ? 'Pending sign-up' : overstay ? 'Overstayed' : 'Active'}
                           </span>
                         </td>
@@ -1189,32 +1191,32 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
 
         {activeTab === 'documentation' && (
           <div className="max-w-3xl space-y-8">
-            <h3 className="text-3xl font-black text-white tracking-tighter">Region documentation: {jurisdictionInfo.name}</h3>
+            <h3 className="text-3xl font-black text-slate-800 tracking-tighter">Region documentation: {jurisdictionInfo.name}</h3>
 
             <section>
-              <h4 className="text-lg font-bold text-white/90 mb-4 uppercase tracking-wider">Jurisdiction threshold</h4>
-              <p className="text-white/80 leading-relaxed mb-4">
+              <h4 className="text-lg font-bold text-slate-700 mb-4 uppercase tracking-wider">Jurisdiction threshold</h4>
+              <p className="text-slate-600 leading-relaxed mb-4">
                 {jurisdictionInfo.legalThresholdDays != null
-                  ? <>The legal tenancy threshold for {jurisdictionInfo.name} is <strong className="text-white">{jurisdictionInfo.legalThresholdDays} days</strong>. The platform creates renewed authorization records every <strong className="text-white">{jurisdictionInfo.platformRenewalCycleDays} days</strong> to interrupt continuity and maintain a defensible audit trail.</>
-                  : <>Tenancy in {jurisdictionInfo.name} is {jurisdictionInfo.jurisdictionGroup === 'D' ? 'behavior-based' : 'lease-defined'} (no fixed day threshold). The platform uses a <strong className="text-white">{jurisdictionInfo.platformRenewalCycleDays}-day</strong> renewal cycle as the default authorization period.</>
+                  ? <>The legal tenancy threshold for {jurisdictionInfo.name} is <strong>{jurisdictionInfo.legalThresholdDays} days</strong>. The platform creates renewed authorization records every <strong>{jurisdictionInfo.platformRenewalCycleDays} days</strong> to interrupt continuity and maintain a defensible audit trail.</>
+                  : <>Tenancy in {jurisdictionInfo.name} is {jurisdictionInfo.jurisdictionGroup === 'D' ? 'behavior-based' : 'lease-defined'} (no fixed day threshold). The platform uses a <strong>{jurisdictionInfo.platformRenewalCycleDays}-day</strong> renewal cycle as the default authorization period.</>
                 }
               </p>
             </section>
 
-            <section className="p-6 rounded-xl border border-white/10 bg-white/5">
-              <h4 className="text-lg font-bold text-white mb-4 uppercase tracking-wider">Authorization status categories</h4>
+            <section className="p-6 rounded-xl border border-slate-200 bg-slate-50/50">
+              <h4 className="text-lg font-bold text-slate-800 mb-4 uppercase tracking-wider">Authorization status categories</h4>
               <div className="grid gap-4 text-sm">
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-                  <span className="font-semibold text-white/90 mr-2">Within cycle:</span>
-                  <span className="text-white/80">Authorization period under {jurisdictionInfo.platformRenewalCycleDays - jurisdictionInfo.reminderDaysBefore} days. Full documentation active.</span>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="font-semibold text-slate-700 mr-2">Within cycle:</span>
+                  <span className="text-slate-600">Authorization period under {jurisdictionInfo.platformRenewalCycleDays - jurisdictionInfo.reminderDaysBefore} days. Full documentation active.</span>
                 </div>
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-                  <span className="font-semibold text-white/90 mr-2">Approaching renewal:</span>
-                  <span className="text-white/80">Within {jurisdictionInfo.reminderDaysBefore} days of cycle end. Renewal prompts are sent.</span>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="font-semibold text-slate-700 mr-2">Approaching renewal:</span>
+                  <span className="text-slate-600">Within {jurisdictionInfo.reminderDaysBefore} days of cycle end. Renewal prompts are sent.</span>
                 </div>
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-                  <span className="font-semibold text-white/90 mr-2">Past cycle:</span>
-                  <span className="text-white/80">Authorization exceeds the {jurisdictionInfo.platformRenewalCycleDays}-day renewal cycle for {jurisdictionInfo.name}. Status and actions are recorded in the audit trail.</span>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="font-semibold text-slate-700 mr-2">Past cycle:</span>
+                  <span className="text-slate-600">Authorization exceeds the {jurisdictionInfo.platformRenewalCycleDays}-day renewal cycle for {jurisdictionInfo.name}. Status and actions are recorded in the audit trail.</span>
                 </div>
               </div>
             </section>
@@ -1222,21 +1224,21 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
         )}
 
         {activeTab === 'logs' && (
-          <Card className="overflow-hidden border-white/10">
+          <Card className="overflow-hidden border-slate-200">
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-white mb-2">Event ledger for this property</h3>
-              <p className="text-white/70 text-sm mb-4">Status changes, Shield Mode, guest signatures, and activity for this property. Records cannot be edited or deleted.</p>
+              <h3 className="text-lg font-semibold text-slate-800 mb-2">Event ledger for this property</h3>
+              <p className="text-slate-500 text-sm mb-4">Status changes, Shield Mode, guest signatures, and activity for this property. Records cannot be edited or deleted.</p>
               <Button variant="outline" onClick={loadPropertyLogs} disabled={propertyLogsLoading} className="mb-4">
                 {propertyLogsLoading ? 'Loading…' : 'Refresh'}
               </Button>
               {propertyLogsLoading && propertyLogs.length === 0 ? (
-                <p className="p-8 text-white/60 text-center">Loading logs…</p>
+                <p className="p-8 text-slate-500 text-center">Loading logs…</p>
               ) : propertyLogs.length === 0 ? (
-                <p className="p-8 text-white/60 text-center">No events for this property.</p>
+                <p className="p-8 text-slate-500 text-center">No events for this property.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-white/10 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-white/10">
+                    <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
                       <tr>
                         <th className="px-6 py-4">Time</th>
                         <th className="px-6 py-4">Category</th>
@@ -1245,32 +1247,32 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                         <th className="px-6 py-4">Message</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/10">
+                    <tbody className="divide-y divide-slate-200">
                       {propertyLogs.map((entry) => (
-                        <tr key={entry.id} className="hover:bg-white/5">
-                          <td className="px-6 py-3 text-white/70 text-sm whitespace-nowrap">
+                        <tr key={entry.id} className="hover:bg-slate-50">
+                          <td className="px-6 py-3 text-slate-600 text-sm whitespace-nowrap">
                             {entry.created_at ? new Date(entry.created_at).toISOString().replace('T', ' ').slice(0, 19) + 'Z' : '—'}
                           </td>
                           <td className="px-6 py-3">
                             <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                              entry.category === 'failed_attempt' ? 'bg-red-500/20 text-red-300' :
-                              entry.category === 'guest_signature' ? 'bg-emerald-500/20 text-emerald-300' :
-                              entry.category === 'shield_mode' ? 'bg-violet-500/20 text-violet-300' :
-                              entry.category === 'dead_mans_switch' ? 'bg-amber-500/20 text-amber-300' :
-                              entry.category === 'billing' ? 'bg-white/20 text-white/90' :
-                              'bg-sky-500/20 text-sky-300'
+                              entry.category === 'failed_attempt' ? 'bg-red-100 text-red-800' :
+                              entry.category === 'guest_signature' ? 'bg-emerald-100 text-emerald-800' :
+                              entry.category === 'shield_mode' ? 'bg-violet-100 text-violet-800' :
+                              entry.category === 'dead_mans_switch' ? 'bg-amber-100 text-amber-800' :
+                              entry.category === 'billing' ? 'bg-slate-200 text-slate-800' :
+                              'bg-sky-100 text-sky-800'
                             }`}>
                               {entry.category === 'shield_mode' ? 'Shield Mode' : entry.category === 'dead_mans_switch' ? 'Stay end reminders' : entry.category === 'billing' ? 'Billing' : entry.category.replace('_', ' ')}
                             </span>
                           </td>
-                          <td className="px-6 py-3 font-medium text-white">{entry.title}</td>
-                          <td className="px-6 py-3 text-white/70 text-sm">{entry.actor_email ?? '—'}</td>
-                          <td className="px-6 py-3 text-white/70 text-sm max-w-xs">
+                          <td className="px-6 py-3 font-medium text-slate-800">{entry.title}</td>
+                          <td className="px-6 py-3 text-slate-600 text-sm">{entry.actor_email ?? '—'}</td>
+                          <td className="px-6 py-3 text-slate-600 text-sm max-w-xs">
                             <span className="truncate block">{entry.message}</span>
                             <button
                               type="button"
                               onClick={() => setLogMessageModalEntry(entry)}
-                              className="text-[hsl(265,89%,66%)] hover:text-white text-xs mt-0.5 focus:outline-none focus:underline"
+                              className="text-sky-600 hover:text-sky-800 text-xs mt-0.5 focus:outline-none focus:underline"
                             >
                               View full message
                             </button>
@@ -1295,8 +1297,8 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
       >
         {logMessageModalEntry && (
           <div className="p-6">
-            <p className="text-white/90 whitespace-pre-wrap text-sm">{logMessageModalEntry.message}</p>
-            <p className="text-white/60 text-xs mt-4">
+            <p className="text-slate-700 whitespace-pre-wrap text-sm">{logMessageModalEntry.message}</p>
+            <p className="text-slate-500 text-xs mt-4">
               {logMessageModalEntry.created_at ? new Date(logMessageModalEntry.created_at).toLocaleString() : ''}
               {logMessageModalEntry.actor_email && ` · ${logMessageModalEntry.actor_email}`}
             </p>

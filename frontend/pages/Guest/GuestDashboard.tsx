@@ -6,7 +6,7 @@ import { copyToClipboard } from '../../utils/clipboard';
 import AgreementSignModal, { type PrefilledGuestInfo } from '../../components/AgreementSignModal';
 import PendingSignatureModal from '../../components/PendingSignatureModal';
 import HelpCenter from '../Support/HelpCenter';
-import { DashboardAlertsPanel } from '../../components/DashboardAlertsPanel';
+import { DashboardAlertsPanel, DASHBOARD_ALERTS_REFRESH_EVENT } from '../../components/DashboardAlertsPanel';
 import { PENDING_INVITE_STORAGE_KEY } from './GuestLogin';
 
 type GuestTab = 'stays' | 'invitations' | 'help';
@@ -368,6 +368,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       setStayPresenceAwayStartedAt(res.away_started_at ?? null);
       setStayPresenceGuestsAuthorized(res.guests_authorized_during_away ?? false);
       notify('success', `Status set to ${status}`);
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
     } catch (e) {
       notify('error', (e as Error)?.message ?? 'Failed to update status');
     } finally {
@@ -476,15 +477,15 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
   if (loading) {
     return (
       <div className="flex-grow w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex items-center justify-center min-h-[200px]">
-        <p className="text-white/90 text-sm">Loading…</p>
+        <p className="text-slate-500 text-sm">Loading…</p>
       </div>
     );
   }
   if (error) {
     return (
       <div className="flex-grow w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
-        <div className="rounded-2xl glass border border-white/10 p-8 text-center shadow-sm">
-          <p className="text-white/90 text-sm mb-4">Something went wrong loading your dashboard.</p>
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <p className="text-slate-600 text-sm mb-4">Something went wrong loading your dashboard.</p>
           <Button variant="primary" className="rounded-lg font-medium" onClick={() => { setError(null); loadData(); }}>Try again</Button>
         </div>
       </div>
@@ -536,9 +537,9 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
   ];
 
   return (
-    <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-transparent">
-      {/* Sidebar – cosmic */}
-      <aside className="hidden lg:flex w-64 min-w-[16rem] flex-shrink-0 flex-col glass border-r border-white/10 p-5">
+    <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-[#f0f4ff]/50">
+      {/* Sidebar */}
+      <aside className="hidden lg:flex w-64 min-w-[16rem] flex-shrink-0 flex-col bg-white/80 backdrop-blur-xl border-r border-slate-200 p-5">
         <nav className="space-y-1">
           {[
             { id: 'stays' as GuestTab, label: 'My stays', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
@@ -548,7 +549,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-[hsl(265,89%,66%)]/20 text-white border border-[hsl(265,89%,66%)]/40' : 'text-white/90 hover:text-white hover:bg-white/10'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${activeTab === item.id ? 'bg-slate-100 text-slate-800 border border-slate-300' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'}`}
             >
               <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} /></svg>
               {item.label}
@@ -564,7 +565,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
           <select
             value={activeTab}
             onChange={(e) => setActiveTab(e.target.value as GuestTab)}
-            className="w-full max-w-xs rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-medium text-white focus:border-[hsl(265,89%,66%)] focus:ring-2 focus:ring-[hsl(265,89%,66%)]/20"
+            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm"
           >
             <option value="stays">My stays</option>
             <option value="invitations">Add invitation</option>
@@ -577,9 +578,9 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         {/* Invitations tab */}
         {activeTab === 'invitations' && (
           <div className="space-y-6 w-full">
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-white mb-1">Add invitation</h2>
-              <p className="text-sm text-white/90 mb-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-1">Add invitation</h2>
+              <p className="text-sm text-slate-600 mb-4">
                 {isEmpty ? 'Paste an invitation link from your host to view and sign the agreement.' : 'Have another link? Add it below to review and sign.'}
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
@@ -594,7 +595,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                 </div>
                 <Button
                   type="button"
-                  className="shrink-0 self-stretch sm:self-auto sm:mt-7 h-10 px-5 rounded-lg font-medium text-white border-0 bg-[hsl(265,89%,66%)] hover:bg-[hsl(265,75%,58%)]"
+                  className="shrink-0 self-stretch sm:self-auto sm:mt-7 h-10 px-5 rounded-lg font-medium text-white border-0 bg-[#6B90F2] hover:bg-[#5a7ed9]"
                   onClick={handleAddInviteLink}
                   disabled={addingInvite || !parseInviteCode(inviteLinkInput)}
                 >
@@ -603,19 +604,19 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
               </div>
             </div>
             {pendingInvites.filter((inv) => inv.needs_dropbox_signature).length > 0 && (
-              <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-6 shadow-sm">
-                <h2 className="text-base font-semibold text-white mb-1">Pending actions</h2>
-                <p className="text-sm text-white/90 mb-2">Complete signing in Dropbox to confirm these stays.</p>
-                <p className="text-sm text-white/80 mb-4">
-                  Already signed? <button type="button" onClick={() => loadData()} className="text-[hsl(265,89%,76%)] hover:text-[hsl(265,89%,86%)] font-medium underline">Check again</button>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-6 shadow-sm">
+                <h2 className="text-base font-semibold text-slate-900 mb-1">Pending actions</h2>
+                <p className="text-sm text-slate-600 mb-2">Complete signing in Dropbox to confirm these stays.</p>
+                <p className="text-sm text-slate-500 mb-4">
+                  Already signed? <button type="button" onClick={() => loadData()} className="text-blue-600 hover:text-blue-800 font-medium underline">Check again</button>
                 </p>
                 <ul className="space-y-3">
                   {pendingInvites.filter((inv) => inv.needs_dropbox_signature).map((inv) => (
-                    <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-white/10 glass">
+                    <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-amber-100 bg-white">
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-white">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
-                        <p className="text-sm text-white/80 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
-                        <p className="text-xs text-amber-200 font-medium mt-1">Awaiting your signature in Dropbox</p>
+                        <p className="font-semibold text-slate-900">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
+                        <p className="text-xs text-amber-700 font-medium mt-1">Awaiting your signature in Dropbox</p>
                       </div>
                       <Button variant="primary" className="shrink-0 h-10 rounded-lg font-medium px-4" onClick={() => setPendingSignatureModalInvite(inv)}>Complete signing</Button>
                     </li>
@@ -626,39 +627,39 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
             {pendingInvites.filter((inv) =>
               stays.some((s) => datesOverlap(inv.stay_start_date, inv.stay_end_date, s.approved_stay_start_date, s.approved_stay_end_date))
             ).length > 0 && (
-              <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-6 shadow-sm">
-                <h2 className="text-base font-semibold text-white mb-1">Overlapping invitations</h2>
-                <p className="text-sm text-white/90 mb-4">These overlap with an accepted stay and cannot be accepted.</p>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-6 shadow-sm">
+                <h2 className="text-base font-semibold text-slate-900 mb-1">Overlapping invitations</h2>
+                <p className="text-sm text-slate-600 mb-4">These overlap with an accepted stay and cannot be accepted.</p>
                 <ul className="space-y-3">
                   {pendingInvites
                     .filter((inv) =>
                       stays.some((s) => datesOverlap(inv.stay_start_date, inv.stay_end_date, s.approved_stay_start_date, s.approved_stay_end_date))
                     )
                     .map((inv) => (
-                      <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 glass rounded-xl border border-white/10">
+                      <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white rounded-xl border border-amber-100">
                         <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-white">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
-                          <p className="text-sm text-white/80 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
-                          <p className="text-xs text-amber-200 font-medium mt-1">Overlaps existing stay</p>
+                          <p className="font-semibold text-slate-900">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
+                          <p className="text-sm text-slate-500 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
+                          <p className="text-xs text-amber-700 font-medium mt-1">Overlaps existing stay</p>
                         </div>
-                        <span className="text-sm font-medium text-white/70 shrink-0">Cannot accept</span>
+                        <span className="text-sm font-medium text-slate-400 shrink-0">Cannot accept</span>
                       </li>
                     ))}
                 </ul>
               </div>
             )}
-            <div className="rounded-2xl glass border border-white/10 p-6 shadow-sm">
-              <h2 className="text-base font-semibold text-white mb-1">Future invites</h2>
-              <p className="text-sm text-white/80 mb-4">Invitations that don&apos;t overlap your existing stays. Sign the agreement to accept.</p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-base font-semibold text-slate-900 mb-1">Future invites</h2>
+              <p className="text-sm text-slate-500 mb-4">Invitations that don&apos;t overlap your existing stays. Sign the agreement to accept.</p>
               {futureInvites.length === 0 ? (
-                <p className="text-white/80 text-sm">No future invites. Add an invitation link above.</p>
+                <p className="text-slate-500 text-sm">No future invites. Add an invitation link above.</p>
               ) : (
                 <ul className="space-y-3">
                   {futureInvites.map((inv) => (
-                    <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-white/10 bg-white/5">
+                    <li key={inv.invitation_code} className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50/50">
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-white">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
-                        <p className="text-sm text-white/80 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
+                        <p className="font-semibold text-slate-900">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
                       </div>
                       <Button variant="primary" className="shrink-0 h-10 rounded-lg font-medium px-4" onClick={() => (inv.needs_dropbox_signature ? setPendingSignatureModalInvite(inv) : openAgreementModal(inv.invitation_code))}>
                         {inv.needs_dropbox_signature ? 'Complete signing' : 'Review & sign'}
@@ -683,8 +684,8 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
           {/* Filters + Stay list */}
           <div className="lg:w-80 xl:w-96 flex-shrink-0 space-y-4">
-            <div className="rounded-xl glass border border-white/10 p-4 shadow-sm">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-white/70 mb-3">Filter</h3>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Filter</h3>
               <div className="flex flex-wrap gap-2">
                 {filterButtons.map(({ id, label, count }) => (
                   <button
@@ -692,7 +693,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                     type="button"
                     onClick={() => { setStayFilter(id); if (id !== 'future_invites') setSelectedStay(null); }}
                     className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      stayFilter === id ? 'bg-[hsl(265,89%,66%)]/80 text-white' : 'text-white/90 hover:bg-white/10'
+                      stayFilter === id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
                     {label} ({count})
@@ -700,17 +701,17 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                 ))}
               </div>
             </div>
-            <div className="rounded-xl glass border border-white/10 shadow-sm overflow-hidden max-h-[calc(100vh-20rem)] overflow-y-auto">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden max-h-[calc(100vh-20rem)] overflow-y-auto">
               <div className="p-4">
               {stayFilter === 'future_invites' ? (
                 futureInvites.length === 0 ? (
-                  <p className="text-white/80 text-sm py-4">No future invites. Add an invitation link in the Add invitation tab.</p>
+                  <p className="text-slate-500 text-sm py-4">No future invites. Add an invitation link in the Add invitation tab.</p>
                 ) : (
                   <ul className="space-y-2">
                     {futureInvites.map((inv) => (
-                      <li key={inv.invitation_code} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                        <p className="font-semibold text-white text-sm">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
-                        <p className="text-xs text-white/70 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
+                      <li key={inv.invitation_code} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                        <p className="font-semibold text-slate-900 text-sm">{inv.property_name}{inv.unit_label ? ` — Unit ${inv.unit_label}` : ''}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</p>
                         <Button variant="primary" className="mt-2 w-full text-xs h-8 py-1.5" onClick={() => (inv.needs_dropbox_signature ? setPendingSignatureModalInvite(inv) : openAgreementModal(inv.invitation_code))}>
                           {inv.needs_dropbox_signature ? 'Complete signing' : 'Review & sign'}
                         </Button>
@@ -719,7 +720,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                   </ul>
                 )
               ) : filteredStays.length === 0 ? (
-                <p className="text-white/80 text-sm py-4">
+                <p className="text-slate-600 text-sm py-4">
                   {stayFilter === 'all' ? 'No stays yet.' : stayFilter === 'previous' ? 'No completed stays.' : `No ${stayFilter} stays.`} Add an invitation link in the Add invitation tab.
                 </p>
               ) : (
@@ -737,10 +738,10 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                       return (
                       <div
                         key={s.stay_id}
-                        className={`rounded-xl border glass text-left transition-all ${
+                        className={`rounded-xl border bg-white text-left transition-all ${
                           isSelected
-                            ? 'border-[hsl(265,89%,66%)]/40 border-l-4 border-l-[hsl(265,89%,66%)] bg-[hsl(265,89%,66%)]/10 shadow-sm'
-                            : 'border-white/10 hover:border-white/20'
+                            ? 'border-slate-300 border-l-4 border-l-[#6B90F2] bg-[#6B90F2]/10 shadow-sm'
+                            : 'border-slate-200 hover:border-slate-300'
                         }`}
                       >
                           <button
@@ -750,19 +751,19 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                           >
                             <div className="flex items-center gap-2 mb-2 flex-wrap">
                               {(s.revoked_at || s.vacate_by) && (
-                                <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide bg-red-50 text-red-200 border border-red-100">Revoked</span>
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide bg-red-50 text-red-700 border border-red-100">Revoked</span>
                               )}
                               <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide ${
-                                s.cancelled_at ? 'bg-amber-500/20 text-amber-200 border border-amber-400/30' : s.checked_out_at ? 'bg-white/10 text-white/80 border border-white/10' : isOngoing ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30' : isUpcoming ? 'bg-amber-400/30 text-amber-100 border-0' : isFuture ? 'bg-white/15 text-white/90 border border-white/20' : 'bg-white/10 text-white/80 border border-white/10'
+                                s.cancelled_at ? 'bg-amber-50 text-amber-700 border border-amber-100' : s.checked_out_at ? 'bg-slate-100 text-slate-600 border border-slate-200' : isOngoing ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : isUpcoming ? 'bg-[#FFC107] text-slate-900 border-0' : isFuture ? 'bg-slate-200 text-slate-700 border-0' : 'bg-slate-100 text-slate-600'
                               }`}>
                                 {s.cancelled_at ? 'Cancelled' : s.checked_out_at ? 'Completed' : isOngoing ? 'Ongoing' : isUpcoming ? 'UPCOMING' : isFuture ? 'FUTURE' : 'Previous'}
                               </span>
-                              <span className="text-white/60 text-xs">{s.region_code}</span>
+                              <span className="text-slate-400 text-xs">{s.region_code}</span>
                             </div>
-                            <p className="text-sm text-white/80">
+                            <p className="text-sm text-slate-600">
                               {s.property_name}{s.unit_label ? ` — Unit ${s.unit_label}` : ''}
                             </p>
-                            <p className="text-sm text-white/70 mt-0.5">
+                            <p className="text-sm text-slate-500 mt-0.5">
                               {formatDate(s.approved_stay_start_date)} – {formatDate(s.approved_stay_end_date)}
                             </p>
                           </button>
@@ -794,7 +795,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                             <div className="px-4 pb-4 pt-0">
                               <button
                                 type="button"
-                                className="w-full py-2.5 px-4 rounded-lg text-sm font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
+                                className="w-full py-2.5 px-4 rounded-lg text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
                                 onClick={(e) => { e.stopPropagation(); setCancelStayConfirm(s); }}
                               >
                                 <span className="text-red-500 font-semibold">X</span> Cancel stay
@@ -812,8 +813,8 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
 
           {/* Stay detail panel - show placeholder when no stay selected */}
           {!stay && stayFilter !== 'future_invites' && (
-            <div className="flex-1 min-w-0 flex items-center justify-center rounded-xl border border-dashed border-white/20 bg-white/5 p-12">
-              <p className="text-white/80 text-sm text-center">Select a stay from the list to view details and actions.</p>
+            <div className="flex-1 min-w-0 flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-12">
+              <p className="text-slate-500 text-sm text-center">Select a stay from the list to view details and actions.</p>
             </div>
           )}
           {stay && stayFilter !== 'future_invites' && (() => {
@@ -822,19 +823,19 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         <div className="flex-1 min-w-0 space-y-6 overflow-y-auto">
       {/* Revoked: Authorization Revoked per guidance */}
       {stay.revoked_at || stay.vacate_by ? (
-        <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-5">
+        <div className="rounded-2xl border border-red-200 bg-red-50/80 p-5">
           <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
             <div className="min-w-0">
-              <h3 className="text-base font-semibold text-red-200">Authorization Revoked</h3>
+              <h3 className="text-base font-semibold text-red-900">Authorization Revoked</h3>
               {stay.revoked_at && (
-                <p className="text-xs text-red-200/90 mt-1 font-medium">Effective date: {new Date(stay.revoked_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                <p className="text-xs text-red-700 mt-1 font-medium">Effective date: {new Date(stay.revoked_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
               )}
-              <p className="text-sm text-red-100 mt-2">The Property Owner has revoked your authorization to occupy the property. You are required to vacate the premises immediately.</p>
+              <p className="text-sm text-red-800 mt-2">The Property Owner has revoked your authorization to occupy the property. You are required to vacate the premises immediately.</p>
               {stay.vacate_by && (
-                <p className="text-sm text-red-200/90 mt-2 font-medium">Vacate by: {new Date(stay.vacate_by).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                <p className="text-sm text-red-700 mt-2 font-medium">Vacate by: {new Date(stay.vacate_by).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
               )}
             </div>
           </div>
@@ -842,22 +843,22 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       ) : null}
 
       {/* Hero: Stay overview */}
-      <section className="rounded-2xl glass border border-white/10 p-6 md:p-8 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold uppercase tracking-wide ${
                 stay.cancelled_at
-                  ? 'bg-amber-500/20 text-amber-200 border border-amber-400/30'
+                  ? 'bg-amber-50 text-amber-700 border border-amber-100'
                   : stay.checked_out_at
-                    ? 'bg-white/10 text-white/80'
+                    ? 'bg-slate-100 text-slate-600'
                     : detailHasCheckedIn && stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
-                      ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                       : !detailHasCheckedIn && stay.approved_stay_start_date <= today && stay.approved_stay_end_date >= today
-                        ? 'bg-amber-400/30 text-amber-100 border-0'
+                        ? 'bg-[#FFC107] text-slate-900 border-0'
                         : stay.approved_stay_start_date > today
-                          ? 'bg-white/15 text-white/90 border border-white/20'
-                          : 'bg-white/10 text-white/80'
+                          ? 'bg-slate-200 text-slate-700 border-0'
+                          : 'bg-slate-100 text-slate-600'
               }`}>
                 {stay.cancelled_at
                   ? 'Cancelled'
@@ -871,18 +872,18 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                           ? 'FUTURE'
                           : 'Ended'}
               </span>
-              <span className="text-white/60">·</span>
-              <span className="text-white/80 text-sm">{stay.property_name}{stay.unit_label ? ` — Unit ${stay.unit_label}` : ''}</span>
-              <span className="text-white/60 text-sm">({stay.region_code})</span>
+              <span className="text-slate-400">·</span>
+              <span className="text-slate-500 text-sm">{stay.property_name}{stay.unit_label ? ` — Unit ${stay.unit_label}` : ''}</span>
+              <span className="text-slate-400 text-sm">({stay.region_code})</span>
               {stay.invite_id && (
                 <>
-                  <span className="text-white/60">·</span>
-                  <span className="text-white/80 text-sm font-mono">Invite ID: {stay.invite_id}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-500 text-sm font-mono">Invite ID: {stay.invite_id}</span>
                       {stay.token_state && (
                     <span className={`ml-1 px-1.5 py-0.5 rounded text-xs font-medium ${
-                      stay.token_state === 'BURNED' ? 'bg-emerald-500/30 text-emerald-200' :
-                      stay.token_state === 'EXPIRED' ? 'bg-white/10 text-white/80' :
-                      stay.token_state === 'REVOKED' ? 'bg-amber-500/20 text-amber-200' : 'bg-white/10 text-white/80'
+                      stay.token_state === 'BURNED' ? 'bg-[#28A745] text-white' :
+                      stay.token_state === 'EXPIRED' ? 'bg-slate-100 text-slate-600' :
+                      stay.token_state === 'REVOKED' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'
                     }`}>
                       {stay.token_state === 'BURNED' ? 'Active' : stay.token_state === 'STAGED' ? 'Pending' : stay.token_state === 'EXPIRED' ? 'Expired' : stay.token_state === 'REVOKED' ? 'Revoked' : stay.token_state}
                     </span>
@@ -890,29 +891,29 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                 </>
               )}
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
               {stay.cancelled_at ? 'Stay cancelled' : stay.checked_out_at ? 'Stay completed' : stay.approved_stay_end_date < today ? 'Stay ended' : stay.approved_stay_start_date > today ? 'Upcoming stay' : 'Current stay'}
             </h1>
             <div className="flex gap-6 mt-4">
               <div>
-                <p className="text-xs font-medium text-white/70 uppercase tracking-wide">CHECK-IN</p>
-                <p className="text-white font-medium mt-0.5">{formatDate(stay.approved_stay_start_date)}</p>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">CHECK-IN</p>
+                <p className="text-slate-900 font-medium mt-0.5">{formatDate(stay.approved_stay_start_date)}</p>
               </div>
               <div>
-                <p className="text-xs font-medium text-white/70 uppercase tracking-wide">CHECK-OUT</p>
-                <p className="text-white font-medium mt-0.5">{formatDate(stay.approved_stay_end_date)}</p>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">CHECK-OUT</p>
+                <p className="text-slate-900 font-medium mt-0.5">{formatDate(stay.approved_stay_end_date)}</p>
               </div>
             </div>
           </div>
           <div className="md:w-56 flex flex-col gap-4 shrink-0">
-            <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-[hsl(265,89%,66%)] rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full bg-slate-800 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
             </div>
-            <p className="text-xs text-white/70 font-medium">Stay progress</p>
+            <p className="text-xs text-slate-400 font-medium">Stay progress</p>
             {stay.property_live_slug && (
               <Button
                 type="button"
-                className="w-full h-11 rounded-lg font-medium text-white border-0 bg-[hsl(265,89%,66%)] hover:bg-[hsl(265,75%,58%)] focus:ring-[hsl(265,89%,66%)]"
+                className="w-full h-11 rounded-lg font-medium text-white border-0 bg-[#007BFF] hover:bg-[#006ee6] focus:ring-[#007BFF]"
                 onClick={() => { setLiveLinkSlug(stay.property_live_slug ?? null); setShowLiveLinkModal(true); }}
               >
                 Open live link
@@ -922,7 +923,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 rounded-lg font-medium bg-white/10 border border-white/20 text-white hover:bg-white/20"
+                className="w-full h-11 rounded-lg font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                 onClick={() => { setVerifyQRInviteId(stay.invite_id ?? null); setShowVerifyQRModal(true); }}
               >
                 Verify with QR code
@@ -932,7 +933,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
               <button
                 type="button"
                 disabled={!!checkingInStay}
-                className="w-full h-11 rounded-lg font-medium text-white bg-[hsl(265,89%,66%)] hover:bg-[hsl(265,75%,58%)] disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                className="w-full h-11 rounded-lg font-medium text-white bg-[#6F42C1] hover:bg-[#5e35a8] disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
                 onClick={() => handleCheckIn(stay)}
               >
                 {checkingInStay?.stay_id === stay.stay_id ? 'Checking in…' : 'Check in'}
@@ -951,7 +952,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
             {!stay.cancelled_at && stay.approved_stay_start_date > today && (
               <button
                 type="button"
-                className="w-full h-11 rounded-lg font-medium text-white bg-white/10 border border-white/20 hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
+                className="w-full h-11 rounded-lg font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
                 onClick={() => setCancelStayConfirm(stay)}
               >
                 <span className="text-red-500 font-semibold">X</span> Cancel stay
@@ -968,21 +969,21 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         const maxShow = 42; // ~6 weeks
         const showDays = total <= maxShow ? allDays : allDays.slice(-maxShow);
         return (
-          <section className="rounded-2xl glass border border-white/10 p-6 md:p-8 shadow-sm">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-white/80 mb-4">TIME LEFT ON YOUR STAY</h3>
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 mb-4">TIME LEFT ON YOUR STAY</h3>
             <div className="flex flex-col sm:flex-row sm:items-center gap-8">
               <div className="flex-shrink-0">
-                <div className="inline-flex flex-col items-center justify-center rounded-2xl bg-white/10 border border-white/20 px-8 py-6 min-w-[140px]">
-                  <span className="text-4xl md:text-5xl font-bold tabular-nums text-white">
+                <div className="inline-flex flex-col items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-inner px-8 py-6 min-w-[140px]">
+                  <span className="text-4xl md:text-5xl font-bold tabular-nums text-slate-900">
                     {dLeft}
                   </span>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-white/70 mt-1">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 mt-1">
                     {dLeft === 0 ? 'DAY (CHECK-OUT TODAY)' : dLeft === 1 ? 'DAY LEFT' : 'DAYS LEFT'}
                   </span>
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-white/70 mb-2">
+                <p className="text-xs font-medium text-slate-500 mb-2">
                   Stay timeline – {formatDate(stay.approved_stay_start_date)} → {formatDate(stay.approved_stay_end_date)}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -995,14 +996,14 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                       <div
                         key={dayStr}
                         title={`${dayStr}${isToday ? ' (today)' : ''}${isEnd ? ' (check-out)' : ''}`}
-                        className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all ring-offset-2 ring-offset-[hsl(230,35%,4%)] ${
+                        className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
                           isToday
-                            ? 'bg-[hsl(265,89%,66%)] text-white ring-2 ring-[hsl(265,89%,66%)]/40'
+                            ? 'bg-[#6F42C1] text-white ring-2 ring-[#6F42C1]/30 ring-offset-1'
                             : isEnd
-                              ? 'bg-amber-400 text-slate-900 font-semibold'
+                              ? 'bg-[#FFC107] text-slate-900 font-semibold'
                               : isPast
-                                ? 'bg-white/20 text-white/60'
-                                : 'bg-white/10 text-white/90 border border-white/20'
+                                ? 'bg-slate-200 text-slate-500'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
                         }`}
                       >
                         {dayNum}
@@ -1011,17 +1012,17 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                   })}
                 </div>
                 {total > maxShow && (
-                  <p className="text-xs text-white/60 mt-2">Showing last {maxShow} days of stay</p>
+                  <p className="text-xs text-slate-400 mt-2">Showing last {maxShow} days of stay</p>
                 )}
-                <div className="flex flex-wrap gap-4 mt-3 text-xs text-white/70">
+                <div className="flex flex-wrap gap-4 mt-3 text-xs text-slate-500">
                   <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[hsl(265,89%,66%)]" /> Today
+                    <span className="w-3 h-3 rounded-full bg-[#6F42C1]" /> Today
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-amber-400" /> Check-out day
+                    <span className="w-3 h-3 rounded-full bg-[#FFC107]" /> Check-out day
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-white/20" /> Past
+                    <span className="w-3 h-3 rounded-full bg-slate-200" /> Past
                   </span>
                 </div>
               </div>
@@ -1042,7 +1043,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         <div className="flex items-center gap-4">
           <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${
             stay.token_state === 'BURNED' ? 'bg-emerald-100 text-emerald-800' :
-            stay.token_state === 'REVOKED' ? 'bg-red-500/20 text-red-200' :
+            stay.token_state === 'REVOKED' ? 'bg-red-100 text-red-800' :
             stay.token_state === 'EXPIRED' ? 'bg-slate-200 text-slate-700' :
             stay.token_state === 'CANCELLED' ? 'bg-amber-100 text-amber-800' :
             stay.token_state === 'STAGED' ? 'bg-blue-100 text-blue-800' :
@@ -1064,33 +1065,33 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
              stay.token_state ?? 'Unknown'}
           </span>
           {stay.invite_id && (
-            <span className="text-sm text-white/70 font-mono">Token: {stay.invite_id}</span>
+            <span className="text-sm text-slate-500 font-mono">Token: {stay.invite_id}</span>
           )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Authorization start</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Authorization start</p>
             <p className="text-sm font-medium text-slate-800 mt-0.5">{formatDate(stay.approved_stay_start_date)}</p>
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Authorization end</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Authorization end</p>
             <p className="text-sm font-medium text-slate-800 mt-0.5">{formatDate(stay.approved_stay_end_date)}</p>
           </div>
           {stay.checked_in_at && (
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Became active</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Became active</p>
               <p className="text-sm font-medium text-slate-800 mt-0.5">{new Date(stay.checked_in_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
             </div>
           )}
           {stay.revoked_at && (
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Revoked at</p>
-              <p className="text-sm font-medium text-red-200 mt-0.5">{new Date(stay.revoked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Revoked at</p>
+              <p className="text-sm font-medium text-red-700 mt-0.5">{new Date(stay.revoked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
             </div>
           )}
           {stay.checked_out_at && (
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Checked out</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Checked out</p>
               <p className="text-sm font-medium text-slate-800 mt-0.5">{new Date(stay.checked_out_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
             </div>
           )}
@@ -1101,7 +1102,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         {/* Left: Authorization & documentation */}
         <div className="lg:col-span-2 space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-base font-semibold text-white mb-4">Signed agreement</h3>
+            <h3 className="text-base font-semibold text-slate-900 mb-4">Signed agreement</h3>
             <p className="text-sm text-slate-600 mb-4">Review and download your signed guest agreement for this stay.</p>
             <Button
               variant="outline"
@@ -1127,13 +1128,13 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
 
           {/* Verification record */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-base font-semibold text-white mb-2">Verification record</h3>
-            <p className="text-sm text-white/70 mb-4">Documents associated with your authorization at this property.</p>
+            <h3 className="text-base font-semibold text-slate-900 mb-2">Verification record</h3>
+            <p className="text-sm text-slate-500 mb-4">Documents associated with your authorization at this property.</p>
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
                 <div>
                   <p className="text-sm font-medium text-slate-800">Your signed agreement</p>
-                  <p className="text-xs text-white/70">Temporary stay acknowledgment for this authorization</p>
+                  <p className="text-xs text-slate-500">Temporary stay acknowledgment for this authorization</p>
                 </div>
                 <Button
                   variant="outline"
@@ -1161,7 +1162,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                 <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <div>
                     <p className="text-sm font-medium text-slate-800">Power of Attorney (POA)</p>
-                    <p className="text-xs text-white/70">Property owner authorization document</p>
+                    <p className="text-xs text-slate-500">Property owner authorization document</p>
                   </div>
                   <Button
                     variant="outline"
@@ -1176,7 +1177,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                 <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <div>
                     <p className="text-sm font-medium text-slate-800">Verify authorization</p>
-                    <p className="text-xs text-white/70">Open the public verification page for this stay</p>
+                    <p className="text-xs text-slate-500">Open the public verification page for this stay</p>
                   </div>
                   <Button
                     variant="outline"
@@ -1197,7 +1198,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
               <ul className="mt-2 space-y-2">
                 {(stay.jurisdiction_statutes ?? []).map((s, i) => (
                   <li key={i} className="text-sm text-slate-700">
-                    <span className="font-medium text-white">{s.citation}</span>
+                    <span className="font-medium text-slate-900">{s.citation}</span>
                     {s.plain_english && <span className="block text-slate-600 mt-0.5">{s.plain_english}</span>}
                   </li>
                 ))}
@@ -1217,19 +1218,19 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
 
           {/* Audit trail: guest can view their audit trail for this stay */}
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-base font-semibold text-white mb-2">Activity for this stay</h3>
-            <p className="text-sm text-white/70 mb-4">Status changes, signatures, and related events for your stay. View-only.</p>
+            <h3 className="text-base font-semibold text-slate-900 mb-2">Activity for this stay</h3>
+            <p className="text-sm text-slate-500 mb-4">Status changes, signatures, and related events for your stay. View-only.</p>
             <Button variant="outline" onClick={() => loadGuestLogs(stay?.stay_id)} disabled={guestLogsLoading} className="mb-4">
               {guestLogsLoading ? 'Loading…' : 'View activity'}
             </Button>
             {guestLogsLoading && guestLogs.length === 0 ? (
-              <p className="text-white/70 text-sm">Loading…</p>
+              <p className="text-slate-500 text-sm">Loading…</p>
             ) : guestLogsLoadedOnce && guestLogs.length === 0 ? (
-              <p className="text-white/70 text-sm">No log entries for this stay.</p>
+              <p className="text-slate-500 text-sm">No log entries for this stay.</p>
             ) : guestLogs.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-100 text-white/70 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
+                  <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-extrabold border-b border-slate-200">
                     <tr>
                       <th className="px-4 py-3">Time</th>
                       <th className="px-4 py-3">Category</th>
@@ -1246,7 +1247,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
                         </td>
                         <td className="px-4 py-2">
                           <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                            entry.category === 'failed_attempt' ? 'bg-red-500/20 text-red-200' :
+                            entry.category === 'failed_attempt' ? 'bg-red-100 text-red-800' :
                             entry.category === 'guest_signature' ? 'bg-emerald-100 text-emerald-800' :
                             entry.category === 'status_change' ? 'bg-sky-100 text-sky-800' :
                             'bg-slate-200 text-slate-800'
@@ -1279,7 +1280,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         <div className="space-y-6">
           {detailHasCheckedIn && !stay.checked_out_at && !stay.cancelled_at && stay.approved_stay_end_date >= today && (
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h4 className="font-semibold text-white mb-3">Presence at this property</h4>
+              <h4 className="font-semibold text-slate-900 mb-3">Presence at this property</h4>
               <p className="text-sm text-slate-600 mb-4">Set here or away for this stay. Each property you’re invited to has its own status.</p>
               <div className="flex flex-wrap items-center gap-4">
                 <div className={`px-4 py-2 rounded-lg ${stayPresence === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
@@ -1307,7 +1308,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
             </div>
           )}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h4 className="font-semibold text-white mb-3">Need help?</h4>
+            <h4 className="font-semibold text-slate-900 mb-3">Need help?</h4>
             <div className="flex flex-col gap-2">
               <Button variant="outline" className="w-full justify-center h-10 rounded-lg text-sm font-medium">Message host</Button>
               <Button variant="outline" className="w-full justify-center h-10 rounded-lg text-sm font-medium">Contact support</Button>
@@ -1320,11 +1321,11 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       {showLiveLinkModal && liveLinkSlug && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="max-w-sm w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200 relative">
-            <button type="button" onClick={() => { setShowLiveLinkModal(false); setLiveLinkSlug(null); setCopyToast(null); }} className="absolute top-4 right-4 text-white/60 hover:text-slate-700">
+            <button type="button" onClick={() => { setShowLiveLinkModal(false); setLiveLinkSlug(null); setCopyToast(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <h3 className="text-lg font-semibold text-white mb-1 text-center">Live link page</h3>
-            <p className="text-white/70 text-sm mb-4 text-center">Scan or share this link to open the property info page (no login).</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1 text-center">Live link page</h3>
+            <p className="text-slate-500 text-sm mb-4 text-center">Scan or share this link to open the property info page (no login).</p>
             <div className="flex justify-center mb-4">
               <div className="bg-slate-50 p-4 rounded-xl">
                 <img
@@ -1372,11 +1373,11 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       {showVerifyQRModal && verifyQRInviteId && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="max-w-sm w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200 relative">
-            <button type="button" onClick={() => { setShowVerifyQRModal(false); setVerifyQRInviteId(null); setCopyToast(null); }} className="absolute top-4 right-4 text-white/60 hover:text-slate-700">
+            <button type="button" onClick={() => { setShowVerifyQRModal(false); setVerifyQRInviteId(null); setCopyToast(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <h3 className="text-lg font-semibold text-white mb-1 text-center">Verify with QR code</h3>
-            <p className="text-white/70 text-sm mb-4 text-center">Scan to open the Verify page with this stay&apos;s token pre-filled.</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1 text-center">Verify with QR code</h3>
+            <p className="text-slate-500 text-sm mb-4 text-center">Scan to open the Verify page with this stay&apos;s token pre-filled.</p>
             <div className="flex justify-center mb-4">
               <div className="bg-slate-50 p-4 rounded-xl">
                 <img
@@ -1430,7 +1431,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       {endStayConfirm && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200">
-            <h3 className="text-lg font-semibold text-white mb-2">Checkout</h3>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Checkout</h3>
             <p className="text-sm text-slate-600 mb-4">
               Have you vacated the property? Completing checkout will end your stay and set your checkout date to today ({formatDate(today)}). This cannot be undone.
             </p>
@@ -1456,7 +1457,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
       {cancelStayConfirm && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full rounded-2xl bg-white p-8 shadow-xl border border-slate-200">
-            <h3 className="text-lg font-semibold text-white mb-2">Cancel stay</h3>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Cancel stay</h3>
             <p className="text-sm text-slate-600 mb-4">
               Cancel your upcoming stay? This will remove the stay from your dashboard and notify the host. This cannot be undone.
             </p>
@@ -1488,7 +1489,7 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
         {logMessageModalEntry && (
           <div className="p-6">
             <p className="text-slate-700 whitespace-pre-wrap text-sm">{logMessageModalEntry.message}</p>
-            <p className="text-white/70 text-xs mt-4">
+            <p className="text-slate-500 text-xs mt-4">
               {logMessageModalEntry.created_at ? new Date(logMessageModalEntry.created_at).toLocaleString() : ''}
               {logMessageModalEntry.actor_email && ` · ${logMessageModalEntry.actor_email}`}
             </p>
