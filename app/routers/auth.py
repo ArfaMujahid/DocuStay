@@ -41,6 +41,7 @@ from app.services.registration_email import (
     enforce_email_available_for_intended_role,
     enforce_no_conflicting_user_before_pending_completion,
     same_role_already_registered_message,
+    _role_labels,
 )
 from app.schemas.auth import (
     UserCreate,
@@ -339,7 +340,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 
 
 def _normalized_login_role(role: UserRole | None) -> str | None:
-    """Return lowercase role value for branching; treat guest/tenant consistently."""
+    """Return lowercase role value for login branching."""
     if role is None:
         return None
     v = getattr(role, "value", None) or str(role)
@@ -388,19 +389,63 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     if not role_key:
         user = db.query(User).filter(email_match).first()
     elif role_key == "guest":
-        # Guest Login page: accept both guest and tenant accounts (tenant may have registered via tenant invite)
-        user = db.query(User).filter(
-            email_match,
-            User.role.in_([UserRole.guest, UserRole.tenant]),
-        ).first()
+        user = db.query(User).filter(email_match, User.role == UserRole.guest).first()
+    elif role_key == "tenant":
+        user = db.query(User).filter(email_match, User.role == UserRole.tenant).first()
     else:
         user = db.query(User).filter(
             email_match,
             User.role == data.role,
         ).first()
     if not user:
-        _log_login_failure(db, request, data.email, "user_not_found", None)
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        # Wrong tab: password matches an account under another role. Or recover if primary query missed the row (edge cases).
+        if role_key:
+            candidates = db.query(User).filter(email_match).all()
+            for u in candidates:
+                if not verify_password(data.password, u.hashed_password):
+                    continue
+                if role_key == "guest":
+                    if u.role != UserRole.guest:
+                        ex_label, ex_page = _role_labels(u.role)
+                        _log_login_failure(db, request, data.email, "wrong_login_portal_guest", u.id)
+                        raise HTTPException(
+                            status_code=401,
+                            detail=(
+                                f"This email is registered as a {ex_label}. "
+                                f"Use the {ex_page} login page."
+                            ),
+                        )
+                    user = u
+                    break
+                elif role_key == "tenant":
+                    if u.role != UserRole.tenant:
+                        ex_label, ex_page = _role_labels(u.role)
+                        _log_login_failure(db, request, data.email, "wrong_login_portal_tenant", u.id)
+                        raise HTTPException(
+                            status_code=401,
+                            detail=(
+                                f"This email is registered as a {ex_label}. "
+                                f"Use the {ex_page} login page."
+                            ),
+                        )
+                    user = u
+                    break
+                elif _normalized_login_role(u.role) != role_key:
+                    ex_label, ex_page = _role_labels(u.role)
+                    _log_login_failure(db, request, data.email, "wrong_login_portal", u.id)
+                    raise HTTPException(
+                        status_code=401,
+                        detail=(
+                            f"This email is registered as a {ex_label}. "
+                            f"Use the {ex_page} login page."
+                        ),
+                    )
+                else:
+                    user = u
+                    break
+        if not user:
+            _log_login_failure(db, request, data.email, "user_not_found", None)
+            raise HTTPException(status_code=401, detail="Invalid email or password")
     if not verify_password(data.password, user.hashed_password):
         _log_login_failure(db, request, data.email, "password_mismatch", user.id)
         raise HTTPException(status_code=401, detail="Invalid email or password")
