@@ -5,23 +5,51 @@ import { getOwnerSignupErrorFriendly } from "../utils/ownerSignupErrors";
 
 type AckKey = "read" | "temporary" | "vacate" | "electronic";
 
-/** Default/dummy POA content when API returns none (so layout and styling are visible). Mirrors backend themes; full text loads from API. */
-const DUMMY_POA_CONTENT = `**Master Power of Attorney — Documentation & Property Records (POA)**
+/** Default/fallback POA content when API returns none. */
+const DUMMY_POA_CONTENT = `**Limited Power of Attorney and Agent Authorization**
+This Limited Power of Attorney and Agent Authorization ("Authorization") is made effective as of the date of electronic signature below.
 
-**Overview**
-Limited, one-time authorization. DocuStay is a third-party documentation platform—not your lawyer. Guests sign separate Guest Acknowledgment and Revocable License documents.
+**1. Parties**
+• The Principal: [User's Full Legal Name or Entity Name]
+[User's Full Address]
+(Hereinafter "Principal")
+• The Agent: DOCUSTAY LLC, a Washington limited liability company
+[Company Address]
+(Hereinafter "Agent" or "DocuStay")
 
-**Grant of Limited Authority**
-Property status records; guest acknowledgment assembly from pre-vetted templates; jurisdiction-specific clauses via internal rules (not live legal advice); utility tokens and related communications where offered.
+**2. Recitals**
+WHEREAS, Principal owns or is the duly authorized property manager for the real properties listed in the Principal's DocuStay account (the "Properties"); and
+WHEREAS, Principal desires to appoint Agent for the sole and limited purpose of acting as Principal's attorney-in-fact to create, maintain, and present documentation related to the occupancy and status of the Properties.
 
-**What This POA Does Not Do**
-No legal advice; no guarantee of legal outcomes; documentation tools only.
+**3. Grant of Limited Power of Attorney**
+Principal hereby appoints Agent as Principal's true and lawful attorney-in-fact, to act in Principal's name, place, and stead for the limited purposes and with the limited powers set forth in this Authorization.
 
-**Disclaimer**
-Not a substitute for a qualified attorney. No attorney-client relationship. Technology platform, not a law firm.
+**4. Enumerated Limited Powers**
+Generate occupancy documentation; maintain status ledger; assemble documentation packages; and act as third-party record keeper.
 
-**SIGNATURE (ELECTRONIC)**
-Owner: ________________________   Date: __________`;
+**5. Limitations on Authority**
+DocuStay has no authority to lease/sell property, manage funds, conduct legal actions, bind unrelated financial obligations, or act as broker/legal representative.
+
+**6. Term and Revocation**
+Effective on electronic execution; remains active until revoked by written notice via platform or email to michael@docustay.online.
+
+**7. Durability**
+This is a durable Power of Attorney and does not terminate upon incapacity.
+
+**8. Governing Law**
+State of Washington.
+
+**9. Indemnification and Limitation of Liability**
+Principal indemnifies Agent for good-faith performance; liability is limited as stated in the Authorization.
+
+**10. Acknowledgment and Signature**
+By signing, Principal confirms authority to grant this Authorization and agrees electronic signature is legally equivalent to a manual signature.
+
+PRINCIPAL:
+Signature: [Electronic Signature]
+Printed Name: [User's Full Legal Name]
+Title (if applicable): [e.g., Owner, Property Manager]
+Date: [Date of Signature]`;
 
 /** Render one line: **bold** as <strong>, and entire-line **...** as heading. */
 function renderLine(line: string, lineIndex: number, isFirstLine: boolean) {

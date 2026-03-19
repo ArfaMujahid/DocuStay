@@ -379,40 +379,82 @@ def build_invitation_agreement(
 # --- Master Power of Attorney (owner onboarding) ---
 
 POA_DOCUMENT_ID = "DSA-Master-POA"
-POA_TITLE = "Master Power of Attorney — Documentation & Property Records (POA)"
+POA_TITLE = "Limited Power of Attorney and Agent Authorization"
 
-POA_CONTENT = """**Master Power of Attorney — Documentation & Property Records (POA)**
+POA_CONTENT = """**Limited Power of Attorney and Agent Authorization**
+This Limited Power of Attorney and Agent Authorization ("Authorization") is made effective as of the date of electronic signature below.
 
-**Overview**
-This is a **limited, one-time authorization** you grant when you set up your DocuStay account. **DocuStay is a third-party documentation and record-keeping technology platform.** It is **not** your lawyer, **not** the property owner’s agent for legal advice, and **not** a party to any lease or tenancy. This POA authorizes DocuStay to perform only the documentation, record-keeping, and related operational steps described below on your behalf.
+**1. Parties**
 
-**1. Who Signs This?**
-Only **property owners** (and, where the product allows, their authorized onboarding flow) sign this Master POA. **Guests do not sign this document.** Guests separately review and sign **Guest Acknowledgment and Revocable License to Occupy** (or similarly titled) documents that **you** initiate through the platform. Those guest-facing documents **acknowledge** temporary, **revocable license** occupancy and are **not** leases.
+• The Principal: [User's Full Legal Name or Entity Name]
+[User's Full Address]
+(Hereinafter "Principal")
+• The Agent: DOCUSTAY LLC, a Washington limited liability company
+[Company Address]
+(Hereinafter "Agent" or "DocuStay")
 
-**2. When Do You Sign?**
-You sign **once** during account setup (before you can add properties in the standard flow). **One signature** applies to **all properties** you add to your account, now and in the future, unless you revoke or the service terms provide otherwise.
+**2. Recitals**
 
-**3. Grant of Limited Authority (Scope)**
-Subject to your account settings and applicable product features, you grant DocuStay authority to act as your **agent solely** for the following **non-exclusive, limited** purposes:
+WHEREAS, Principal owns or is the duly authorized property manager for the real properties listed in the Principal's DocuStay account (the "Properties"); and
 
-- **Property status and occupancy records:** To create, store, time-stamp, and display records of property status, authorized guest stays, invitations, and related events as you or your delegates enter or trigger them on the platform—including records that may be shown to you, to guests you authorize, and in permitted verification or public-summary views consistent with DocuStay’s privacy and lane rules.
-- **Guest acknowledgment documents:** To **assemble and present** to guests **pre-approved, static template text** for **Guest Acknowledgment and Revocable License to Occupy**-style documents, inserting **factual data** you provide (e.g., property address, guest name, authorized stay dates) and **jurisdiction-specific clauses** selected by DocuStay’s **internal rules** from **pre-vetted** language tied to the property’s location (e.g., state). DocuStay **does not** provide **legal advice** and **does not** dynamically fetch or interpret live statutory text from external legal databases for inclusion in documents at signing time.
-- **Utility and provider communications (where offered):** To create or facilitate utility authorization tokens (e.g., USAT-style flows), and to contact utilities or similar providers **only as needed** for verification, updates, or packages **you** initiate or that are described in the product—for **documentation and service confirmation**, not to alter your underlying property rights.
-- **Letters and packages:** To generate letters or forms **from approved templates** for purposes you request (e.g., authority letters, occupancy-related correspondence) using information you supply.
+WHEREAS, Principal desires to appoint Agent for the sole and limited purpose of acting as Principal's attorney-in-fact to create, maintain, and present documentation related to the occupancy and status of the Properties.
 
-You **retain** the right to **revoke guest permission** and to **terminate stays** according to the product and your actions; guest authorization is framed as a **revocable license**, not a tenancy created by DocuStay.
+NOW, THEREFORE, in consideration of the premises and the mutual covenants contained herein, the parties agree as follows:
 
-**4. What This POA Does Not Do**
-This grant is **narrow**. DocuStay is **not** authorized to: bind you to a lease as landlord in place of a written agreement you did not make; practice law; give legal advice; guarantee any court outcome; or represent that a guest **cannot** ever assert tenant rights—that is a **legal** question for courts and counsel. The platform provides **documentation tools** and **informational templates** only.
+**3. Grant of Limited Power of Attorney**
 
-**5. Jurisdiction-Aware Templates**
-DocuStay may use the **property address** (and similar location fields) to **select** among **internally maintained**, **fixed** jurisdictional clauses for guest acknowledgments and disclosures (for example, references aligned with transient occupancy, unlawful occupant removal, or consecutive-day thresholds where those clauses exist in the product for states such as California, Florida, or New York). That process is **template assembly**, not a real-time legal opinion.
+Principal hereby appoints Agent as Principal's true and lawful attorney-in-fact, to act in Principal's name, place, and stead for the limited purposes and with the limited powers set forth in Section 4 below.
 
-**6. Disclaimer — Not Legal Advice; No Attorney-Client Relationship**
-**Disclaimer:** This Power of Attorney and DocuStay’s services relate to **documentation and records** for your properties. They are **not** a substitute for advice from a **qualified attorney** licensed in your jurisdiction. **DocuStay is a technology platform, not a law firm.** **No attorney-client relationship** is created by your use of the platform or your electronic signature here. Information in the product is for **documentation purposes** and does **not** grant any guest **tenancy rights** under state or local law by itself.
+**4. Enumerated Limited Powers**
 
-**SIGNATURE (ELECTRONIC)**
-Owner: ________________________   Date: __________
+Agent's authority shall be strictly limited to the following acts with respect to the Properties:
+
+• (a) Generate Occupancy Documentation: To create, prepare, and maintain records documenting the occupancy status of the Properties, including but not limited to generating Guest Acknowledgment and Revocable License to Occupy forms for individuals authorized by the Principal to be on a Property.
+• (b) Maintain Status Ledger: To maintain a time-stamped, append-only ledger of property status events, including but not limited to periods of vacancy, occupancy by authorized guests, and maintenance periods as directed by the Principal.
+• (c) Assemble Documentation Packages: To assemble and present, upon Principal's request, documentation packages containing records of property status, guest acknowledgments, and occupancy history for a given Property.
+• (d) Act as Third-Party Record Keeper: To act as a third-party custodian of the records generated hereunder and to certify, upon request from Principal or a third party authorized by Principal, the contents and authenticity of said records.
+
+**5. Limitations on Authority**
+
+This Authorization is strictly limited to the powers enumerated in Section 4. For the avoidance of doubt, Agent shall have NO AUTHORITY to:
+
+• Enter into any lease, rental agreement, or contract of sale on behalf of Principal.
+• Collect, hold, or manage any funds, including rents or security deposits, on behalf of Principal.
+• Initiate or conduct any legal proceeding, including eviction actions, on behalf of Principal.
+• Bind the Principal to any contract or financial obligation not directly related to the enumerated powers.
+• Act as a property manager, real estate broker, or legal representative.
+
+**6. Term and Revocation**
+
+This Authorization shall become effective upon the date of its electronic execution by the Principal and shall remain in full force and effect until it is revoked. Principal may revoke this Authorization at any time by providing written notice to the Agent via the DocuStay platform or via email to michael@docustay.online. Revocation will be effective upon Agent's acknowledgment of receipt.
+
+**7. Durability**
+
+This shall be a durable Power of Attorney. The authority of the Agent shall not terminate if the Principal becomes incapacitated.
+
+**8. Governing Law**
+
+This Authorization shall be governed by and construed in accordance with the laws of the State of Washington, without regard to its conflict of law principles.
+
+**9. Indemnification and Limitation of Liability**
+
+Principal agrees to indemnify and hold Agent harmless from any and all claims, damages, or liabilities arising from Agent's good-faith performance of its duties under this Authorization. Agent's liability for any act or omission shall be limited to the amount of fees paid by Principal to Agent in the preceding twelve (12) months.
+
+**10. Acknowledgment and Signature**
+
+By signing below, Principal acknowledges that they have read, understood, and agree to the terms of this Limited Power of Attorney and Agent Authorization. Principal affirms that they are either the legal owner of the Properties or a property manager with the full legal authority to grant this Authorization.
+
+This instrument may be executed electronically. The parties agree that an electronic signature is the legal equivalent of a manual signature on this Authorization.
+
+PRINCIPAL:
+
+Signature: [Electronic Signature]
+
+Printed Name: [User's Full Legal Name]
+
+Title (if applicable): [e.g., Owner, Property Manager]
+
+Date: [Date of Signature]
 """
 
 
@@ -424,8 +466,10 @@ def build_owner_poa_document() -> tuple[str, str, str, str]:
 
 
 def fill_owner_poa_signature_line(content: str, owner_name: str, signed_date: str) -> str:
-    """Fill Owner: ___ and Date: ___ in the POA signature block with actual name and date."""
+    """Fill signature placeholders in POA signature block with actual name and date."""
     result = re.sub(r"Owner:\s*_+", f"Owner: {owner_name}", content, count=1)
+    result = re.sub(r"Printed Name:\s*\[User's Full Legal Name\]", f"Printed Name: {owner_name}", result, count=1)
+    result = re.sub(r"Date:\s*\[Date of Signature\]", f"Date: {signed_date}", result, count=1)
     result = re.sub(r"Date:\s*_+", f"Date: {signed_date}", result, count=1)
     return result
 
