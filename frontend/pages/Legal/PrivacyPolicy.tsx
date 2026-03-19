@@ -1,4 +1,5 @@
 import React from 'react';
+import { SUPPORT_EMAIL, SUPPORT_LEGAL_ENTITY_NAME, supportMailtoHref } from '../../constants/supportContact';
 
 const SECTIONS = [
   { id: 'collect', label: 'Information We Collect' },
@@ -159,8 +160,8 @@ const PrivacyPolicy: React.FC<{ navigate: (v: string) => void }> = ({ navigate }
                     If you have any questions about this Privacy Policy, please contact us at:
                   </p>
                   <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
-                    <p className="text-slate-800 font-semibold">DOCUSTAY LLC</p>
-                    <p className="text-slate-600">Email: <a href="mailto:michael@docustay.online" className="text-[#6B90F2] hover:underline">michael@docustay.online</a></p>
+                    <p className="text-slate-800 font-semibold">{SUPPORT_LEGAL_ENTITY_NAME}</p>
+                    <p className="text-slate-600">Email: <a href={supportMailtoHref()} className="text-[#6B90F2] hover:underline">{SUPPORT_EMAIL}</a></p>
                   </div>
                 </div>
               </section>

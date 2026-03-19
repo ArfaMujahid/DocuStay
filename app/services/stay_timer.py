@@ -28,7 +28,14 @@ from app.services.notifications import (
     send_dms_turned_off_notification,
 )
 from app.services.audit_log import create_log, CATEGORY_STATUS_CHANGE, CATEGORY_SHIELD_MODE, CATEGORY_DEAD_MANS_SWITCH
-from app.services.event_ledger import create_ledger_event, ACTION_OVERSTAY_OCCURRED, ACTION_DMS_48H_ALERT, ACTION_DMS_AUTO_EXECUTED, ACTION_SHIELD_MODE_ON, ACTION_VACANT_MONITORING_NO_RESPONSE
+from app.services.event_ledger import (
+    create_ledger_event,
+    ACTION_OVERSTAY_OCCURRED,
+    ACTION_DMS_48H_ALERT,
+    ACTION_DMS_AUTO_EXECUTED,
+    ACTION_SHIELD_MODE_ON,
+    ACTION_VACANT_MONITORING_NO_RESPONSE,
+)
 from app.services.billing import sync_subscription_quantities
 from app.services.dashboard_alerts import create_alert_for_owner_and_managers, create_alert_for_user
 from app.config import get_settings
@@ -397,6 +404,22 @@ def _run_dead_mans_switch_job_test_mode(db: Session) -> None:
                 "dms_test_mode": True,
             },
         )
+        if prop:
+            pn = _get_property_name(db, prop)
+            create_ledger_event(
+                db,
+                ACTION_SHIELD_MODE_ON,
+                target_object_type="Property",
+                target_object_id=prop.id,
+                property_id=prop.id,
+                stay_id=stay.id,
+                actor_user_id=None,
+                meta={
+                    "property_name": pn,
+                    "message": f"Shield Mode turned on for {pn} (Dead Man's Switch — test mode).",
+                    "reason": "dead_mans_switch_test_mode",
+                },
+            )
         db.commit()
         try:
             if prop:
@@ -580,6 +603,21 @@ def run_dead_mans_switch_job(db: Session) -> None:
             stay_id=stay_for_prop.id,
             meta={"owner_id": stay_for_prop.owner_id},
         )
+        pn = _get_property_name(db, prop)
+        create_ledger_event(
+            db,
+            ACTION_SHIELD_MODE_ON,
+            target_object_type="Property",
+            target_object_id=prop_id,
+            property_id=prop_id,
+            stay_id=stay_for_prop.id,
+            actor_user_id=None,
+            meta={
+                "property_name": pn,
+                "message": f"Shield Mode turned on for {pn} (last day of stay).",
+                "reason": "last_day_of_stay",
+            },
+        )
         db.commit()
         try:
             profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
@@ -709,6 +747,22 @@ def run_dead_mans_switch_job(db: Session) -> None:
                 "utility_lock_activated": True,
             },
         )
+        if prop:
+            pn = _get_property_name(db, prop)
+            create_ledger_event(
+                db,
+                ACTION_SHIELD_MODE_ON,
+                target_object_type="Property",
+                target_object_id=prop.id,
+                property_id=prop.id,
+                stay_id=stay.id,
+                actor_user_id=None,
+                meta={
+                    "property_name": pn,
+                    "message": f"Shield Mode turned on for {pn} (Dead Man's Switch — no response by deadline).",
+                    "reason": "dead_mans_switch",
+                },
+            )
         db.commit()
         try:
             if prop:
@@ -822,6 +876,20 @@ def run_vacant_monitoring_job(db: Session) -> None:
             f"Vacant monitoring: no response by deadline. Property {prop.id} status {prev_status} -> unconfirmed; Shield Mode on.",
             property_id=prop.id,
             meta={"occupancy_status_previous": prev_status, "occupancy_status_new": OccupancyStatus.unconfirmed.value},
+        )
+        pn = (prop.name or "").strip() or (f"{prop.city}, {prop.state}".strip(", ") if (prop.city or prop.state) else f"Property {prop.id}")
+        create_ledger_event(
+            db,
+            ACTION_SHIELD_MODE_ON,
+            target_object_type="Property",
+            target_object_id=prop.id,
+            property_id=prop.id,
+            actor_user_id=None,
+            meta={
+                "property_name": pn,
+                "message": f"Shield Mode turned on for {pn} (vacant monitoring — no response by deadline).",
+                "reason": "vacant_monitoring",
+            },
         )
         db.commit()
         profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()

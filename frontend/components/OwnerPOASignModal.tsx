@@ -5,28 +5,20 @@ import { getOwnerSignupErrorFriendly } from "../utils/ownerSignupErrors";
 
 type AckKey = "read" | "temporary" | "vacate" | "electronic";
 
-/** Default/dummy POA content when API returns none (so layout and styling are visible). Same structure as backend. */
-const DUMMY_POA_CONTENT = `**Master Power of Attorney (POA)**
+/** Default/dummy POA content when API returns none (so layout and styling are visible). Mirrors backend themes; full text loads from API. */
+const DUMMY_POA_CONTENT = `**Master Power of Attorney — Documentation & Property Records (POA)**
 
 **Overview**
-This is a one-time authorization you sign when you set up your DocuStay account. It lets DocuStay act on your behalf for documentation steps so the platform can help you manage your rental properties.
+Limited, one-time authorization. DocuStay is a third-party documentation platform—not your lawyer. Guests sign separate Guest Acknowledgment and Revocable License documents.
 
-**1. Who Signs This?**
-Only property owners sign this Master POA when they join DocuStay.
-Guests do not sign this document; they sign a separate Guest Agreement for their stay.
+**Grant of Limited Authority**
+Property status records; guest acknowledgment assembly from pre-vetted templates; jurisdiction-specific clauses via internal rules (not live legal advice); utility tokens and related communications where offered.
 
-**2. When Do You Sign?**
-You sign this once during account setup, before you can add properties.
-One signature applies to all properties you add to your account, now and later.
+**What This POA Does Not Do**
+No legal advice; no guarantee of legal outcomes; documentation tools only.
 
-**3. What Does DocuStay Do With This?**
-With your authorization, DocuStay can:
-- Put together documentation packages (e.g. occupancy, dates, guest info) for your records
-- Keep dated records of property status and actions for your reference
-- Document occupancy status, authorized presence, and status changes over time
-
-**4. How Does Location Matter?**
-DocuStay uses each property's address (zip code and state/region) to show relevant local information on that property's page and to tailor guest agreements and forms to that location.
+**Disclaimer**
+Not a substitute for a qualified attorney. No attorney-client relationship. Technology platform, not a law firm.
 
 **SIGNATURE (ELECTRONIC)**
 Owner: ________________________   Date: __________`;
@@ -227,7 +219,7 @@ export default function OwnerPOASignModal(props: {
           <div className="lg:col-span-3">
             <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm flex flex-col max-h-[70vh]">
               <div className="px-4 py-3 border-b border-slate-200 shrink-0">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Master Power of Attorney (POA)</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Master POA — Documentation &amp; records</p>
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto">
                 <div className="px-6 py-5 max-w-prose mx-auto">

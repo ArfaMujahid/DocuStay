@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Button } from '../../components/UI';
+import { SUPPORT_EMAIL, supportMailtoHref } from '../../constants/supportContact';
 
 const FAQS = [
   { q: "What does DocuStay document?", a: "DocuStay documents property status: occupancy (vacant or occupied), authorized presence, and status changes over time. For guest stays, it records authorization, identity verification, and stay details by region. All records form an immutable audit trail." },
@@ -59,11 +60,24 @@ const HelpCenter: React.FC<{ navigate: (v: string) => void; embedded?: boolean }
 
       <Card className="p-8 md:p-10 bg-gradient-to-br from-blue-50 to-sky-50 border-blue-200 text-center">
         <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-3">Emergency Support?</h2>
-        <p className="text-gray-600 text-sm mb-6 max-w-lg mx-auto">
+        <p className="text-gray-600 text-sm mb-2 max-w-lg mx-auto">
           Need help with documentation or your account? Our support team can assist with stay records and authorization.
         </p>
+        <p className="text-gray-700 text-sm mb-6 max-w-lg mx-auto">
+          Contact us at{' '}
+          <a href={supportMailtoHref()} className="text-[#6B90F2] font-semibold hover:underline break-all">
+            {SUPPORT_EMAIL}
+          </a>
+        </p>
         <div className="flex flex-col sm:flex-row justify-center gap-3">
-          <Button variant="primary" type="button" className="px-8 py-3">
+          <Button
+            variant="primary"
+            type="button"
+            className="px-8 py-3"
+            onClick={() => {
+              window.location.href = supportMailtoHref();
+            }}
+          >
             Contact support
           </Button>
           <Button variant="outline" type="button" className="px-8 py-3">

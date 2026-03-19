@@ -379,30 +379,37 @@ def build_invitation_agreement(
 # --- Master Power of Attorney (owner onboarding) ---
 
 POA_DOCUMENT_ID = "DSA-Master-POA"
-POA_TITLE = "Master Power of Attorney (POA)"
+POA_TITLE = "Master Power of Attorney — Documentation & Property Records (POA)"
 
-POA_CONTENT = """**Master Power of Attorney (POA)**
+POA_CONTENT = """**Master Power of Attorney — Documentation & Property Records (POA)**
 
 **Overview**
-This is a one-time authorization you sign when you set up your DocuStay account. It lets DocuStay act on your behalf for documentation and utility-related steps so the platform can help you manage your rental properties.
+This is a **limited, one-time authorization** you grant when you set up your DocuStay account. **DocuStay is a third-party documentation and record-keeping technology platform.** It is **not** your lawyer, **not** the property owner’s agent for legal advice, and **not** a party to any lease or tenancy. This POA authorizes DocuStay to perform only the documentation, record-keeping, and related operational steps described below on your behalf.
 
 **1. Who Signs This?**
-Only property owners sign this Master POA when they join DocuStay.
-Guests do not sign this document; they sign a separate Guest Agreement for their stay.
+Only **property owners** (and, where the product allows, their authorized onboarding flow) sign this Master POA. **Guests do not sign this document.** Guests separately review and sign **Guest Acknowledgment and Revocable License to Occupy** (or similarly titled) documents that **you** initiate through the platform. Those guest-facing documents **acknowledge** temporary, **revocable license** occupancy and are **not** leases.
 
 **2. When Do You Sign?**
-You sign this once during account setup, before you can add properties.
-One signature applies to all properties you add to your account, now and later.
+You sign **once** during account setup (before you can add properties in the standard flow). **One signature** applies to **all properties** you add to your account, now and in the future, unless you revoke or the service terms provide otherwise.
 
-**3. What Does DocuStay Do With This?**
-With your authorization, DocuStay can:
-- Create and send utility authorization tokens (e.g. USAT) so providers can verify occupancy
-- Contact utility companies when needed to confirm or update service for your properties
-- Put together documentation packages (e.g. occupancy, dates, guest info) for your records
-- Keep dated records of property status and actions for your reference
+**3. Grant of Limited Authority (Scope)**
+Subject to your account settings and applicable product features, you grant DocuStay authority to act as your **agent solely** for the following **non-exclusive, limited** purposes:
 
-**4. How Does Location Matter?**
-DocuStay uses each property’s address (zip code and state/region) to show relevant local information on that property’s page and to tailor guest agreements and any letters or forms to that location.
+- **Property status and occupancy records:** To create, store, time-stamp, and display records of property status, authorized guest stays, invitations, and related events as you or your delegates enter or trigger them on the platform—including records that may be shown to you, to guests you authorize, and in permitted verification or public-summary views consistent with DocuStay’s privacy and lane rules.
+- **Guest acknowledgment documents:** To **assemble and present** to guests **pre-approved, static template text** for **Guest Acknowledgment and Revocable License to Occupy**-style documents, inserting **factual data** you provide (e.g., property address, guest name, authorized stay dates) and **jurisdiction-specific clauses** selected by DocuStay’s **internal rules** from **pre-vetted** language tied to the property’s location (e.g., state). DocuStay **does not** provide **legal advice** and **does not** dynamically fetch or interpret live statutory text from external legal databases for inclusion in documents at signing time.
+- **Utility and provider communications (where offered):** To create or facilitate utility authorization tokens (e.g., USAT-style flows), and to contact utilities or similar providers **only as needed** for verification, updates, or packages **you** initiate or that are described in the product—for **documentation and service confirmation**, not to alter your underlying property rights.
+- **Letters and packages:** To generate letters or forms **from approved templates** for purposes you request (e.g., authority letters, occupancy-related correspondence) using information you supply.
+
+You **retain** the right to **revoke guest permission** and to **terminate stays** according to the product and your actions; guest authorization is framed as a **revocable license**, not a tenancy created by DocuStay.
+
+**4. What This POA Does Not Do**
+This grant is **narrow**. DocuStay is **not** authorized to: bind you to a lease as landlord in place of a written agreement you did not make; practice law; give legal advice; guarantee any court outcome; or represent that a guest **cannot** ever assert tenant rights—that is a **legal** question for courts and counsel. The platform provides **documentation tools** and **informational templates** only.
+
+**5. Jurisdiction-Aware Templates**
+DocuStay may use the **property address** (and similar location fields) to **select** among **internally maintained**, **fixed** jurisdictional clauses for guest acknowledgments and disclosures (for example, references aligned with transient occupancy, unlawful occupant removal, or consecutive-day thresholds where those clauses exist in the product for states such as California, Florida, or New York). That process is **template assembly**, not a real-time legal opinion.
+
+**6. Disclaimer — Not Legal Advice; No Attorney-Client Relationship**
+**Disclaimer:** This Power of Attorney and DocuStay’s services relate to **documentation and records** for your properties. They are **not** a substitute for advice from a **qualified attorney** licensed in your jurisdiction. **DocuStay is a technology platform, not a law firm.** **No attorney-client relationship** is created by your use of the platform or your electronic signature here. Information in the product is for **documentation purposes** and does **not** grant any guest **tenancy rights** under state or local law by itself.
 
 **SIGNATURE (ELECTRONIC)**
 Owner: ________________________   Date: __________

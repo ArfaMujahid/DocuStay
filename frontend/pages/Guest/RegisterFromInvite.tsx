@@ -133,7 +133,6 @@ const RegisterFromInvite: React.FC<Props> = ({ invitationId, navigate, setLoadin
           // For pre-signed flow this lets the dashboard detect the invite was accepted; for
           // non-signed flow it triggers the signing modal.
           if (normalizedCode) sessionStorage.setItem('docustay_pending_invite_code', normalizedCode);
-          notify('success', result.message || 'Check your email for the verification code.');
           setPendingVerification({ userId: d.user_id, type: 'email', generatedAt: new Date().toISOString() });
           navigate('verify');
           return;

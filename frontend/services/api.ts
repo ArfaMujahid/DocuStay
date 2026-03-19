@@ -531,6 +531,8 @@ export interface TenantSignedDocument {
   property_name: string | null;
   stay_start_date: string | null;
   stay_end_date: string | null;
+  /** self = you signed as guest; guest_invited_by_you = a guest signed an invite you created */
+  record_type?: 'self' | 'guest_invited_by_you';
 }
 
 export interface GuestStayView {
@@ -890,8 +892,17 @@ export const dashboardApi = {
       assigned_by_name?: string | null;
       accepted_by_name?: string | null;
       pending_acceptance?: boolean;
+      dead_mans_switch_enabled?: boolean;
     }>;
   }>("/dashboard/tenant/unit"),
+  tenantSetDeadMansSwitch: (unitId: number, deadMansSwitchEnabled: boolean) =>
+    request<{ status: string; dead_mans_switch_enabled: boolean; updated_count: number; message?: string }>(
+      "/dashboard/tenant/dead-mans-switch",
+      {
+        method: "POST",
+        body: JSON.stringify({ unit_id: unitId, dead_mans_switch_enabled: deadMansSwitchEnabled }),
+      }
+    ),
   /** Cancel the tenant's future unit assignment (before start date). Pass unit_id when tenant has multiple assignments. */
   tenantCancelFutureAssignment: (unitId?: number) =>
     request<{ status: string; message?: string }>(
@@ -1036,6 +1047,33 @@ export const dashboardApi = {
   /** Revoke stay (Kill Switch). Owner only. Guest must vacate in 12 hours; email sent to guest. */
   revokeStay: (stayId: number) =>
     request<{ status: string; message?: string }>(`/dashboard/owner/stays/${stayId}/revoke`, { method: "POST" }),
+  /** Tenant revokes a guest stay they invited (kill switch; same 12h vacate as owner). */
+  tenantRevokeGuestStay: (stayId: number) =>
+    request<{ status: string; message?: string }>(`/dashboard/tenant/stays/${stayId}/revoke`, { method: "POST" }),
+  /** Signed guest agreement PDF for a stay the tenant invited (tenant lane). Returns blob. */
+  tenantInvitedGuestStaySignedAgreementBlob: async (stayId: number): Promise<Blob> => {
+    const res = await fetch(`${API_URL}/dashboard/tenant/guest-stays/${stayId}/signed-agreement-pdf`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (res.status === 404) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t || "No signed agreement found for this stay yet.");
+    }
+    if (!res.ok) throw new Error(await res.text().catch(() => "Failed to load signed agreement."));
+    return res.blob();
+  },
+  /** Signed agreement PDF by signature id (guest invited by tenant; e.g. signed before stay is created). */
+  tenantInvitedGuestSignatureSignedAgreementBlob: async (signatureId: number): Promise<Blob> => {
+    const res = await fetch(`${API_URL}/dashboard/tenant/guest-signatures/${signatureId}/signed-agreement-pdf`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (res.status === 404) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t || "No signed agreement available yet.");
+    }
+    if (!res.ok) throw new Error(await res.text().catch(() => "Failed to load signed agreement."));
+    return res.blob();
+  },
   /** Initiate formal removal for overstayed guest. Revokes stay authorization, sends emails to guest and owner. */
   initiateRemoval: (stayId: number) =>
     request<{ status: string; message?: string; usat_revoked?: boolean }>(`/dashboard/owner/stays/${stayId}/initiate-removal`, { method: "POST" }),

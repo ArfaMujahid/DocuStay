@@ -39,6 +39,22 @@ export function getOwnerSignupErrorFriendly(
   const raw = (apiMessage ?? "").trim().toLowerCase();
 
   // --- Signup form (duplicate email, validation) ---
+  if (raw.includes("each email can only be used for one account type") || raw.includes("one account type on docustay")) {
+    return {
+      message:
+        apiMessage?.trim() ||
+        "This email is already used for another account type. Sign in with that account or use a different email.",
+      redirectTo: null,
+    };
+  }
+  if (raw.includes("registration is already in progress")) {
+    return {
+      message:
+        apiMessage?.trim() ||
+        "A signup with this email is already in progress. Check your email for the code, wait for it to expire, or use a different email.",
+      redirectTo: null,
+    };
+  }
   if (raw.includes("property owner") || raw.includes("already registered as a property owner")) {
     return {
       message: "This email is already registered as a property owner. Please log in on the Owner Login page.",

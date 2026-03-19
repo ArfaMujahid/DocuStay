@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState, UserType, AccountStatus } from './types';
 import { Card, Button, LoadingOverlay, ErrorModal } from './components/UI';
-import { authApi, setToken, toUserSession, getContextMode, type TokenResponse } from './services/api';
+import { authApi, setToken, toUserSession, getContextMode, setContextMode, type TokenResponse } from './services/api';
 import Login from './pages/Auth/Login';
 import RegisterOwner from './pages/Auth/RegisterOwner';
 import RegisterManager from './pages/Auth/RegisterManager';
@@ -53,6 +53,13 @@ const clearPendingVerificationStorage = () => {
     try { sessionStorage.removeItem(PENDING_VERIFICATION_KEY); } catch { /* ignore */ }
   }
 };
+
+/** Owner/manager dashboards should always open in business mode after login or session restore (not stale personal mode from localStorage). */
+function ensureBusinessContextForManagementUser(userType: string | undefined) {
+  if (userType === UserType.PROPERTY_OWNER || userType === UserType.PROPERTY_MANAGER) {
+    setContextMode('business');
+  }
+}
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -128,6 +135,7 @@ const App: React.FC = () => {
       try {
         const user = await authApi.me();
         if (user) {
+          ensureBusinessContextForManagementUser(user.user_type);
           setState(prev => ({ ...prev, user }));
           // If user is on login/register page but has valid session, redirect to dashboard
           if (!currentView || currentView === 'login' || currentView.startsWith('login/') || currentView === 'register' || currentView.startsWith('guest-login') || currentView.startsWith('guest-signup')) {
@@ -282,6 +290,7 @@ const App: React.FC = () => {
   }, [state.user, view]);
 
   const handleLogin = (userData: any) => {
+    ensureBusinessContextForManagementUser(userData.user_type);
     setState(prev => ({ ...prev, user: userData }));
     if (userData.user_type === UserType.PROPERTY_OWNER) {
       if (!userData.identity_verified) {
@@ -338,7 +347,13 @@ const App: React.FC = () => {
               {state.user ? (
                 <>
                   <div className="hidden md:block text-right">
-                    <p className="text-sm font-semibold text-gray-900">{state.user.user_name}</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {(() => {
+                        const name = state.user.user_name?.trim() || '';
+                        const isGeneric = !name || name.toLowerCase() === 'user';
+                        return isGeneric ? (state.user.email || 'Account') : name;
+                      })()}
+                    </p>
                     <p className="text-xs text-gray-500 uppercase tracking-wide">
                       {(state.user.user_type || '').replace('_', ' ')}
                     </p>
@@ -461,6 +476,7 @@ const App: React.FC = () => {
             notify={showNotification}
             onVerified={(user) => {
               clearPendingVerificationStorage();
+              ensureBusinessContextForManagementUser(user.user_type);
               setState(prev => ({ ...prev, user }));
               const next = user.user_type === UserType.PROPERTY_OWNER
                 ? (!user.identity_verified ? 'onboarding/identity' : !user.poa_linked ? 'onboarding/poa' : 'dashboard')
@@ -491,6 +507,7 @@ const App: React.FC = () => {
             notify={showNotification}
             onIdentityVerified={(user) => {
               identityJustVerifiedRef.current = true;
+              ensureBusinessContextForManagementUser(user.user_type);
               setState((prev) => ({ ...prev, user }));
             }}
           />
@@ -500,7 +517,9 @@ const App: React.FC = () => {
             user={state.user}
             onCompleteSignup={(data: TokenResponse) => {
               setToken(data.access_token);
-              setState(prev => ({ ...prev, user: toUserSession(data) }));
+              const sessionUser = toUserSession(data);
+              ensureBusinessContextForManagementUser(sessionUser.user_type);
+              setState(prev => ({ ...prev, user: sessionUser }));
               navigate('dashboard');
             }}
             navigate={navigate}

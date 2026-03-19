@@ -33,8 +33,15 @@ from app.services.event_ledger import (
     ACTION_MANAGER_INVITE_ACCEPTED,
     ACTION_MANAGER_ASSIGNED,
     ACTION_TENANT_ACCEPTED,
+    ACTION_SHIELD_MODE_OFF,
 )
 from app.services.billing import sync_subscription_quantities
+from app.services.registration_email import (
+    normalize_registration_email,
+    enforce_email_available_for_intended_role,
+    enforce_no_conflicting_user_before_pending_completion,
+    same_role_already_registered_message,
+)
 from app.schemas.auth import (
     UserCreate,
     UserLogin,
@@ -122,9 +129,8 @@ def _generate_verification_code() -> str:
 
 
 def _register_email_taken_message(existing_role: UserRole) -> str:
-    if existing_role == UserRole.owner:
-        return "This email is already registered as a property owner. Please log in on the Owner Login page."
-    return "This email is already registered as a guest. Please log in on the Guest Login page."
+    """Same email + same role already exists (finish onboarding or log in)."""
+    return same_role_already_registered_message(existing_role)
 
 
 def _validate_and_claim_owner_poa(
@@ -164,11 +170,15 @@ def _owner_onboarding_complete(db: Session, user: User) -> bool:
 @router.post("/register")
 def register(data: UserCreate, db: Session = Depends(get_db)):
     # Normalize email so "already registered" and storage are case-insensitive.
-    email = (data.email or "").strip().lower()
+    email = normalize_registration_email(str(data.email) if data.email else "")
     if not email:
         raise HTTPException(status_code=400, detail="Email is required.")
-    # Same email can have both owner and guest accounts (unique on email+role).
-    existing_same_role = db.query(User).filter(User.email == email, User.role == data.role).first()
+    enforce_email_available_for_intended_role(db, email, data.role, allow_same_role_pending=True)
+    existing_same_role = (
+        db.query(User)
+        .filter(func.lower(func.trim(User.email)) == email, User.role == data.role)
+        .first()
+    )
     if existing_same_role:
         # Owner who hasn't finished onboarding can "continue" by submitting the form with correct password
         if existing_same_role.role == UserRole.owner and not _owner_onboarding_complete(db, existing_same_role):
@@ -376,13 +386,7 @@ def login(request: Request, data: UserLogin, db: Session = Depends(get_db)):
     # Compare against trimmed+lowered email in DB so leading/trailing spaces in stored email don't prevent match
     email_match = func.lower(func.trim(User.email)) == email_normalized
     if not role_key:
-        candidates = db.query(User).filter(email_match).all()
-        if len(candidates) > 1:
-            raise HTTPException(
-                status_code=400,
-                detail="This email is registered as both property owner and guest. Use the Owner Login or Guest Login page and try again.",
-            )
-        user = candidates[0] if candidates else None
+        user = db.query(User).filter(email_match).first()
     elif role_key == "guest":
         # Guest Login page: accept both guest and tenant accounts (tenant may have registered via tenant invite)
         user = db.query(User).filter(
@@ -460,7 +464,18 @@ def register_manager(request: Request, data: ManagerRegister, db: Session = Depe
         raise HTTPException(status_code=400, detail="Invitation not found or expired.")
     if inv.email.strip().lower() != (data.email or "").strip().lower():
         raise HTTPException(status_code=400, detail="Email must match the invited email address.")
-    existing = db.query(User).filter(User.email == inv.email, User.role == UserRole.property_manager).first()
+    inv_email_norm = normalize_registration_email(inv.email)
+    enforce_email_available_for_intended_role(
+        db, inv_email_norm, UserRole.property_manager, allow_same_role_pending=True
+    )
+    existing = (
+        db.query(User)
+        .filter(
+            func.lower(func.trim(User.email)) == inv_email_norm,
+            User.role == UserRole.property_manager,
+        )
+        .first()
+    )
     if existing:
         existing_assignment = db.query(PropertyManagerAssignment).filter(
             PropertyManagerAssignment.property_id == inv.property_id,
@@ -479,10 +494,10 @@ def register_manager(request: Request, data: ManagerRegister, db: Session = Depe
         db.add(assn)
     else:
         user = User(
-            email=inv.email,
+            email=inv_email_norm,
             hashed_password=get_password_hash(data.password),
             role=UserRole.property_manager,
-            full_name=data.full_name or inv.email.split("@")[0],
+            full_name=data.full_name or inv_email_norm.split("@")[0],
             phone=data.phone or None,
             email_verified=True,
             email_verification_code=None,
@@ -905,6 +920,8 @@ def verify_email(request: Request, data: VerifyEmailRequest, db: Session = Depen
                 poa_linked=False,
             )
             return Token(access_token=token, user=fake_user)
+        pending_email_norm = normalize_registration_email(pending.email)
+        enforce_no_conflicting_user_before_pending_completion(db, pending_email_norm, pending.role)
         if pending.role == UserRole.tenant:
             user = _complete_pending_tenant(db, pending)
         else:
@@ -1007,16 +1024,17 @@ def resend_verification(data: ResendVerificationRequest, db: Session = Depends(g
 @router.post("/forgot-password")
 def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     """
-    Request a password reset email. Role (owner or guest) is required so we target the correct
-    account when the same email is registered as both owner and guest. Frontend passes role based
-    on which sign-in page the user came from.
+    Request a password reset email. Each email maps to at most one account; lookup is by email only.
+    The `role` field is accepted for API compatibility but ignored when resolving the user.
     """
-    user = db.query(User).filter(User.email == data.email, User.role == data.role).first()
+    email_norm = normalize_registration_email(str(data.email) if data.email else "")
+    if not email_norm:
+        raise HTTPException(status_code=400, detail="Email is required.")
+    user = db.query(User).filter(func.lower(func.trim(User.email)) == email_norm).first()
     if not user:
-        role_label = "owner" if data.role == UserRole.owner else "guest"
         raise HTTPException(
             status_code=404,
-            detail=f"No account found for this email as an {role_label}. Use Owner Login or Guest Login depending on which account you have, or register first.",
+            detail="No account found for this email. Check the spelling, or register first.",
         )
     base_url = (get_settings().frontend_base_url or "").strip().rstrip("/")
     if not base_url:
@@ -1328,8 +1346,10 @@ def complete_owner_signup(
     owner_type_val = extra.get("owner_type")
     owner_type = OwnerType(owner_type_val) if owner_type_val in ("owner_of_record", "authorized_agent") else None
     account_type_val = extra.get("account_type")
+    pending_owner_email_norm = normalize_registration_email(pending.email)
+    enforce_no_conflicting_user_before_pending_completion(db, pending_owner_email_norm, UserRole.owner)
     user = User(
-        email=pending.email,
+        email=pending_owner_email_norm,
         hashed_password=pending.hashed_password,
         role=UserRole.owner,
         full_name=pending.full_name,
@@ -1409,15 +1429,18 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
     """Register a guest or tenant. When Mailgun is configured, stores pending and returns user_id for verification. Invitation code optional for guests."""
     code = (data.invitation_code or data.invitation_id or "").strip().upper()
     target_role = UserRole.tenant if (getattr(data, "role", None) == "tenant") else UserRole.guest
+    guest_email = normalize_registration_email(str(data.email) if data.email else "")
+    if not guest_email:
+        raise HTTPException(status_code=400, detail="Email is required.")
+    enforce_email_available_for_intended_role(db, guest_email, target_role, allow_same_role_pending=True)
 
-    # Same email can have owner+guest or owner+tenant (unique on email+role).
-    existing = db.query(User).filter(User.email == data.email, User.role == target_role).first()
+    existing = (
+        db.query(User)
+        .filter(func.lower(func.trim(User.email)) == guest_email, User.role == target_role)
+        .first()
+    )
     if existing:
-        label = "tenant" if target_role == UserRole.tenant else "guest"
-        raise HTTPException(
-            status_code=400,
-            detail=f"This email is already registered as a {label}. Please log in on the {label.capitalize()} Login page.",
-        )
+        raise HTTPException(status_code=400, detail=same_role_already_registered_message(target_role))
 
     if _mailgun_configured():
         # Validate invite kind vs requested role before storing pending.
@@ -1435,6 +1458,18 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
                         status_code=400,
                         detail="This invitation is for a guest stay, not a tenant. Please use the guest signup with this link.",
                     )
+                if target_role == UserRole.guest and inv_kind != "tenant":
+                    inv_guest_email_check = (getattr(inv_check, "guest_email", None) or "").strip().lower()
+                    if not inv_guest_email_check:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="This invitation link is incomplete. Ask your host to send a new invitation that includes your email address.",
+                        )
+                    if guest_email != inv_guest_email_check:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Please use the email address this invitation was sent to.",
+                        )
         verification_code = _generate_verification_code()
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=VERIFICATION_CODE_EXPIRE_MINUTES)
         extra = {
@@ -1449,7 +1484,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
             "vacate_acknowledged": data.vacate_acknowledged,
         }
         pending = PendingRegistration(
-            email=data.email,
+            email=guest_email,
             hashed_password=get_password_hash(data.password),
             role=target_role,
             full_name=data.full_name or None,
@@ -1464,7 +1499,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
         db.add(pending)
         db.commit()
         db.refresh(pending)
-        sent = send_verification_email(data.email, verification_code)
+        sent = send_verification_email(guest_email, verification_code)
         if not sent:
             db.delete(pending)
             db.commit()
@@ -1489,7 +1524,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
                 "Guest register: invalid or expired invitation code",
                 f"Guest registration attempted with invalid or expired invitation code: {code}.",
                 property_id=None,
-                actor_email=data.email,
+                actor_email=guest_email,
                 ip_address=request.client.host if request.client else None,
                 user_agent=(request.headers.get("user-agent") or "").strip() or None,
                 meta={"invitation_code_attempted": code},
@@ -1504,7 +1539,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
                 "Guest register: invitation is for tenant",
                 f"Guest registration attempted with a tenant invitation code: {code}.",
                 property_id=inv.property_id,
-                actor_email=data.email,
+                actor_email=guest_email,
                 ip_address=request.client.host if request.client else None,
                 user_agent=(request.headers.get("user-agent") or "").strip() or None,
                 meta={"invitation_code_attempted": code},
@@ -1515,14 +1550,31 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
                 detail="This invitation is for a tenant, not a guest. Please use the tenant signup with this link.",
             )
         inv_guest_email = (getattr(inv, "guest_email", None) or "").strip().lower()
-        if inv_guest_email and (data.email or "").strip().lower() != inv_guest_email:
+        if not inv_guest_email:
+            create_log(
+                db,
+                CATEGORY_FAILED_ATTEMPT,
+                "Guest register: guest invitation missing guest_email",
+                f"Guest registration attempted for invitation {code} with no guest_email on record.",
+                property_id=inv.property_id,
+                actor_email=guest_email,
+                ip_address=request.client.host if request.client else None,
+                user_agent=(request.headers.get("user-agent") or "").strip() or None,
+                meta={"invitation_code_attempted": code},
+            )
+            db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail="This invitation link is incomplete. Ask your host to send a new invitation that includes your email address.",
+            )
+        if guest_email != inv_guest_email:
             create_log(
                 db,
                 CATEGORY_FAILED_ATTEMPT,
                 "Guest register: invitation email mismatch",
-                f"Guest registration with email {data.email} for invitation {code} intended for {inv.guest_email}.",
+                f"Guest registration with email {guest_email} for invitation {code} intended for {inv.guest_email}.",
                 property_id=inv.property_id,
-                actor_email=data.email,
+                actor_email=guest_email,
                 ip_address=request.client.host if request.client else None,
                 user_agent=(request.headers.get("user-agent") or "").strip() or None,
                 meta={"invitation_code_attempted": code, "invitation_guest_email": inv.guest_email},
@@ -1549,7 +1601,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
                 "Tenant register: invalid or no longer valid invitation code",
                 f"Tenant registration attempted with invalid or no longer valid invitation code: {code}.",
                 property_id=None,
-                actor_email=data.email,
+                actor_email=guest_email,
                 ip_address=request.client.host if request.client else None,
                 user_agent=(request.headers.get("user-agent") or "").strip() or None,
                 meta={"invitation_code_attempted": code},
@@ -1564,7 +1616,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
                 "Tenant register: invitation is for guest",
                 f"Tenant registration attempted with a guest invitation code: {code}.",
                 property_id=inv.property_id,
-                actor_email=data.email,
+                actor_email=guest_email,
                 ip_address=request.client.host if request.client else None,
                 user_agent=(request.headers.get("user-agent") or "").strip() or None,
                 meta={"invitation_code_attempted": code},
@@ -1575,7 +1627,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
                 detail="This invitation is for a guest stay, not a tenant. Please use the guest signup with this link.",
             )
         inv_guest_email = (getattr(inv, "guest_email", None) or "").strip().lower()
-        if inv_guest_email and (data.email or "").strip().lower() != inv_guest_email:
+        if inv_guest_email and guest_email != inv_guest_email:
             raise HTTPException(
                 status_code=400,
                 detail="Please use the email address this invitation was sent to.",
@@ -1586,7 +1638,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
         sig = db.query(AgreementSignature).filter(AgreementSignature.id == data.agreement_signature_id).first()
         if sig and (sig.invitation_code or "").strip().upper() != code:
             sig = None
-        if sig and (sig.guest_email or "").strip().lower() != (data.email or "").strip().lower():
+        if sig and (sig.guest_email or "").strip().lower() != guest_email:
             sig = None
         if sig and sig.used_by_user_id is not None:
             sig = None
@@ -1594,7 +1646,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
             sig = None
 
     user = User(
-        email=data.email,
+        email=guest_email,
         hashed_password=get_password_hash(data.password),
         role=target_role,
         full_name=data.full_name or None,
@@ -1612,7 +1664,7 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
         if "email" in msg.lower() or "unique" in msg.lower():
             raise HTTPException(
                 status_code=400,
-                detail="This email is already registered. Please log in instead.",
+                detail=same_role_already_registered_message(target_role),
             )
         raise
     db.refresh(user)
@@ -1714,6 +1766,26 @@ def register_guest(request: Request, data: GuestRegister, db: Session = Depends(
                 send_shield_mode_turned_off_notification(owner_email, manager_emails, property_name, turned_off_by="system (new guest accepted invitation)")
             except Exception:
                 pass
+            ip_shield = request.client.host if request.client else None
+            ua_shield = (request.headers.get("user-agent") or "").strip() or None
+            create_ledger_event(
+                db,
+                ACTION_SHIELD_MODE_OFF,
+                target_object_type="Property",
+                target_object_id=prop_for_shield.id,
+                property_id=prop_for_shield.id,
+                stay_id=stay.id,
+                invitation_id=inv.id,
+                actor_user_id=user.id,
+                meta={
+                    "property_name": property_name,
+                    "message": f"Shield Mode turned off for {property_name} (new guest accepted invitation).",
+                    "reason": "invitation_accepted",
+                },
+                ip_address=ip_shield,
+                user_agent=ua_shield,
+            )
+            db.add(prop_for_shield)
         ip = request.client.host if request.client else None
         ua = (request.headers.get("user-agent") or "").strip() or None
         create_log(
@@ -1852,9 +1924,48 @@ def accept_invite(
             detail="This invitation is for a guest. Please sign in as a guest to accept it.",
         )
 
-    # Reject if invitation was sent to a different email address
+    # Guest stays: invitation must include the authorized email; tenant invites may omit it (legacy CSV)
     inv_guest_email = (getattr(inv, "guest_email", None) or "").strip().lower()
-    if inv_guest_email and (current_user.email or "").strip().lower() != inv_guest_email:
+    if not is_tenant_invite:
+        if not inv_guest_email:
+            create_log(
+                db,
+                CATEGORY_FAILED_ATTEMPT,
+                "Accept invite: guest invitation missing guest_email",
+                f"User {current_user.email} attempted to accept guest invitation {code} with no guest_email on record.",
+                property_id=inv.property_id,
+                invitation_id=inv.id,
+                actor_user_id=current_user.id,
+                actor_email=current_user.email,
+                ip_address=request.client.host if request.client else None,
+                user_agent=(request.headers.get("user-agent") or "").strip() or None,
+                meta={"invitation_code": code},
+            )
+            db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail="This invitation link is incomplete. Ask your host to send a new invitation that includes your email address.",
+            )
+        if (current_user.email or "").strip().lower() != inv_guest_email:
+            create_log(
+                db,
+                CATEGORY_FAILED_ATTEMPT,
+                "Accept invite: email mismatch",
+                f"User {current_user.email} attempted to accept invitation {code} intended for {inv.guest_email}.",
+                property_id=inv.property_id,
+                invitation_id=inv.id,
+                actor_user_id=current_user.id,
+                actor_email=current_user.email,
+                ip_address=request.client.host if request.client else None,
+                user_agent=(request.headers.get("user-agent") or "").strip() or None,
+                meta={"invitation_code": code, "invitation_guest_email": inv.guest_email},
+            )
+            db.commit()
+            raise HTTPException(
+                status_code=403,
+                detail="This invitation was sent to a different email address. You cannot accept an invitation intended for someone else.",
+            )
+    elif inv_guest_email and (current_user.email or "").strip().lower() != inv_guest_email:
         create_log(
             db,
             CATEGORY_FAILED_ATTEMPT,
@@ -2159,6 +2270,26 @@ def accept_invite(
             send_shield_mode_turned_off_notification(owner_email, manager_emails, property_name, turned_off_by="system (new guest accepted invitation)")
         except Exception:
             pass
+        ip_shield = request.client.host if request.client else None
+        ua_shield = (request.headers.get("user-agent") or "").strip() or None
+        create_ledger_event(
+            db,
+            ACTION_SHIELD_MODE_OFF,
+            target_object_type="Property",
+            target_object_id=_prop.id,
+            property_id=_prop.id,
+            stay_id=stay.id,
+            invitation_id=inv.id,
+            actor_user_id=current_user.id,
+            meta={
+                "property_name": property_name,
+                "message": f"Shield Mode turned off for {property_name} (new guest accepted invitation).",
+                "reason": "invitation_accepted",
+            },
+            ip_address=ip_shield,
+            user_agent=ua_shield,
+        )
+        db.add(_prop)
     ip = request.client.host if request.client else None
     ua = (request.headers.get("user-agent") or "").strip() or None
     create_log(

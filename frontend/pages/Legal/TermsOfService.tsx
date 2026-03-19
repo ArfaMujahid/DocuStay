@@ -1,4 +1,5 @@
 import React from 'react';
+import { SUPPORT_EMAIL, SUPPORT_LEGAL_ENTITY_NAME, supportMailtoHref } from '../../constants/supportContact';
 
 const SECTIONS = [
   { id: 'service', label: 'The DocuStay Service' },
@@ -8,6 +9,7 @@ const SECTIONS = [
   { id: 'liability', label: 'Limitation of Liability' },
   { id: 'termination', label: 'Account Suspension and Termination' },
   { id: 'general', label: 'General Provisions' },
+  { id: 'contact', label: 'Contact Us' },
 ];
 
 const TermsOfService: React.FC<{ navigate: (v: string) => void }> = ({ navigate }) => {
@@ -143,6 +145,22 @@ const TermsOfService: React.FC<{ navigate: (v: string) => void }> = ({ navigate 
                   <p className="text-slate-600 leading-relaxed">
                     These Terms shall be governed by the laws of the State of Washington, without regard to its conflict of law provisions. These Terms constitute the entire agreement between you and DocuStay regarding the Services and supersede any prior agreements. We may revise these Terms from time to time, and the most current version will always be posted on our website. By continuing to use the Services after revisions become effective, you agree to be bound by the revised Terms.
                   </p>
+                </div>
+              </section>
+
+              <section id="contact" className="scroll-mt-24">
+                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm shadow-slate-200/50 p-6 md:p-8">
+                  <h2 className="text-xl font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 text-sm font-bold">8</span>
+                    Contact Us
+                  </h2>
+                  <p className="text-slate-600 leading-relaxed mb-4">
+                    If you have any questions about these Terms of Service, please contact us at:
+                  </p>
+                  <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                    <p className="text-slate-800 font-semibold">{SUPPORT_LEGAL_ENTITY_NAME}</p>
+                    <p className="text-slate-600">Email: <a href={supportMailtoHref()} className="text-[#6B90F2] hover:underline">{SUPPORT_EMAIL}</a></p>
+                  </div>
                 </div>
               </section>
             </div>

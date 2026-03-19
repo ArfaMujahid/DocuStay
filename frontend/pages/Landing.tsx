@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../components/UI';
+import { SUPPORT_EMAIL, supportMailtoHref } from '../constants/supportContact';
 
 /** Role config with icons (Heroicons paths) */
 const ROLES = [
@@ -335,6 +336,12 @@ const Landing: React.FC<LandingProps> = ({ navigate }) => {
               <a href="#terms" className="text-slate-400 hover:text-white transition-colors text-sm font-medium">Terms of Service</a>
               <a href="#privacy" className="text-slate-400 hover:text-white transition-colors text-sm font-medium">Privacy Policy</a>
             </div>
+            <p className="text-slate-400 text-sm text-center md:text-right w-full md:w-auto mt-4 md:mt-0">
+              Contact us:{' '}
+              <a href={supportMailtoHref()} className="text-[#6B90F2] hover:text-[#8aa8f5] font-medium underline-offset-2 hover:underline break-all">
+                {SUPPORT_EMAIL}
+              </a>
+            </p>
           </div>
           <div className="mt-8 pt-8 border-t border-slate-800 text-center">
             <p className="text-slate-500 text-sm">

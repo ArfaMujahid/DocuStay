@@ -6,7 +6,7 @@ import secrets
 from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -91,8 +91,18 @@ class InvitationCreate(BaseModel):
     unit_id: int | None = None  # Required for tenant/manager; optional for owner (inferred for single-unit)
     invited_by_user_id: int | None = None  # Set by backend from current_user
     guest_name: str = ""
-    guest_email: str = Field(..., min_length=1, description="Guest email (required)")
+    guest_email: EmailStr = Field(..., description="Guest email (required); only this address can accept the invite")
     guest_phone: str = ""
+
+    @field_validator("guest_email", mode="before")
+    @classmethod
+    def _strip_guest_email(cls, v: object) -> str:
+        if v is None:
+            raise ValueError("Guest email is required")
+        s = str(v).strip()
+        if not s:
+            raise ValueError("Guest email is required")
+        return s
     relationship: str = "friend"
     purpose: str = "visit"
     checkin_date: str = ""
@@ -2033,7 +2043,22 @@ def update_property(
         )
         if "shield_mode_enabled" in changes_meta:
             new_shield = changes_meta["shield_mode_enabled"].get("new")
-            # No duplicate log/ledger: the single "Property updated" event above already includes shield change
+            shield_label = "turned off" if new_shield == 0 else "turned on"
+            create_ledger_event(
+                db,
+                ACTION_SHIELD_MODE_OFF if new_shield == 0 else ACTION_SHIELD_MODE_ON,
+                target_object_type="Property",
+                target_object_id=prop.id,
+                property_id=prop.id,
+                actor_user_id=current_user.id,
+                meta={
+                    "property_id": property_id,
+                    "property_name": property_address,
+                    "message": f"Shield Mode {shield_label} for {property_address}.",
+                },
+                ip_address=ip,
+                user_agent=ua,
+            )
             owner_user = None
             if getattr(prop, "owner_profile_id", None):
                 prof = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
@@ -2353,6 +2378,9 @@ def create_invitation(
         raise HTTPException(status_code=400, detail=jurisdiction_error)
 
     code = "INV-" + secrets.token_hex(4).upper()
+    guest_email_norm = str(data.guest_email).strip().lower()
+    if not guest_email_norm:
+        raise HTTPException(status_code=400, detail="guest_email is required")
     purpose = _PURPOSE_MAP.get((data.purpose or "visit").lower(), PurposeOfStay.travel)
     rel = _REL_MAP.get((data.relationship or "friend").lower(), RelationshipToOwner.friend)
     dms = 1
@@ -2367,7 +2395,7 @@ def create_invitation(
         unit_id=unit_id,
         invited_by_user_id=current_user.id,
         guest_name=(data.guest_name or "").strip() or None,
-        guest_email=(data.guest_email or "").strip() or None,
+        guest_email=guest_email_norm,
         stay_start_date=start,
         stay_end_date=end,
         purpose_of_stay=purpose,
@@ -2391,14 +2419,14 @@ def create_invitation(
         db,
         CATEGORY_STATUS_CHANGE,
         "Invitation created",
-        f"Invite ID {code} created (token_state=STAGED) for property {prop.id}, guest {data.guest_name or data.guest_email or '—'}, {start}–{end}.",
+        f"Invite ID {code} created (token_state=STAGED) for property {prop.id}, guest {data.guest_name or guest_email_norm or '—'}, {start}–{end}.",
         property_id=prop.id,
         invitation_id=inv.id,
         actor_user_id=current_user.id,
         actor_email=current_user.email,
         ip_address=ip,
         user_agent=ua,
-        meta={"invitation_code": code, "token_state": "STAGED", "guest_name": (data.guest_name or "").strip(), "guest_email": (data.guest_email or "").strip()},
+        meta={"invitation_code": code, "token_state": "STAGED", "guest_name": (data.guest_name or "").strip(), "guest_email": guest_email_norm},
     )
     invited_by_role = getattr(current_user.role, "value", None) or str(current_user.role) if current_user.role else None
     create_ledger_event(
@@ -2414,7 +2442,7 @@ def create_invitation(
             "invitation_code": code,
             "token_state": "STAGED",
             "guest_name": (data.guest_name or "").strip(),
-            "guest_email": (data.guest_email or "").strip(),
+            "guest_email": guest_email_norm,
             "stay_start_date": str(start),
             "stay_end_date": str(end),
             "invited_by_role": invited_by_role,
@@ -2433,7 +2461,7 @@ def create_invitation(
             for u in [db.query(User).filter(User.id == a.user_id).first()]
             if u and (u.email or "").strip()
         ]
-        guest_name = (data.guest_name or "").strip() or (data.guest_email or "Guest").strip() or "Guest"
+        guest_name = (data.guest_name or "").strip() or guest_email_norm or "Guest"
         try:
             send_dead_mans_switch_enabled_notification(owner_email, manager_emails, property_name, guest_name, str(end))
         except Exception as e:

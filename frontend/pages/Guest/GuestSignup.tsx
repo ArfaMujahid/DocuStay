@@ -182,7 +182,6 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
         // Store invite code BEFORE any navigation so it's available after email verification
         if (inviteCode) sessionStorage.setItem('docustay_pending_invite_code', inviteCode);
         if (d.verificationRequired && d.user_id && setPendingVerification) {
-          notify('success', result.message || 'Check your email for the verification code.');
           setPendingVerification({ userId: d.user_id, type: 'email', generatedAt: new Date().toISOString() });
           navigate('verify');
           return;
@@ -440,7 +439,6 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
               if (result.status === 'success' && result.data) {
                 const d = result.data as any;
                 if (d.verificationRequired && d.user_id && setPendingVerification) {
-                  notify('success', result.message || 'Check your email for the verification code.');
                   setPendingVerification({ userId: d.user_id, type: 'email', generatedAt: new Date().toISOString() });
                   navigate('verify');
                   return;
@@ -481,7 +479,6 @@ const GuestSignup: React.FC<GuestSignupProps> = ({ initialRole, initialInviteCod
                 if (result.status === 'success' && result.data) {
                   const d = result.data as any;
                   if (d.verificationRequired && d.user_id && setPendingVerification) {
-                    notify('success', result.message || 'Check your email for the verification code.');
                     setPendingVerification({ userId: d.user_id, type: 'email', generatedAt: new Date().toISOString() });
                     navigate('verify');
                     return;

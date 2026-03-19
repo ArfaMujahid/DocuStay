@@ -14,6 +14,7 @@ import HelpCenter from '../Support/HelpCenter';
 import { ModeSwitcher } from '../../components/ModeSwitcher';
 import { InvitationsTabContent } from '../../components/InvitationsTabContent';
 import { DashboardAlertsPanel, DASHBOARD_ALERTS_REFRESH_EVENT } from '../../components/DashboardAlertsPanel';
+import { SUPPORT_EMAIL, supportMailtoHref } from '../../constants/supportContact';
 
 function daysLeft(endDateStr: string): number {
   const end = new Date(endDateStr);
@@ -1883,17 +1884,30 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
       >
         <div className="px-6 py-4 space-y-4">
           <p className="text-slate-600 text-sm">
-            This invoice is void and cannot be paid. Please contact support.
+            This invoice is void and cannot be paid. Please contact us at{' '}
+            <a href={supportMailtoHref('Void invoice')} className="text-[#6B90F2] font-medium hover:underline break-all">
+              {SUPPORT_EMAIL}
+            </a>
+            .
           </p>
           <div className="flex flex-wrap gap-3">
             <Button
               variant="primary"
               onClick={() => {
                 setShowVoidInvoiceDialog(false);
+                window.location.href = supportMailtoHref('Void invoice');
+              }}
+            >
+              Email support
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowVoidInvoiceDialog(false);
                 navigate('help');
               }}
             >
-              Contact support
+              Help Center
             </Button>
             <Button variant="outline" onClick={() => setShowVoidInvoiceDialog(false)}>
               Close

@@ -8,6 +8,7 @@ import PendingSignatureModal from '../../components/PendingSignatureModal';
 import HelpCenter from '../Support/HelpCenter';
 import { DashboardAlertsPanel, DASHBOARD_ALERTS_REFRESH_EVENT } from '../../components/DashboardAlertsPanel';
 import { PENDING_INVITE_STORAGE_KEY } from './GuestLogin';
+import { SUPPORT_EMAIL, supportMailtoHref } from '../../constants/supportContact';
 
 type GuestTab = 'stays' | 'invitations' | 'help';
 
@@ -1323,9 +1324,23 @@ export const GuestDashboard: React.FC<{ user: UserSession; navigate: (v: string)
           )}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h4 className="font-semibold text-slate-900 mb-3">Need help?</h4>
+            <p className="text-xs text-slate-600 mb-3">
+              Contact us at{' '}
+              <a href={supportMailtoHref()} className="text-[#6B90F2] font-medium hover:underline break-all">
+                {SUPPORT_EMAIL}
+              </a>
+            </p>
             <div className="flex flex-col gap-2">
               <Button variant="outline" className="w-full justify-center h-10 rounded-lg text-sm font-medium">Message host</Button>
-              <Button variant="outline" className="w-full justify-center h-10 rounded-lg text-sm font-medium">Contact support</Button>
+              <Button
+                variant="outline"
+                className="w-full justify-center h-10 rounded-lg text-sm font-medium"
+                onClick={() => {
+                  window.location.href = supportMailtoHref();
+                }}
+              >
+                Contact support
+              </Button>
             </div>
           </div>
         </div>

@@ -625,8 +625,8 @@ def sign_owner_poa_with_dropbox(
         title=send_title,
         signer_email=sig.owner_email,
         signer_name=sig.owner_full_name,
-        subject="DocuStay – Please sign the Master Power of Attorney",
-        message="Please sign the Master POA to complete your owner account registration.",
+        subject="DocuStay – Please sign the Master POA (documentation & records)",
+        message="Please sign the Master Power of Attorney for documentation and property records to complete your owner account registration.",
     )
     sign_url = None
     if request_id:

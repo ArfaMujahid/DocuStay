@@ -4,10 +4,18 @@ import { InviteGuestModal } from '../../components/InviteGuestModal';
 import HelpCenter from '../Support/HelpCenter';
 import { DashboardAlertsPanel, DASHBOARD_ALERTS_REFRESH_EVENT } from '../../components/DashboardAlertsPanel';
 import { UserSession } from '../../types';
-import { dashboardApi, authApi, invitationsApi, APP_ORIGIN } from '../../services/api';
-import type { OwnerInvitationView, OwnerAuditLogEntry, GuestPendingInviteView, GuestStayView, TenantSignedDocument } from '../../services/api';
+import { dashboardApi, authApi, invitationsApi, APP_ORIGIN, API_URL } from '../../services/api';
+import type {
+  OwnerInvitationView,
+  OwnerStayView,
+  OwnerAuditLogEntry,
+  GuestPendingInviteView,
+  GuestStayView,
+  TenantSignedDocument,
+} from '../../services/api';
 import { copyToClipboard } from '../../utils/clipboard';
 import { PENDING_INVITE_STORAGE_KEY } from '../Guest/GuestLogin';
+import { SUPPORT_EMAIL, supportMailtoHref } from '../../constants/supportContact';
 
 type TenantTab = 'stays' | 'property' | 'invitations' | 'logs' | 'documents' | 'help';
 
@@ -44,6 +52,28 @@ function getTodayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** True if this tenant-invited guest row is a real Stay that can be revoked (kill switch). */
+function tenantCanRevokeGuestStay(h: OwnerStayView): boolean {
+  if (h.invitation_only || h.stay_id <= 0) return false;
+  if (h.revoked_at || h.checked_out_at || h.cancelled_at) return false;
+  return true;
+}
+
+/** Signed doc row for a pending invite the tenant sent (matches invitation code). */
+function tenantSignedAgreementForInviteCode(
+  invitationCode: string,
+  docs: TenantSignedDocument[]
+): TenantSignedDocument | undefined {
+  const code = (invitationCode || '').trim().toUpperCase();
+  if (!code) return undefined;
+  return docs.find(
+    (d) =>
+      d.record_type === 'guest_invited_by_you' &&
+      (d.invitation_code || '').trim().toUpperCase() === code &&
+      !!d.signed_at
+  );
+}
+
 function daysLeft(endDateStr: string): number {
   const end = new Date(endDateStr);
   const today = new Date();
@@ -77,6 +107,52 @@ function datesOverlap(start1: string, end1: string, start2: string, end2: string
   return a1 < b2 && a2 > b1;
 }
 
+/** One list: accepted guest stays + pending/ongoing invites (same authorization lifecycle). */
+type TenantGuestAuthActiveRow =
+  | { kind: 'accepted'; key: string; stay: OwnerStayView }
+  | { kind: 'pending_invite'; key: string; inv: OwnerInvitationView };
+
+function buildTenantGuestAuthRows(
+  invitations: OwnerInvitationView[],
+  guestHistory: OwnerStayView[],
+  propertyId: number | null
+): { active: TenantGuestAuthActiveRow[]; ended: OwnerStayView[] } {
+  if (propertyId == null) {
+    return { active: [], ended: [] };
+  }
+  const historyForProperty = guestHistory.filter((h) => h.property_id === propertyId);
+  const invitesForProperty = invitations.filter(
+    (inv) =>
+      inv.property_id === propertyId &&
+      (inv.status === 'pending' || inv.status === 'ongoing') &&
+      !inv.is_expired
+  );
+  const activeStays = historyForProperty.filter(
+    (h) =>
+      !h.invitation_only &&
+      !h.checked_out_at &&
+      !h.revoked_at &&
+      !h.cancelled_at
+  );
+  const usedCodes = new Set<string>();
+  const active: TenantGuestAuthActiveRow[] = activeStays.map((stay) => {
+    const code = stay.invite_id || '';
+    if (code) usedCodes.add(code);
+    return { kind: 'accepted' as const, key: `stay-${stay.stay_id}`, stay };
+  });
+  for (const inv of invitesForProperty) {
+    if (usedCodes.has(inv.invitation_code)) continue;
+    active.push({ kind: 'pending_invite' as const, key: `inv-${inv.id}`, inv });
+  }
+  active.sort((a, b) => {
+    const da = a.kind === 'accepted' ? a.stay.stay_start_date : a.inv.stay_start_date;
+    const db = b.kind === 'accepted' ? b.stay.stay_start_date : b.inv.stay_start_date;
+    return db.localeCompare(da);
+  });
+  const ended = historyForProperty.filter((h) => h.checked_out_at || h.revoked_at || h.cancelled_at);
+  return { active, ended };
+}
+
 const TenantDashboard: React.FC<{
   user: UserSession;
   navigate: (v: string) => void;
@@ -99,20 +175,25 @@ const TenantDashboard: React.FC<{
     assigned_by_name?: string | null;
     accepted_by_name?: string | null;
     pending_acceptance?: boolean;
+    dead_mans_switch_enabled?: boolean;
   }>>([]);
   const [loading, setLoadingState] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<TenantUnitCard | null>(null);
   const [invitations, setInvitations] = useState<OwnerInvitationView[]>([]);
   const [stays, setStays] = useState<GuestStayView[]>([]);
-  const [guestHistory, setGuestHistory] = useState<Array<{ stay_id: number; guest_name: string; property_name: string; stay_start_date: string; stay_end_date: string; checked_out_at?: string | null }>>([]);
+  const [guestHistory, setGuestHistory] = useState<OwnerStayView[]>([]);
   const [inviteLinkInput, setInviteLinkInput] = useState('');
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [revokeConfirmStay, setRevokeConfirmStay] = useState<OwnerStayView | null>(null);
+  const [revokeLoading, setRevokeLoading] = useState(false);
+  const [revokeSuccessGuest, setRevokeSuccessGuest] = useState<string | null>(null);
   // Presence per selected unit (here/away per property)
   const [presence, setPresence] = useState<'present' | 'away'>('present');
   const [awayStartedAt, setAwayStartedAt] = useState<string | null>(null);
   const [guestsAuthorizedDuringAway, setGuestsAuthorizedDuringAway] = useState(false);
   const [presenceUpdating, setPresenceUpdating] = useState(false);
+  const [dmsUpdating, setDmsUpdating] = useState(false);
   const [showAwayConfirm, setShowAwayConfirm] = useState(false);
   const [awayGuestsAuthorized, setAwayGuestsAuthorized] = useState(false);
   const [propertyLogs, setPropertyLogs] = useState<OwnerAuditLogEntry[]>([]);
@@ -187,16 +268,7 @@ const TenantDashboard: React.FC<{
       setUnitsData(data.units || []);
       const [invites, history, pendingData, staysData, docs, verRecord] = await Promise.all([
         dashboardApi.tenantInvitations().catch(() => []),
-        dashboardApi.tenantGuestHistory().then((s) =>
-          s.map((x) => ({
-            stay_id: x.stay_id,
-            guest_name: x.guest_name,
-            property_name: x.property_name,
-            stay_start_date: x.stay_start_date,
-            stay_end_date: x.stay_end_date,
-            checked_out_at: x.checked_out_at,
-          }))
-        ).catch(() => []),
+        dashboardApi.tenantGuestHistory().catch(() => [] as OwnerStayView[]),
         dashboardApi.guestPendingInvites().catch(() => [] as GuestPendingInviteView[]),
         dashboardApi.guestStays().catch(() => [] as GuestStayView[]),
         dashboardApi.tenantSignedDocuments().catch(() => [] as TenantSignedDocument[]),
@@ -217,6 +289,52 @@ const TenantDashboard: React.FC<{
       setLoadingState(false);
     }
   }, [notify]);
+
+  const handleTenantRevokeConfirm = useCallback(async () => {
+    if (!revokeConfirmStay || revokeConfirmStay.stay_id <= 0) return;
+    setRevokeLoading(true);
+    try {
+      await dashboardApi.tenantRevokeGuestStay(revokeConfirmStay.stay_id);
+      const name = revokeConfirmStay.guest_name;
+      notify('success', 'Stay revoked. Guest must vacate within 12 hours. Email sent.');
+      setRevokeConfirmStay(null);
+      setRevokeSuccessGuest(name);
+      loadData();
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
+    } catch (e) {
+      notify('error', (e as Error)?.message ?? 'Failed to revoke stay.');
+    } finally {
+      setRevokeLoading(false);
+    }
+  }, [revokeConfirmStay, notify, loadData]);
+
+  const openTenantGuestSignedAgreementForStay = useCallback(
+    async (stayId: number) => {
+      try {
+        const blob = await dashboardApi.tenantInvitedGuestStaySignedAgreementBlob(stayId);
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (e) {
+        notify('error', (e as Error)?.message ?? 'Could not open agreement.');
+      }
+    },
+    [notify]
+  );
+
+  const openTenantGuestSignedAgreementForSignature = useCallback(
+    async (signatureId: number) => {
+      try {
+        const blob = await dashboardApi.tenantInvitedGuestSignatureSignedAgreementBlob(signatureId);
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (e) {
+        notify('error', (e as Error)?.message ?? 'Could not open agreement.');
+      }
+    },
+    [notify]
+  );
 
   const openConfirmInviteModal = useCallback(async (code: string, inviteData?: GuestPendingInviteView) => {
     if (inviteData) {
@@ -391,6 +509,31 @@ const TenantDashboard: React.FC<{
     doSetPresence('present');
   }, [selectedUnit?.unit_id, presence, doSetPresence]);
 
+  const handleTenantDmsToggle = useCallback(async () => {
+    const unitId = selectedUnit?.unit_id;
+    if (!unitId || dmsUpdating) return;
+    const row = unitsData.find((u) => u.unit?.id === unitId);
+    const currentEnabled = Boolean(row?.dead_mans_switch_enabled ?? true);
+    const next = !currentEnabled;
+    setDmsUpdating(true);
+    try {
+      const res = await dashboardApi.tenantSetDeadMansSwitch(unitId, next);
+      setUnitsData((prev) =>
+        prev.map((u) =>
+          u.unit?.id === unitId
+            ? { ...u, dead_mans_switch_enabled: Boolean(res.dead_mans_switch_enabled) }
+            : u
+        )
+      );
+      notify('success', res.message || `Dead Man's Switch turned ${next ? 'on' : 'off'}.`);
+      window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
+    } catch (e) {
+      notify('error', (e as Error)?.message || "Failed to update Dead Man's Switch.");
+    } finally {
+      setDmsUpdating(false);
+    }
+  }, [selectedUnit?.unit_id, dmsUpdating, unitsData, notify]);
+
   const handleAddInviteLink = useCallback(async () => {
     const code = parseInviteCode(inviteLinkInput);
     if (!code) {
@@ -562,6 +705,11 @@ const TenantDashboard: React.FC<{
     }));
   const today = getTodayStr();
   const selectedUnitData = selectedUnit ? unitsData.find((u) => u.unit?.id === selectedUnit.unit_id) : null;
+  const unitDetailGuestAuthBundle =
+    selectedUnitData?.property?.id != null
+      ? buildTenantGuestAuthRows(invitations, guestHistory, selectedUnitData.property.id)
+      : { active: [] as TenantGuestAuthActiveRow[], ended: [] as OwnerStayView[] };
+  const tenantDmsEnabled = Boolean(selectedUnitData?.dead_mans_switch_enabled ?? true);
   const startDate = selectedUnitData?.stay_start_date ?? null;
   const endDate = selectedUnitData?.stay_end_date ?? null;
   const isUnitCancelled = selectedUnitData?.token_state === 'REVOKED' || selectedUnitData?.token_state === 'CANCELLED';
@@ -725,6 +873,28 @@ const TenantDashboard: React.FC<{
               )}
             </div>
 
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">Dead Man&apos;s Switch</h2>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className={`text-lg font-bold ${tenantDmsEnabled ? 'text-amber-600' : 'text-slate-600'}`}>
+                    {tenantDmsEnabled ? 'On' : 'Off'}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Stay-end reminder automation for this assigned property.
+                  </p>
+                </div>
+                <Button
+                  variant={tenantDmsEnabled ? 'outline' : 'primary'}
+                  onClick={handleTenantDmsToggle}
+                  disabled={dmsUpdating || !selectedUnitData?.unit}
+                  className="rounded-lg"
+                >
+                  {dmsUpdating ? 'Updating…' : tenantDmsEnabled ? 'Turn Off' : 'Turn On'}
+                </Button>
+              </div>
+            </div>
+
             {/* Property status */}
             {verificationRecord?.property_status && (
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -746,30 +916,10 @@ const TenantDashboard: React.FC<{
               </div>
             )}
 
-            {/* Guest authorization activity (summary) */}
-            {guestHistory.length > 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900 mb-4">Guest authorization activity</h2>
-                <div className="space-y-2">
-                  {guestHistory.slice(0, 10).map((gh, i) => (
-                    <div key={gh.stay_id || i} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100 text-sm">
-                      <div>
-                        <span className="font-medium text-slate-800">{gh.guest_name}</span>
-                        <span className="text-slate-400 ml-2 text-xs">{formatDate(gh.stay_start_date)} – {formatDate(gh.stay_end_date)}</span>
-                      </div>
-                      <span className={`text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded ${gh.checked_out_at ? 'bg-blue-50 text-blue-700 border border-blue-200' : new Date(gh.stay_end_date) < new Date() ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
-                        {gh.checked_out_at ? 'Completed' : new Date(gh.stay_end_date) < new Date() ? 'Expired' : 'Active'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Verification record */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-900 mb-2">Verification record</h2>
-              <p className="text-sm text-slate-500 mb-4">Property authorization documents and guest agreements tied to this property.</p>
+              <p className="text-sm text-slate-500 mb-4">Property authorization documents and guest agreements from invitations you created for this property.</p>
 
               <div className="space-y-4">
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
@@ -803,7 +953,7 @@ const TenantDashboard: React.FC<{
 
                 {(verificationRecord?.guest_agreements ?? []).length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-800 mb-2">Guest agreements for this property</h3>
+                    <h3 className="text-sm font-semibold text-slate-800 mb-2">Guest agreements you invited</h3>
                     <div className="space-y-2">
                       {(verificationRecord?.guest_agreements ?? []).map((ga) => (
                         <div key={ga.signature_id} className="p-3 rounded-lg bg-slate-50 border border-slate-100">
@@ -841,7 +991,7 @@ const TenantDashboard: React.FC<{
                 )}
 
                 {(verificationRecord?.guest_agreements ?? []).length === 0 && (
-                  <p className="text-sm text-slate-500">No guest agreements have been signed for this property yet.</p>
+                  <p className="text-sm text-slate-500">No guest agreements have been signed yet for invitations you created. When a guest signs, it will appear here and under Documents.</p>
                 )}
               </div>
             </div>
@@ -856,45 +1006,6 @@ const TenantDashboard: React.FC<{
                 </Button>
               </div>
             )}
-
-            {/* Guest invitation links */}
-            {invitations.length > 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900 mb-4">Guest invitation links</h2>
-                <p className="text-sm text-slate-500 mb-3">Active invitation links for guests at this property.</p>
-                <div className="space-y-2">
-                  {invitations.filter((inv) => inv.status === 'pending' || inv.status === 'ongoing').map((inv) => {
-                    const inviteUrl = `${APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inv.invitation_code}`;
-                    return (
-                      <div key={inv.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100 text-sm">
-                        <div>
-                          <span className="font-medium text-slate-800">{inv.guest_name || inv.guest_email || 'Pending guest'}</span>
-                          {inv.stay_start_date && inv.stay_end_date && (
-                            <span className="text-slate-400 ml-2 text-xs">{formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
-                          )}
-                          <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded ${inv.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                            {inv.status}
-                          </span>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="rounded-lg text-xs h-8 px-3 shrink-0"
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            const ok = await copyToClipboard(inviteUrl);
-                            if (ok) notify('success', 'Invitation link copied.');
-                            else notify('error', 'Could not copy.');
-                          }}
-                        >
-                          Copy link
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -903,36 +1014,70 @@ const TenantDashboard: React.FC<{
           <div className="space-y-6 w-full">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-900 mb-4">Documents</h2>
-              <p className="text-sm text-slate-600 mb-4">Access your signed agreements and legal documents.</p>
+              <p className="text-sm text-slate-600 mb-4">
+                Agreements you signed as a guest, and agreements guests signed for stays you invited them to at this property.
+              </p>
               <div className="space-y-3">
                 {signedDocs.length > 0 ? (
-                  signedDocs.map((doc) => (
-                    <div key={doc.signature_id} className="p-4 rounded-lg bg-slate-50 border border-slate-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="font-medium text-slate-800 text-sm">{doc.document_title}</p>
-                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                          Signed
-                        </span>
+                  signedDocs.map((doc) => {
+                    const isGuestInvite = doc.record_type === 'guest_invited_by_you';
+                    return (
+                      <div key={doc.signature_id} className="p-4 rounded-lg bg-slate-50 border border-slate-100">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                          <p className="font-medium text-slate-800 text-sm">{doc.document_title}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {isGuestInvite ? (
+                              <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200">
+                                Guest you invited
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                Your signature
+                              </span>
+                            )}
+                            <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                              Signed
+                            </span>
+                          </div>
+                        </div>
+                        {doc.property_name && (
+                          <p className="text-xs text-slate-600 mb-1"><span className="font-medium text-slate-700">Property:</span> {doc.property_name}</p>
+                        )}
+                        {doc.stay_start_date && doc.stay_end_date && (
+                          <p className="text-xs text-slate-600 mb-1">
+                            <span className="font-medium text-slate-700">Stay:</span> {formatDate(doc.stay_start_date)} – {formatDate(doc.stay_end_date)}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
+                          <p className="text-xs text-slate-500">
+                            {isGuestInvite ? (
+                              <>Guest signed as <span className="font-medium text-slate-700">{doc.signed_by}</span>{doc.signed_at ? ` on ${formatDate(doc.signed_at)}` : ''}</>
+                            ) : (
+                              <>Signed by you ({doc.signed_by}){doc.signed_at ? ` on ${formatDate(doc.signed_at)}` : ''}</>
+                            )}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            {doc.has_signed_pdf && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="text-xs h-7 px-2 rounded-lg shrink-0"
+                                onClick={() => window.open(`${API_URL}/agreements/signature/${doc.signature_id}/signed-pdf`, '_blank', 'noopener,noreferrer')}
+                              >
+                                View PDF
+                              </Button>
+                            )}
+                            <p className="text-xs text-slate-400">Invite {doc.invitation_code}</p>
+                          </div>
+                        </div>
                       </div>
-                      {doc.property_name && (
-                        <p className="text-xs text-slate-600 mb-1"><span className="font-medium text-slate-700">Property:</span> {doc.property_name}</p>
-                      )}
-                      {doc.stay_start_date && doc.stay_end_date && (
-                        <p className="text-xs text-slate-600 mb-1">
-                          <span className="font-medium text-slate-700">Duration:</span> {formatDate(doc.stay_start_date)} – {formatDate(doc.stay_end_date)}
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between mt-2">
-                        <p className="text-xs text-slate-500">
-                          Signed by {doc.signed_by}{doc.signed_at ? ` on ${formatDate(doc.signed_at)}` : ''}
-                        </p>
-                        <p className="text-xs text-slate-400">Invite {doc.invitation_code}</p>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
-                  <p className="text-sm text-slate-500">No signed documents yet. Documents will appear here after you sign agreements.</p>
+                  <p className="text-sm text-slate-500">
+                    No signed documents yet. When you sign an agreement as a guest, or a guest signs an invitation you created, it will appear here.
+                  </p>
                 )}
                 <div className="pt-3 border-t border-slate-100">
                   <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Legal documents</p>
@@ -1656,27 +1801,67 @@ const TenantDashboard: React.FC<{
             })()}
           </section>
 
-          {/* Guests & stays for this property - under property display */}
-          {(invitations.length > 0 || guestHistory.length > 0) && (
+          {/* Guest authorizations: pending invites + accepted stays in one list */}
+          {(unitDetailGuestAuthBundle.active.length > 0 || unitDetailGuestAuthBundle.ended.length > 0) && (
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-slate-900 mb-4">Guests & stays for this property</h3>
-              <p className="text-sm text-slate-500 mb-4">Invitations you sent and stays that are pending, accepted, or completed.</p>
+              <h3 className="text-base font-semibold text-slate-900 mb-4">Guest authorizations</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                Each row is one guest authorization: a pending invite link or an accepted stay. Revoke ends authorization before or after the guest accepts.
+              </p>
               <div className="space-y-6">
-                {invitations.filter((inv) => inv.status === 'pending' || inv.status === 'ongoing').length > 0 && (
+                {unitDetailGuestAuthBundle.active.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Pending / ongoing invitations</h4>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Pending &amp; ongoing</h4>
                     <ul className="space-y-2">
-                      {invitations
-                        .filter((inv) => inv.status === 'pending' || inv.status === 'ongoing')
-                        .map((inv) => (
-                          <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0 text-sm">
+                      {unitDetailGuestAuthBundle.active.map((row) =>
+                        row.kind === 'accepted' ? (
+                          <li key={row.key} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0 text-sm">
+                            <div>
+                              <span className="font-medium text-slate-900">{row.stay.guest_name}</span>
+                              <span className="text-slate-500"> · {formatDate(row.stay.stay_start_date)} – {formatDate(row.stay.stay_end_date)}</span>
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700">Accepted</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              {!row.stay.invitation_only && row.stay.stay_id > 0 && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="text-xs h-8 px-3 shrink-0"
+                                  onClick={() => openTenantGuestSignedAgreementForStay(row.stay.stay_id)}
+                                >
+                                  View agreement
+                                </Button>
+                              )}
+                              {tenantCanRevokeGuestStay(row.stay) && (
+                                <Button type="button" variant="outline" className="text-xs h-8 px-3 text-red-600 border-red-200 hover:bg-red-50 shrink-0" onClick={() => setRevokeConfirmStay(row.stay)}>
+                                  Revoke stay
+                                </Button>
+                              )}
+                            </div>
+                          </li>
+                        ) : (
+                          <li key={row.key} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0 text-sm">
                             <span className="text-slate-700">
-                              {inv.guest_name || inv.guest_email || '—'} · {inv.status}
-                              {inv.stay_start_date && inv.stay_end_date && (
-                                <span className="text-slate-500 text-xs block"> {formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
+                              {row.inv.guest_name || row.inv.guest_email || '—'} · {row.inv.status}
+                              {row.inv.stay_start_date && row.inv.stay_end_date && (
+                                <span className="text-slate-500 text-xs block"> {formatDate(row.inv.stay_start_date)} – {formatDate(row.inv.stay_end_date)}</span>
                               )}
                             </span>
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              {(() => {
+                                const sigDoc = tenantSignedAgreementForInviteCode(row.inv.invitation_code, signedDocs);
+                                return sigDoc ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="rounded-lg text-xs h-8 px-3"
+                                    onClick={() => openTenantGuestSignedAgreementForSignature(sigDoc.signature_id)}
+                                  >
+                                    View agreement
+                                  </Button>
+                                ) : null;
+                              })()}
                               <Button
                                 type="button"
                                 variant="outline"
@@ -1685,7 +1870,7 @@ const TenantDashboard: React.FC<{
                                 onClick={async (e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  const url = `${APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inv.invitation_code}`;
+                                  const url = `${APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${row.inv.invitation_code}`;
                                   const ok = await copyToClipboard(url);
                                   if (ok) notify('success', 'Invitation link copied.');
                                   else notify('error', 'Could not copy.');
@@ -1693,42 +1878,58 @@ const TenantDashboard: React.FC<{
                               >
                                 Copy link
                               </Button>
-                              <Button variant="outline" className="rounded-lg text-xs h-8 px-3" onClick={async () => { try { await dashboardApi.cancelInvitation(inv.id); notify('success', 'Invitation cancelled.'); loadData(); window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT)); } catch (e) { notify('error', (e as Error)?.message ?? 'Failed to cancel.'); } }}>Cancel</Button>
+                              <Button
+                                variant="outline"
+                                className="rounded-lg text-xs h-8 px-3 text-red-600 border-red-200 hover:bg-red-50"
+                                onClick={async () => {
+                                  try {
+                                    await dashboardApi.cancelInvitation(row.inv.id);
+                                    notify('success', 'Invitation revoked.');
+                                    loadData();
+                                    window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
+                                  } catch (e) {
+                                    notify('error', (e as Error)?.message ?? 'Failed to revoke.');
+                                  }
+                                }}
+                              >
+                                Revoke
+                              </Button>
                             </div>
                           </li>
-                        ))}
+                        )
+                      )}
                     </ul>
                   </div>
                 )}
-                {guestHistory.filter((h) => !h.checked_out_at).length > 0 && (
+                {unitDetailGuestAuthBundle.ended.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Accepted / ongoing stays</h4>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Ended</h4>
                     <ul className="space-y-2">
-                      {guestHistory
-                        .filter((h) => !h.checked_out_at)
-                        .map((h) => (
-                          <li key={h.stay_id} className="py-2 border-b border-slate-100 last:border-0 text-sm">
+                      {unitDetailGuestAuthBundle.ended.map((h) => (
+                        <li key={h.stay_id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0 text-sm">
+                          <div>
                             <span className="font-medium text-slate-900">{h.guest_name}</span>
                             <span className="text-slate-500"> · {formatDate(h.stay_start_date)} – {formatDate(h.stay_end_date)}</span>
-                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700">Accepted</span>
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                )}
-                {guestHistory.filter((h) => h.checked_out_at).length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Completed stays</h4>
-                    <ul className="space-y-2">
-                      {guestHistory
-                        .filter((h) => h.checked_out_at)
-                        .map((h) => (
-                          <li key={h.stay_id} className="py-2 border-b border-slate-100 last:border-0 text-sm">
-                            <span className="font-medium text-slate-900">{h.guest_name}</span>
-                            <span className="text-slate-500"> · {formatDate(h.stay_start_date)} – {formatDate(h.stay_end_date)}</span>
-                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">Checked out</span>
-                          </li>
-                        ))}
+                            {h.revoked_at ? (
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800">Revoked</span>
+                            ) : h.cancelled_at ? (
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">Cancelled</span>
+                            ) : (
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">Checked out</span>
+                            )}
+                          </div>
+                          {!h.invitation_only && h.stay_id > 0 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="text-xs h-8 px-3 shrink-0"
+                              onClick={() => openTenantGuestSignedAgreementForStay(h.stay_id)}
+                            >
+                              View agreement
+                            </Button>
+                          )}
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 )}
@@ -1737,7 +1938,7 @@ const TenantDashboard: React.FC<{
           )}
 
           <div className="grid lg:grid-cols-3 gap-6">
-            {/* Left: Presence (here/away) + Invite guest + Guest history */}
+            {/* Left: Presence (here/away) + Invite guest */}
             <div className="lg:col-span-2 space-y-6">
               {/* Presence - same UI as Guest: here/away for this property (tenant keeps this) */}
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1776,98 +1977,30 @@ const TenantDashboard: React.FC<{
                   Invite guest to this property
                 </Button>
               </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900 mb-4">Guest history</h3>
-                <p className="text-sm text-slate-500 mb-3">Guests you invited and their stays.</p>
-                {guestHistory.length === 0 ? (
-                  <p className="text-sm text-slate-500 py-2">No guest stays yet. Invite a guest to see their stays here.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {guestHistory.map((h) => (
-                      <li key={h.stay_id} className="py-2 border-b border-slate-100 last:border-0 text-sm">
-                        <span className="font-medium text-slate-900">{h.guest_name}</span>
-                        <span className="text-slate-500"> · {h.property_name}</span>
-                        <span className="text-slate-500 text-xs block sm:inline sm:ml-1">
-                          {formatDate(h.stay_start_date)} – {formatDate(h.stay_end_date)}
-                          {h.checked_out_at ? ' (checked out)' : ''}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
             </div>
 
-            {/* Right: Your invitations + Need help (same as Guest) */}
+            {/* Right: Need help + applicable law */}
             <div className="space-y-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900 mb-3">Your invitations</h3>
-                <p className="text-sm text-slate-500 mb-3">Manage guest invitations you created.</p>
-                {invitations.length === 0 ? (
-                  <div className="py-2 space-y-3">
-                    <p className="text-sm text-slate-500">No invitations yet.</p>
-                    <Button variant="primary" className="rounded-lg font-medium" onClick={() => setInviteModalOpen(true)}>
-                      Invite guest to this property
-                    </Button>
-                  </div>
-                ) : (
-                  <ul className="space-y-2">
-                    {invitations.map((inv) => {
-                      const inviteUrl = `${APP_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')}${typeof window !== 'undefined' ? window.location.pathname : ''}#invite/${inv.invitation_code}`;
-                      return (
-                        <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-100 last:border-0">
-                          <span className="text-sm text-slate-700">
-                            {inv.guest_name || inv.guest_email || '—'} · {inv.status}
-                            {inv.stay_start_date && inv.stay_end_date && (
-                              <span className="text-slate-500 text-xs block"> {formatDate(inv.stay_start_date)} – {formatDate(inv.stay_end_date)}</span>
-                            )}
-                          </span>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="rounded-lg text-xs h-8 px-3"
-                              onClick={async (e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const ok = await copyToClipboard(inviteUrl);
-                                if (ok) notify('success', 'Invitation link copied to clipboard.');
-                                else notify('error', 'Could not copy. Copy the link manually.');
-                              }}
-                            >
-                              Copy link
-                            </Button>
-                            {(inv.status === 'pending' || inv.status === 'ongoing') && (
-                              <Button
-                                variant="outline"
-                                className="rounded-lg text-xs h-8 px-3"
-                                onClick={async () => {
-                                  try {
-                                    await dashboardApi.cancelInvitation(inv.id);
-                                    notify('success', 'Invitation cancelled.');
-                                    loadData();
-                                    window.dispatchEvent(new CustomEvent(DASHBOARD_ALERTS_REFRESH_EVENT));
-                                  } catch (e) {
-                                    notify('error', (e as Error)?.message ?? 'Failed to cancel.');
-                                  }
-                                }}
-                              >
-                                Cancel
-                              </Button>
-                            )}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h4 className="font-semibold text-slate-900 mb-3">Need help?</h4>
+                <p className="text-xs text-slate-600 mb-3">
+                  Contact us at{' '}
+                  <a href={supportMailtoHref()} className="text-[#6B90F2] font-medium hover:underline break-all">
+                    {SUPPORT_EMAIL}
+                  </a>
+                </p>
                 <div className="flex flex-col gap-2">
                   <Button type="button" variant="outline" className="w-full justify-center h-10 rounded-lg text-sm font-medium">Message host</Button>
-                  <Button type="button" variant="outline" className="w-full justify-center h-10 rounded-lg text-sm font-medium">Contact support</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-center h-10 rounded-lg text-sm font-medium"
+                    onClick={() => {
+                      window.location.href = supportMailtoHref();
+                    }}
+                  >
+                    Contact support
+                  </Button>
                 </div>
               </div>
               {/* Applicable law from Jurisdiction SOT (same as guest dashboard and live property page) */}
@@ -1902,7 +2035,6 @@ const TenantDashboard: React.FC<{
               </div>
             </div>
           </div>
-
         </div>
       )}
         </div>
@@ -2221,6 +2353,44 @@ const TenantDashboard: React.FC<{
           setGeneratedInviteLink(link);
         }}
       />
+
+      <Modal
+        open={!!revokeConfirmStay}
+        title="Revoke guest stay authorization"
+        onClose={() => !revokeLoading && setRevokeConfirmStay(null)}
+        disableBackdropClose={revokeLoading}
+        className="max-w-md"
+      >
+        <div className="p-6 space-y-4">
+          <p className="text-slate-600 text-sm">
+            Revoking <span className="font-semibold text-slate-900">{revokeConfirmStay?.guest_name}</span> will end their authorization and send a 12-hour vacate notice (same as when a property owner revokes a stay). Proceed?
+          </p>
+          <div className="flex flex-wrap gap-3 justify-end">
+            <Button variant="outline" onClick={() => setRevokeConfirmStay(null)} disabled={revokeLoading} className="rounded-lg">
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleTenantRevokeConfirm} disabled={revokeLoading} className="rounded-lg">
+              {revokeLoading ? 'Revoking…' : 'Revoke stay'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!revokeSuccessGuest}
+        title="Stay revoked"
+        onClose={() => setRevokeSuccessGuest(null)}
+        className="max-w-md"
+      >
+        <div className="p-6 space-y-4">
+          <p className="text-slate-600 text-sm">
+            Stay authorization for <span className="font-semibold text-slate-900">{revokeSuccessGuest}</span> has been revoked. They must vacate within 12 hours. A confirmation is in your dashboard notifications.
+          </p>
+          <Button className="w-full rounded-lg" onClick={() => setRevokeSuccessGuest(null)}>
+            Done
+          </Button>
+        </div>
+      </Modal>
 
       {generatedInviteLink && (
         <Modal

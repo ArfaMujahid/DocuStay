@@ -373,8 +373,10 @@ def send_vacate_12h_notice(
     stay_end_date: str = "",
     revoked_at: str = "",
     invite_code: str = "",
+    revoker: str = "owner",
 ) -> bool:
-    """Email to guest when owner revokes stay (Kill Switch): must vacate within 12 hours. Includes authorization record details and link to view/print signed agreement."""
+    """Email to guest when stay is revoked (Kill Switch): must vacate within 12 hours.
+    revoker: 'owner' (property owner) or 'host' (tenant who invited the guest)."""
     subject = "[DocuStay] Urgent: You must vacate the property within 12 hours"
     record_url = _verify_record_url(invite_code, property_address) if invite_code else ""
     record_block = render_authorization_record_block(
@@ -386,9 +388,14 @@ def send_vacate_12h_notice(
         revoked_at=revoked_at,
     )
     view_link = render_view_record_link(record_url) if record_url else ""
+    revoker_phrase = (
+        "your host (the tenant who invited you)"
+        if (revoker or "").strip().lower() == "host"
+        else "the property owner"
+    )
     inner = f"""
     <p style="margin: 0 0 16px;">Hello {guest_name},</p>
-    <p style="margin: 0 0 16px;">Your stay authorization at <strong>{property_name}</strong> has been revoked by the property owner.</p>
+    <p style="margin: 0 0 16px;">Your stay authorization at <strong>{property_name}</strong> has been revoked by {revoker_phrase}.</p>
     <p style="margin: 0 0 16px;"><strong>You must vacate the property within 12 hours.</strong></p>
     <p style="margin: 0 0 16px;"><strong>Vacate by:</strong> {vacate_by_iso}</p>
     {record_block}
@@ -396,7 +403,7 @@ def send_vacate_12h_notice(
     <p style="margin: 0 0 16px;">Please remove all belongings and complete checkout by this time to avoid further action.</p>
     """
     html = wrap_email_body(inner)
-    text = f"Hello {guest_name}, your stay at {property_name} has been revoked. You must vacate within 12 hours. Vacate by: {vacate_by_iso}. "
+    text = f"Hello {guest_name}, your stay at {property_name} has been revoked by {revoker_phrase}. You must vacate within 12 hours. Vacate by: {vacate_by_iso}. "
     if record_url:
         text += f"View your record and signed agreement: {record_url} "
     text += "— DocuStay"

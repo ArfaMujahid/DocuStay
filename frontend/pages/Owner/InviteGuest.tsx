@@ -5,6 +5,7 @@ import { invitationsApi, propertiesApi, APP_ORIGIN } from '../../services/api';
 import { UserSession } from '../../types';
 import { copyToClipboard } from '../../utils/clipboard';
 import { toUserFriendlyInvitationError } from '../../utils/invitationErrors';
+import { isValidInviteEmailFormat } from '../../utils/emailValidation';
 
 const InviteGuest: React.FC<{ user: UserSession | null, navigate: (v: string) => void, setLoading: (l: boolean) => void, notify: (t: 'success' | 'error', m: string) => void }> = ({ user, navigate, setLoading, notify }) => {
   const [formData, setFormData] = useState({ guest_name: '', guest_email: '', checkin_date: '', checkout_date: '' });
@@ -31,8 +32,14 @@ const InviteGuest: React.FC<{ user: UserSession | null, navigate: (v: string) =>
     }
     setLoading(true);
     try {
-      if (!(formData.guest_email || '').trim()) {
+      const guestEmailTrim = (formData.guest_email || '').trim();
+      if (!guestEmailTrim) {
         notify('error', 'Guest email is required.');
+        setLoading(false);
+        return;
+      }
+      if (!isValidInviteEmailFormat(guestEmailTrim)) {
+        notify('error', 'Please enter a valid email address.');
         setLoading(false);
         return;
       }
@@ -49,7 +56,7 @@ const InviteGuest: React.FC<{ user: UserSession | null, navigate: (v: string) =>
         owner_id: user?.user_id ?? '',
         property_id: propertyId ?? undefined,
         guest_name: formData.guest_name,
-        guest_email: formData.guest_email.trim(),
+        guest_email: guestEmailTrim,
         checkin_date: formData.checkin_date,
         checkout_date: formData.checkout_date,
       });
@@ -134,7 +141,10 @@ const InviteGuest: React.FC<{ user: UserSession | null, navigate: (v: string) =>
 
               <div className="space-y-4">
                 <Input label="Guest name" name="guest_name" value={formData.guest_name} onChange={e => setFormData({ ...formData, guest_name: e.target.value })} placeholder="Full name of your guest" />
-                <Input label="Guest email" name="guest_email" type="email" value={formData.guest_email} onChange={e => setFormData({ ...formData, guest_email: e.target.value })} placeholder="email@example.com" required />
+                <div>
+                  <Input label="Guest email (required)" name="guest_email" type="email" value={formData.guest_email} onChange={e => setFormData({ ...formData, guest_email: e.target.value })} placeholder="email@example.com" required />
+                  <p className="text-xs text-slate-500 mt-1.5">Only this email can sign up or sign in to accept the invitation.</p>
+                </div>
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">

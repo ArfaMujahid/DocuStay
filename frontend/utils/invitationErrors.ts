@@ -83,6 +83,14 @@ export function toUserFriendlyInvitationError(apiMessage: string | undefined | n
     return orig.length > 0 && orig.length <= 200 ? orig : "Guest authorization dates must fall within your stay.";
   }
 
+  // One email = one account type (registration)
+  if (
+    raw.includes("each email can only be used for one account type") ||
+    raw.includes("registration is already in progress for this email")
+  ) {
+    return orig.length > 0 && orig.length <= 600 ? orig : "This email can't be used for this signup. Sign in with your existing account or use a different email.";
+  }
+
   // Pydantic/validation (field required, type errors, etc.)
   if (raw.includes("field required") || raw.includes("value error") || raw.includes("input should be")) {
     return "Please fill in all required fields and try again.";

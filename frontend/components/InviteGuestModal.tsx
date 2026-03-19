@@ -4,6 +4,7 @@ import { invitationsApi, propertiesApi, dashboardApi, APP_ORIGIN } from '../serv
 import { copyToClipboard } from '../utils/clipboard';
 import { getTodayLocal } from '../utils/dateUtils';
 import { toUserFriendlyInvitationError } from '../utils/invitationErrors';
+import { isValidInviteEmailFormat } from '../utils/emailValidation';
 import type { UserSession } from '../types';
 
 interface InviteGuestModalProps {
@@ -190,8 +191,13 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
       setFormError('Please select which unit to invite the guest to.');
       return;
     }
-    if (!(formData.guest_email || '').trim()) {
+    const guestEmailTrim = (formData.guest_email || '').trim();
+    if (!guestEmailTrim) {
       setFormError('Guest email is required.');
+      return;
+    }
+    if (!isValidInviteEmailFormat(guestEmailTrim)) {
+      setFormError('Please enter a valid email address.');
       return;
     }
     if (!formData.checkin_date || !formData.checkout_date) {
@@ -228,7 +234,7 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
         ? await dashboardApi.tenantCreateInvitation({
             unit_id: effectiveUnitId as number,
             guest_name: formData.guest_name,
-            guest_email: formData.guest_email.trim(),
+            guest_email: guestEmailTrim,
             checkin_date: formData.checkin_date,
             checkout_date: formData.checkout_date,
           })
@@ -237,7 +243,7 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
             property_id: unitId == null ? (propertyId ?? undefined) : undefined,
             unit_id: effectiveUnitId ?? undefined,
             guest_name: formData.guest_name,
-            guest_email: formData.guest_email.trim(),
+            guest_email: guestEmailTrim,
             checkin_date: formData.checkin_date,
             checkout_date: formData.checkout_date,
           });
@@ -369,15 +375,20 @@ export const InviteGuestModal: React.FC<InviteGuestModalProps> = ({
               onChange={(e) => { setFormError(null); setFormData({ ...formData, guest_name: e.target.value }); }}
               placeholder="Full name of your guest"
             />
-            <Input
-              label="Guest email"
-              name="guest_email"
-              type="email"
-              value={formData.guest_email}
-              onChange={(e) => { setFormError(null); setFormData({ ...formData, guest_email: e.target.value }); }}
-              placeholder="email@example.com"
-              required
-            />
+            <div>
+              <Input
+                label="Guest email (required)"
+                name="guest_email"
+                type="email"
+                value={formData.guest_email}
+                onChange={(e) => { setFormError(null); setFormData({ ...formData, guest_email: e.target.value }); }}
+                placeholder="email@example.com"
+                required
+              />
+              <p className="text-xs text-slate-500 mt-1.5">
+                Only this email can sign up or sign in to accept the invitation.
+              </p>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <Input

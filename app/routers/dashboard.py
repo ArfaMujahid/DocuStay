@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.stay import Stay
@@ -33,6 +33,7 @@ from app.services.event_ledger import (
     TENANT_ALLOWED_ACTIONS,
     GUEST_ALLOWED_ACTIONS,
     ACTION_PROPERTY_DELETED,
+    ACTION_PROPERTY_UPDATED,
     ACTION_BILLING_INVOICE_PAID,
     ACTION_BILLING_INVOICE_CREATED,
     ACTION_GUEST_INVITE_CANCELLED,
@@ -91,14 +92,29 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 class TenantGuestInvitationCreate(BaseModel):
     unit_id: int = Field(..., gt=0, description="Unit ID (required)")
     guest_name: str = Field("", description="Guest full name")
-    guest_email: str = Field(..., min_length=1, description="Guest email (required)")
+    guest_email: EmailStr = Field(..., description="Guest email (required); only this address can accept the invite")
     checkin_date: str = Field("", description="Start date (YYYY-MM-DD)")
     checkout_date: str = Field("", description="End date (YYYY-MM-DD)")
+
+    @field_validator("guest_email", mode="before")
+    @classmethod
+    def _strip_tenant_guest_email(cls, v: object) -> str:
+        if v is None:
+            raise ValueError("Guest email is required")
+        s = str(v).strip()
+        if not s:
+            raise ValueError("Guest email is required")
+        return s
 
 
 class BulkShieldModeRequest(BaseModel):
     property_ids: list[int] = Field(..., description="Property IDs to update")
     shield_mode_enabled: bool = Field(..., description="True to turn Shield ON, False to turn OFF")
+
+
+class TenantDeadMansSwitchRequest(BaseModel):
+    unit_id: int = Field(..., gt=0, description="Assigned unit ID")
+    dead_mans_switch_enabled: bool = Field(..., description="True to enable, False to disable")
 
 
 # Alert types each role is allowed to see (only role-relevant alerts are returned).
@@ -346,8 +362,28 @@ def guest_add_pending_invite(
         db.commit()
         raise HTTPException(status_code=400, detail="Invalid or expired invitation code")
 
+    inv_kind = (getattr(inv, "invitation_kind", None) or "guest").strip().lower()
     # Reject if invitation was sent to a different email address
     inv_guest_email = (getattr(inv, "guest_email", None) or "").strip().lower()
+    if inv_kind == "guest" and not inv_guest_email:
+        create_log(
+            db,
+            CATEGORY_FAILED_ATTEMPT,
+            "Add pending invite: guest invitation missing guest_email",
+            f"User {current_user.email} attempted to add guest invitation {code} with no guest_email on record.",
+            property_id=inv.property_id,
+            invitation_id=inv.id,
+            actor_user_id=current_user.id,
+            actor_email=current_user.email,
+            ip_address=request.client.host if request.client else None,
+            user_agent=(request.headers.get("user-agent") or "").strip() or None,
+            meta={"invitation_code": code},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail="This invitation link is incomplete. Ask your host to send a new invitation that includes your email address.",
+        )
     if inv_guest_email and (current_user.email or "").strip().lower() != inv_guest_email:
         create_log(
             db,
@@ -1208,19 +1244,47 @@ def manager_stays(
     return out
 
 
-@router.post("/owner/stays/{stay_id}/revoke")
-def revoke_stay(
+def _tenant_assert_can_revoke_guest_stay(db: Session, tenant_user: User, stay: Stay) -> None:
+    """Tenant may revoke only tenant-lane stays they created, while assigned to the stay's unit."""
+    if not is_tenant_lane_stay(db, stay):
+        raise HTTPException(status_code=403, detail="You can only revoke stays for guests you invited.")
+    inv_id = getattr(stay, "invitation_id", None)
+    if not inv_id:
+        raise HTTPException(status_code=400, detail="Stay is not linked to an invitation.")
+    inv = db.query(Invitation).filter(Invitation.id == inv_id).first()
+    if not inv or inv.invited_by_user_id != tenant_user.id:
+        raise HTTPException(status_code=403, detail="You can only revoke stays for guests you invited.")
+    today = date.today()
+    q = db.query(TenantAssignment).filter(
+        TenantAssignment.user_id == tenant_user.id,
+        (TenantAssignment.end_date.is_(None)) | (TenantAssignment.end_date >= today),
+    )
+    if stay.unit_id:
+        q = q.filter(TenantAssignment.unit_id == stay.unit_id)
+    else:
+        uids = [r[0] for r in db.query(Unit.id).filter(Unit.property_id == stay.property_id).all()]
+        if not uids:
+            raise HTTPException(status_code=403, detail="You do not have access to revoke this stay.")
+        q = q.filter(TenantAssignment.unit_id.in_(uids))
+    if not q.first():
+        raise HTTPException(status_code=403, detail="You do not have access to revoke this stay.")
+
+
+def _perform_stay_revoke(
+    db: Session,
     request: Request,
-    stay_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_owner_onboarding_complete),
-):
-    """Revoke a stay (Kill Switch): set revoked_at, guest must vacate in 12 hours. Owner cannot revoke tenant-invited guest stays (tenant lane)."""
-    stay = db.query(Stay).filter(Stay.id == stay_id, Stay.owner_id == current_user.id).first()
-    if not stay:
-        raise HTTPException(status_code=404, detail="Stay not found")
-    if is_tenant_lane_stay(db, stay):
-        raise HTTPException(status_code=403, detail="Tenant-invited guest stays are private to the tenant. Only the tenant who invited can revoke.")
+    stay: Stay,
+    actor_user: User,
+    *,
+    guest_revoker: str,
+    notify_owner_and_managers: bool,
+    actor_label: str,
+) -> dict:
+    """
+    Kill switch: revoked_at + invitation REVOKED, 12h vacate, email, ledger, dashboard alerts.
+    guest_revoker: 'owner' | 'host' (wording for guest email/in-app).
+    actor_label: short description for audit log (e.g. 'owner', 'tenant').
+    """
     if stay.revoked_at:
         return {"status": "success", "message": "Stay was already revoked."}
     now = datetime.now(timezone.utc)
@@ -1239,12 +1303,15 @@ def revoke_stay(
     db.commit()
     ip = request.client.host if request.client else None
     ua = (request.headers.get("user-agent") or "").strip() or None
-    log_meta = {"vacate_by": vacate_by_iso}
+    log_meta = {"vacate_by": vacate_by_iso, "revoked_by": guest_revoker}
     if invite_code and prev_token is not None:
         log_meta["invitation_code"] = invite_code
         log_meta["token_state_previous"] = prev_token
         log_meta["token_state_new"] = "REVOKED"
-    revoke_message = f"Stay {stay.id} revoked by owner. Guest must vacate by {vacate_by_iso}." + (f" Invite ID {invite_code} token_state → REVOKED." if invite_code else "")
+    revoke_message = (
+        f"Stay {stay.id} revoked by {actor_label}. Guest must vacate by {vacate_by_iso}."
+        + (f" Invite ID {invite_code} token_state → REVOKED." if invite_code else "")
+    )
     log_meta["message"] = revoke_message
     create_log(
         db,
@@ -1254,8 +1321,8 @@ def revoke_stay(
         property_id=stay.property_id,
         stay_id=stay.id,
         invitation_id=getattr(stay, "invitation_id", None),
-        actor_user_id=current_user.id,
-        actor_email=current_user.email,
+        actor_user_id=actor_user.id,
+        actor_email=actor_user.email,
         ip_address=ip,
         user_agent=ua,
         meta=log_meta,
@@ -1268,7 +1335,7 @@ def revoke_stay(
         property_id=stay.property_id,
         stay_id=stay.id,
         invitation_id=getattr(stay, "invitation_id", None),
-        actor_user_id=current_user.id,
+        actor_user_id=actor_user.id,
         meta=log_meta,
         ip_address=ip,
         user_agent=ua,
@@ -1293,22 +1360,104 @@ def revoke_stay(
             stay_end_date=stay.stay_end_date.isoformat() if stay.stay_end_date else "",
             revoked_at=now.strftime("%Y-%m-%d %H:%M UTC"),
             invite_code=invite_code or "",
+            revoker=guest_revoker,
         )
+    guest_alert_body = (
+        f"Your stay at {property_name} has been revoked by your host. You must vacate by {vacate_by_iso}. Your utility access (USAT token) has been revoked."
+        if guest_revoker == "host"
+        else f"Your stay at {property_name} has been revoked by the property owner. You must vacate by {vacate_by_iso}. Your utility access (USAT token) has been revoked."
+    )
     create_alert_for_user(
-        db, stay.guest_id, "revoked",
+        db,
+        stay.guest_id,
+        "revoked",
         "Stay authorization revoked",
-        f"Your stay at {property_name} has been revoked by the property owner. You must vacate by {vacate_by_iso}. Your utility access (USAT token) has been revoked.",
-        severity="urgent", property_id=stay.property_id, stay_id=stay.id,
-        meta={"vacate_by": vacate_by_iso, "revoked_at": now.strftime("%Y-%m-%d %H:%M UTC")},
+        guest_alert_body,
+        severity="urgent",
+        property_id=stay.property_id,
+        stay_id=stay.id,
+        meta={
+            "vacate_by": vacate_by_iso,
+            "revoked_at": now.strftime("%Y-%m-%d %H:%M UTC"),
+            "revoked_by": guest_revoker,
+        },
     )
-    create_alert_for_owner_and_managers(
-        db, stay.property_id, "revoked",
-        "Stay revoked",
-        f"You revoked stay authorization for {guest_name} at {property_name}. Guest must vacate by {vacate_by_iso}.",
-        severity="info", stay_id=stay.id, meta={"vacate_by": vacate_by_iso, "guest_name": guest_name},
-    )
+    if notify_owner_and_managers:
+        create_alert_for_owner_and_managers(
+            db,
+            stay.property_id,
+            "revoked",
+            "Stay revoked",
+            f"You revoked stay authorization for {guest_name} at {property_name}. Guest must vacate by {vacate_by_iso}.",
+            severity="info",
+            stay_id=stay.id,
+            meta={"vacate_by": vacate_by_iso, "guest_name": guest_name},
+        )
+    else:
+        create_alert_for_user(
+            db,
+            actor_user.id,
+            "revoked",
+            "Guest stay revoked",
+            f"You revoked stay authorization for {guest_name} at {property_name}. Guest must vacate by {vacate_by_iso}.",
+            severity="info",
+            property_id=stay.property_id,
+            stay_id=stay.id,
+            meta={
+                "vacate_by": vacate_by_iso,
+                "guest_name": guest_name,
+                "revoked_by_tenant": True,
+            },
+        )
     db.commit()
     return {"status": "success", "message": "Stay revoked. Guest must vacate within 12 hours. Email sent."}
+
+
+@router.post("/owner/stays/{stay_id}/revoke")
+def revoke_stay(
+    request: Request,
+    stay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner_onboarding_complete),
+):
+    """Revoke a stay (Kill Switch): set revoked_at, guest must vacate in 12 hours. Owner cannot revoke tenant-invited guest stays (tenant lane)."""
+    stay = db.query(Stay).filter(Stay.id == stay_id, Stay.owner_id == current_user.id).first()
+    if not stay:
+        raise HTTPException(status_code=404, detail="Stay not found")
+    if is_tenant_lane_stay(db, stay):
+        raise HTTPException(status_code=403, detail="Tenant-invited guest stays are private to the tenant. Only the tenant who invited can revoke.")
+    return _perform_stay_revoke(
+        db,
+        request,
+        stay,
+        current_user,
+        guest_revoker="owner",
+        notify_owner_and_managers=True,
+        actor_label="owner",
+    )
+
+
+@router.post("/tenant/stays/{stay_id}/revoke")
+def tenant_revoke_guest_stay(
+    request: Request,
+    stay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_tenant),
+):
+    """Revoke a guest stay the tenant invited (same kill switch as owner). Tenant-lane only; does not notify owner/managers (privacy)."""
+    stay = db.query(Stay).filter(Stay.id == stay_id).first()
+    if not stay:
+        raise HTTPException(status_code=404, detail="Stay not found")
+    _tenant_assert_can_revoke_guest_stay(db, current_user, stay)
+    return _perform_stay_revoke(
+        db,
+        request,
+        stay,
+        current_user,
+        guest_revoker="host",
+        notify_owner_and_managers=False,
+        actor_label="tenant",
+    )
 
 
 @router.post("/owner/stays/{stay_id}/initiate-removal")
@@ -1521,6 +1670,23 @@ def confirm_occupancy_status(
                 send_shield_mode_turned_off_notification(owner_email, manager_emails, property_name, turned_off_by="system (unit vacated)")
             except Exception:
                 pass
+            addr = _format_property_address_for_log(prop)
+            create_ledger_event(
+                db,
+                ACTION_SHIELD_MODE_OFF,
+                target_object_type="Property",
+                target_object_id=prop.id,
+                property_id=prop.id,
+                stay_id=stay.id,
+                actor_user_id=current_user.id,
+                meta={
+                    "property_name": addr,
+                    "message": f"Shield Mode turned off for {addr} (unit vacated).",
+                    "reason": "unit_vacated",
+                },
+                ip_address=ip,
+                user_agent=ua,
+            )
         if prop.usat_token_state == USAT_TOKEN_RELEASED:
             prop.usat_token_state = USAT_TOKEN_STAGED
             prop.usat_token_released_at = None
@@ -1883,10 +2049,12 @@ def guest_check_in(
     stay.checked_in_at = now
     db.add(stay)
     prop = db.query(Property).filter(Property.id == stay.property_id).first()
+    shield_turned_off_on_checkin = False
     if prop:
         prop.occupancy_status = OccupancyStatus.occupied.value
         if getattr(prop, "shield_mode_enabled", 0) == 1:
             prop.shield_mode_enabled = 0
+            shield_turned_off_on_checkin = True
             owner_profile = db.query(OwnerProfile).filter(OwnerProfile.id == prop.owner_profile_id).first()
             owner_user = db.query(User).filter(User.id == owner_profile.user_id).first() if owner_profile else None
             owner_email = (owner_user.email or "").strip() if owner_user else ""
@@ -1943,6 +2111,24 @@ def guest_check_in(
             "guest_id": stay.guest_id,
         },
     )
+    if shield_turned_off_on_checkin and prop:
+        addr = _format_property_address_for_log(prop)
+        create_ledger_event(
+            db,
+            ACTION_SHIELD_MODE_OFF,
+            target_object_type="Property",
+            target_object_id=prop.id,
+            property_id=prop.id,
+            stay_id=stay.id,
+            actor_user_id=current_user.id,
+            meta={
+                "property_name": addr,
+                "message": f"Shield Mode turned off for {addr} (guest checked in).",
+                "reason": "guest_checked_in",
+            },
+            ip_address=ip,
+            user_agent=ua,
+        )
     db.commit()
 
     # Dev/test only: turn DMS on 2 min after check-in (from invitation preference). In prod, DMS turns on 48h before lease end (stay_timer).
@@ -2031,6 +2217,40 @@ def guest_check_in(
     return {"status": "success", "message": "You are checked in. Your stay is now active."}
 
 
+def _agreement_signature_pdf_file_response(db: Session, sig: AgreementSignature) -> Response:
+    """Build PDF Response for a guest agreement signature (Dropbox, stored bytes, or generated from HTML)."""
+    if getattr(sig, "dropbox_sign_request_id", None):
+        pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
+        if pdf_bytes:
+            sig.signed_pdf_bytes = pdf_bytes
+            db.commit()
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
+            )
+        raise HTTPException(
+            status_code=404,
+            detail="Document not yet signed in Dropbox. Please complete signing in the link we sent you.",
+        )
+    if sig.signed_pdf_bytes:
+        return Response(
+            content=sig.signed_pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
+        )
+    date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
+    content = fill_guest_signature_in_content(sig.document_content, sig.typed_signature, date_str, getattr(sig, "ip_address", None))
+    pdf_bytes = agreement_content_to_pdf(sig.document_title, content)
+    sig.signed_pdf_bytes = pdf_bytes
+    db.commit()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
+    )
+
+
 @router.get("/guest/stays/{stay_id}/signed-agreement-pdf")
 def guest_stay_signed_agreement_pdf(
     stay_id: int,
@@ -2064,38 +2284,56 @@ def guest_stay_signed_agreement_pdf(
     )
     if not sig:
         raise HTTPException(status_code=404, detail="No signed agreement found for this stay.")
-    # When this stay was signed via Dropbox, always prefer the PDF from Dropbox (overwrites any old self-generated bytes)
-    if getattr(sig, "dropbox_sign_request_id", None):
-        pdf_bytes = get_signed_pdf(sig.dropbox_sign_request_id)
-        if pdf_bytes:
-            sig.signed_pdf_bytes = pdf_bytes
-            db.commit()
-            return Response(
-                content=pdf_bytes,
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
-            )
-        raise HTTPException(
-            status_code=404,
-            detail="Document not yet signed in Dropbox. Please complete signing in the link we sent you.",
+    return _agreement_signature_pdf_file_response(db, sig)
+
+
+@router.get("/tenant/guest-stays/{stay_id}/signed-agreement-pdf")
+def tenant_invited_guest_stay_signed_agreement_pdf(
+    stay_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_tenant),
+):
+    """Signed guest agreement PDF for a stay the tenant created by inviting that guest (tenant lane)."""
+    stay = db.query(Stay).filter(Stay.id == stay_id).first()
+    if not stay or not stay.invitation_id:
+        raise HTTPException(status_code=404, detail="Stay not found")
+    inv = db.query(Invitation).filter(Invitation.id == stay.invitation_id).first()
+    if not inv or inv.invited_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only view agreements for guests you invited.")
+    if (getattr(inv, "invitation_kind", None) or "guest").strip().lower() != "guest":
+        raise HTTPException(status_code=403, detail="Not a guest invitation.")
+    sig = (
+        db.query(AgreementSignature)
+        .filter(
+            AgreementSignature.invitation_code == inv.invitation_code,
+            AgreementSignature.used_by_user_id == stay.guest_id,
         )
-    if sig.signed_pdf_bytes:
-        return Response(
-            content=sig.signed_pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
-        )
-    # Legacy: stay signed in-app (no Dropbox); generate from stored content
-    date_str = sig.signed_at.strftime("%Y-%m-%d") if sig.signed_at else ""
-    content = fill_guest_signature_in_content(sig.document_content, sig.typed_signature, date_str, getattr(sig, "ip_address", None))
-    pdf_bytes = agreement_content_to_pdf(sig.document_title, content)
-    sig.signed_pdf_bytes = pdf_bytes
-    db.commit()
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="DocuStay-Signed-{sig.invitation_code}.pdf"'},
+        .order_by(AgreementSignature.signed_at.desc())
+        .first()
     )
+    if not sig:
+        raise HTTPException(status_code=404, detail="No signed agreement found for this stay.")
+    return _agreement_signature_pdf_file_response(db, sig)
+
+
+@router.get("/tenant/guest-signatures/{signature_id}/signed-agreement-pdf")
+def tenant_invited_guest_signature_signed_agreement_pdf(
+    signature_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_tenant),
+):
+    """Signed agreement PDF by signature id when the tenant invited the guest (e.g. signed before stay row exists)."""
+    sig = db.query(AgreementSignature).filter(AgreementSignature.id == signature_id).first()
+    if not sig:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    inv = db.query(Invitation).filter(Invitation.invitation_code == sig.invitation_code).first()
+    if not inv or inv.invited_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only view agreements for guests you invited.")
+    if (getattr(inv, "invitation_kind", None) or "guest").strip().lower() != "guest":
+        raise HTTPException(status_code=403, detail="Not a guest invitation.")
+    if not sig.used_by_user_id:
+        raise HTTPException(status_code=404, detail="Agreement is not signed yet.")
+    return _agreement_signature_pdf_file_response(db, sig)
 
 
 @router.post("/guest/stays/{stay_id}/end")
@@ -2366,6 +2604,7 @@ def _tenant_unit_item(db: Session, ta: TenantAssignment, current_user: "User") -
             "jurisdiction_state_name": None, "jurisdiction_statutes": [],
             "removal_guest_text": None, "removal_tenant_text": None,
             "assigned_by_name": None, "accepted_by_name": (getattr(current_user, "full_name", None) or "").strip() or (current_user.email or ""),
+            "dead_mans_switch_enabled": True,
         }
     prop = db.query(Property).filter(Property.id == unit.property_id).first()
     address = ", ".join(filter(None, [prop.street, prop.city, prop.state])) if prop else ""
@@ -2409,6 +2648,21 @@ def _tenant_unit_item(db: Session, ta: TenantAssignment, current_user: "User") -
             removal_tenant_text = jinfo.removal_tenant_text
     assigned_by_name = get_actor_display_name(db, getattr(tenant_inv, "invited_by_user_id", None)) if tenant_inv else None
     accepted_by_name = (getattr(current_user, "full_name", None) or "").strip() or (current_user.email or "")
+    latest_tenant_guest_inv = (
+        db.query(Invitation)
+        .filter(
+            Invitation.unit_id == ta.unit_id,
+            Invitation.invitation_kind == "guest",
+            Invitation.invited_by_user_id == current_user.id,
+        )
+        .order_by(Invitation.created_at.desc())
+        .first()
+    )
+    dms_enabled = bool(
+        getattr(latest_tenant_guest_inv, "dead_mans_switch_enabled", None)
+        if latest_tenant_guest_inv is not None
+        else (getattr(tenant_inv, "dead_mans_switch_enabled", 1) if tenant_inv else 1)
+    )
     return {
         "unit": {"id": unit.id, "unit_label": unit.unit_label, "occupancy_status": unit.occupancy_status} if unit else None,
         "property": {"id": prop.id, "name": prop.name, "address": address} if prop else None,
@@ -2424,6 +2678,7 @@ def _tenant_unit_item(db: Session, ta: TenantAssignment, current_user: "User") -
         "removal_tenant_text": removal_tenant_text,
         "assigned_by_name": assigned_by_name,
         "accepted_by_name": accepted_by_name,
+        "dead_mans_switch_enabled": dms_enabled,
     }
 
 
@@ -2459,6 +2714,7 @@ def _tenant_unit_item_from_invitation(db: Session, inv: Invitation, current_user
         "pending_acceptance": True,
         "assigned_by_name": assigned_by_name,
         "accepted_by_name": accepted_by_name,
+        "dead_mans_switch_enabled": bool(getattr(inv, "dead_mans_switch_enabled", 1)),
     }
 
 
@@ -2513,6 +2769,114 @@ def tenant_unit(
                 units.append(item)
                 unit_ids_with_assignment.add(inv.unit_id)
     return {"units": units}
+
+
+@router.post("/tenant/dead-mans-switch")
+def tenant_set_dead_mans_switch(
+    request: Request,
+    data: TenantDeadMansSwitchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_tenant),
+):
+    """Tenant can toggle Dead Man's Switch preference for an assigned unit/property."""
+    unit_id = data.unit_id
+    if not can_perform_action(db, current_user, Action.INVITE_GUEST, unit_id=unit_id, mode="business"):
+        raise HTTPException(status_code=403, detail="You do not have access to change Dead Man's Switch for this unit.")
+    ta = (
+        db.query(TenantAssignment)
+        .filter(TenantAssignment.user_id == current_user.id, TenantAssignment.unit_id == unit_id)
+        .order_by(TenantAssignment.start_date.desc())
+        .first()
+    )
+    if not ta:
+        raise HTTPException(status_code=404, detail="No assignment found for this unit.")
+    unit = db.query(Unit).filter(Unit.id == unit_id).first()
+    prop = db.query(Property).filter(Property.id == unit.property_id).first() if unit else None
+    if not unit or not prop or getattr(prop, "deleted_at", None):
+        raise HTTPException(status_code=404, detail="Property or unit not found.")
+
+    new_val = 1 if data.dead_mans_switch_enabled else 0
+    updated_count = 0
+
+    # Persist preference on the tenant-assignment invitation (if exists).
+    user_email = (current_user.email or "").strip().lower()
+    tenant_inv = (
+        db.query(Invitation)
+        .filter(
+            Invitation.unit_id == unit_id,
+            Invitation.invitation_kind == "tenant",
+            func.lower(func.coalesce(Invitation.guest_email, "")) == user_email,
+        )
+        .order_by(Invitation.created_at.desc())
+        .first()
+    )
+    if tenant_inv and (getattr(tenant_inv, "dead_mans_switch_enabled", 1) or 0) != new_val:
+        tenant_inv.dead_mans_switch_enabled = new_val
+        db.add(tenant_inv)
+        updated_count += 1
+
+    # Also apply to active/pending guest invitations created by this tenant for this unit.
+    guest_invs = (
+        db.query(Invitation)
+        .filter(
+            Invitation.unit_id == unit_id,
+            Invitation.invitation_kind == "guest",
+            Invitation.invited_by_user_id == current_user.id,
+            Invitation.status.in_(["pending", "ongoing", "accepted"]),
+        )
+        .all()
+    )
+    for inv in guest_invs:
+        token_state = (getattr(inv, "token_state", None) or "STAGED").upper()
+        if token_state in ("CANCELLED", "REVOKED", "EXPIRED"):
+            continue
+        if (getattr(inv, "dead_mans_switch_enabled", 1) or 0) != new_val:
+            inv.dead_mans_switch_enabled = new_val
+            db.add(inv)
+            updated_count += 1
+
+    ip = request.client.host if request.client else None
+    ua = (request.headers.get("user-agent") or "").strip() or None
+    property_name = (prop.name or "").strip() or (f"{prop.city}, {prop.state}".strip(", ") if (prop.city or prop.state) else f"Property {prop.id}")
+    title = "Dead Man's Switch turned on" if new_val == 1 else "Dead Man's Switch turned off"
+    msg = f"Tenant turned {'on' if new_val == 1 else 'off'} Dead Man's Switch for {property_name} (unit {unit.unit_label})."
+    create_log(
+        db,
+        CATEGORY_DEAD_MANS_SWITCH,
+        title,
+        msg,
+        property_id=prop.id,
+        actor_user_id=current_user.id,
+        actor_email=current_user.email,
+        ip_address=ip,
+        user_agent=ua,
+        meta={"unit_id": unit_id, "dead_mans_switch_enabled": bool(new_val), "updated_count": updated_count},
+    )
+    # Use DMSDisabled action when turning off; keep status_change action when turning on.
+    create_ledger_event(
+        db,
+        ACTION_DMS_DISABLED if new_val == 0 else ACTION_PROPERTY_UPDATED,
+        target_object_type="Property",
+        target_object_id=prop.id,
+        property_id=prop.id,
+        unit_id=unit_id,
+        actor_user_id=current_user.id,
+        meta={
+            "property_name": property_name,
+            "unit_id": unit_id,
+            "dead_mans_switch_enabled": bool(new_val),
+            "message": msg,
+        },
+        ip_address=ip,
+        user_agent=ua,
+    )
+    db.commit()
+    return {
+        "status": "success",
+        "dead_mans_switch_enabled": bool(new_val),
+        "updated_count": updated_count,
+        "message": f"Dead Man's Switch turned {'on' if new_val == 1 else 'off'} for this property.",
+    }
 
 
 @router.post("/tenant/cancel-future-assignment")
@@ -2766,6 +3130,7 @@ def tenant_create_invitation(
         if not guest_email:
             raise HTTPException(status_code=400, detail="Guest email is required.")
         code = "INV-" + secrets.token_hex(4).upper()
+        dms_pref = int(getattr(tenant_inv, "dead_mans_switch_enabled", 1) or 0) if tenant_inv else 1
         inv = Invitation(
             invitation_code=code,
             owner_id=owner_user_id,
@@ -2782,7 +3147,7 @@ def tenant_create_invitation(
             status="pending",
             token_state="STAGED",
             invitation_kind="guest",
-            dead_mans_switch_enabled=1,
+            dead_mans_switch_enabled=dms_pref,
             dead_mans_switch_alert_email=1,
             dead_mans_switch_alert_sms=0,
             dead_mans_switch_alert_dashboard=1,
@@ -2988,24 +3353,15 @@ def tenant_signed_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_tenant),
 ):
-    """Return all signed agreements associated with this tenant (by used_by_user_id or email match)."""
-    sigs = (
-        db.query(AgreementSignature)
-        .filter(
-            (AgreementSignature.used_by_user_id == current_user.id)
-            | (AgreementSignature.guest_email == current_user.email)
-        )
-        .order_by(AgreementSignature.signed_at.desc())
-        .all()
-    )
-    out = []
-    for sig in sigs:
+    """Return signed agreements for this tenant: (1) agreements they signed as a guest, (2) agreements signed by guests they invited."""
+
+    def _row(sig: AgreementSignature, record_type: str) -> dict:
         inv = db.query(Invitation).filter(Invitation.invitation_code == sig.invitation_code).first()
         prop = db.query(Property).filter(Property.id == inv.property_id).first() if inv else None
         property_name = None
         if prop:
             property_name = (prop.name or "").strip() or ", ".join(filter(None, [prop.street, prop.city, prop.state])) or "Property"
-        out.append({
+        return {
             "signature_id": sig.id,
             "invitation_code": sig.invitation_code,
             "document_title": sig.document_title or "Agreement",
@@ -3015,7 +3371,52 @@ def tenant_signed_documents(
             "property_name": property_name,
             "stay_start_date": str(inv.stay_start_date) if inv else None,
             "stay_end_date": str(inv.stay_end_date) if inv else None,
-        })
+            "record_type": record_type,
+        }
+
+    self_sigs = (
+        db.query(AgreementSignature)
+        .filter(
+            (AgreementSignature.used_by_user_id == current_user.id)
+            | (AgreementSignature.guest_email == current_user.email)
+        )
+        .order_by(AgreementSignature.signed_at.desc())
+        .all()
+    )
+
+    tenant_guest_codes = [
+        row[0]
+        for row in db.query(Invitation.invitation_code)
+        .filter(
+            Invitation.invited_by_user_id == current_user.id,
+            Invitation.invitation_kind == "guest",
+        )
+        .all()
+        if row[0]
+    ]
+    guest_sigs: list[AgreementSignature] = []
+    if tenant_guest_codes:
+        guest_sigs = (
+            db.query(AgreementSignature)
+            .filter(AgreementSignature.invitation_code.in_(tenant_guest_codes))
+            .order_by(AgreementSignature.signed_at.desc())
+            .all()
+        )
+
+    seen: set[int] = set()
+    out: list[dict] = []
+    for sig in self_sigs:
+        if sig.id in seen:
+            continue
+        seen.add(sig.id)
+        out.append(_row(sig, "self"))
+    for sig in guest_sigs:
+        if sig.id in seen:
+            continue
+        seen.add(sig.id)
+        out.append(_row(sig, "guest_invited_by_you"))
+
+    out.sort(key=lambda r: r.get("signed_at") or "", reverse=True)
     return out
 
 
@@ -3059,9 +3460,14 @@ def tenant_property_verification(
                 poa_url = f"/public/live/{prop.live_slug}/poa"
 
     guest_agreements = []
+    # Tenant lane: only guest invitations this tenant created (not owner/manager invites).
     property_invitations = (
         db.query(Invitation)
-        .filter(Invitation.property_id == prop.id, Invitation.invitation_kind != "tenant")
+        .filter(
+            Invitation.property_id == prop.id,
+            Invitation.invitation_kind != "tenant",
+            Invitation.invited_by_user_id == current_user.id,
+        )
         .all()
     )
     inv_codes = [inv.invitation_code for inv in property_invitations]

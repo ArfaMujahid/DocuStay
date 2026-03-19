@@ -3,6 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button } from '../../components/UI';
 import { authApi } from '../../services/api';
 import { getOwnerSignupErrorFriendly } from '../../utils/ownerSignupErrors';
+import {
+  EMAIL_VERIFICATION_CHECK_SPAM_TOAST,
+  EMAIL_VERIFICATION_RESEND_TOAST,
+} from '../../utils/verificationMessages';
 
 interface Props {
   verification: {
@@ -24,6 +28,19 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  /** One toast per pending verification (sessionStorage survives refresh so we don't spam). */
+  useEffect(() => {
+    if (verification.type !== 'email') return;
+    try {
+      const key = `ds_verify_email_spam_hint_${verification.userId}`;
+      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch {
+      /* ignore storage errors */
+    }
+    notify('success', EMAIL_VERIFICATION_CHECK_SPAM_TOAST);
+  }, [verification.type, verification.userId, notify]);
 
   useEffect(() => {
     if (timer > 0) {
@@ -126,6 +143,12 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
         <p className="text-slate-600 mb-6 leading-relaxed">
           Enter the 6-digit verification code we sent to your <span className="text-slate-800 font-bold">{verification.type}</span>.
         </p>
+        {verification.type === 'email' && (
+          <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-6 text-left">
+            <strong className="font-semibold">Can&apos;t find the email?</strong> Check your{' '}
+            <span className="font-semibold">spam or junk</span> folder — verification messages often land there.
+          </p>
+        )}
 
         {inlineError && (
           <div className="mb-4 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm" role="alert">
@@ -162,7 +185,13 @@ const VerifyContact: React.FC<Props> = ({ verification, navigate, setLoading, no
                   onClick={async () => {
                     const res = await authApi.resendVerification(verification.userId);
                     setTimer(60);
-                    if (res.status === 'success') notify('success', res.message ?? 'New code sent. Check your email.');
+                    if (res.status === 'success')
+                      notify(
+                        'success',
+                        res.message && res.message.trim()
+                          ? `${res.message.trim()} ${EMAIL_VERIFICATION_RESEND_TOAST}`
+                          : EMAIL_VERIFICATION_RESEND_TOAST,
+                      );
                     else notify('error', res.message ?? 'Failed to resend.');
                   }}
                   className="text-blue-600 font-bold hover:text-blue-700 ml-1 transition-colors underline"
