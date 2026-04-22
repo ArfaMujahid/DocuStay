@@ -1,5 +1,0 @@
-Address,City,State,Zip,Property Name,Occupied,Tenant Name,Lease Start,Lease End,Tenant Email,Unit No
-100 Main St,Austin,TX,78701,Main Plaza,YES,Primary Renter,2025-01-15,2026-01-14,primary.renter@example.com,101
-100 Main St,Austin,TX,78701,Main Plaza,YES,Second Unit Tenant,2025-02-01,2026-01-31,,102
-200 Oak Lane,Portland,OR,97201,,YES,Alex NoEmail Tenant,2025-06-01,2026-05-31,,1
-300 Pine Rd,Denver,CO,80202,,NO,,,,,
