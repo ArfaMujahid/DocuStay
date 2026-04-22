@@ -1,0 +1,20 @@
+Address,Unit No,City,State,Zip,Occupied,Tenant Name,Lease Start,Lease End,Tenant 2 Name,Tenant 2 Email,Tenant 3 Name,Tenant 3 Email,Property Name,Property Type,Units,Bedrooms,Occupied Unit,Shield Mode,Is Primary Residence,Tax ID,APN
+3200 Harborside Lane,,Miami,FL,33139,NO,,,,,,,,Sunset Ridge Estate,house,,3,,NO,NO,FL-TAX-3200,12-345-678-000-3200
+3201 Coral Court,,Miami,FL,33139,NO,Demo Tenant,5/1/2026,4/30/2027,,,,,Bayview Cottage,house,,2,,NO,NO,FL-TAX-3201,12-345-678-000-3201
+3202 Pelican Row,,Miami,FL,33139,NO,Demo Tenant,6/1/2026,5/31/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,,,Mangrove Point Residence,house,,4,,NO,NO,FL-TAX-3202,12-345-678-000-3202
+3203 Biscayne Drive,,Miami,FL,33139,NO,Demo Tenant,4/15/2026,4/14/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,Demo Cotenant 2,demo+cotenant2@docustay.demo,Ocean Terrace Home,house,,3,,NO,NO,FL-TAX-3203,12-345-678-000-3203
+3204 Brickell Boulevard,101,Miami,FL,33139,NO,Demo Tenant,3/1/2026,2/28/2027,,,,,Harborline Apartments,apartment,8,,101,NO,NO,FL-TAX-3204,12-345-678-000-3204
+3204 Brickell Boulevard,102,Miami,FL,33139,NO,,,,,,,,Harborline Apartments,apartment,8,,,NO,NO,FL-TAX-3204,12-345-678-000-3204
+3204 Brickell Boulevard,103,Miami,FL,33139,NO,Demo Tenant,7/1/2026,6/30/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,,,Harborline Apartments,apartment,8,,103,NO,NO,FL-TAX-3204,12-345-678-000-3204
+3204 Brickell Boulevard,104,Miami,FL,33139,NO,Demo Tenant,8/1/2026,7/31/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,,,Harborline Apartments,apartment,8,,104,NO,NO,FL-TAX-3204,12-345-678-000-3204
+3205 Silver Palm Street,A,Miami,FL,33139,NO,Demo Tenant,5/15/2026,5/14/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,,,Coconut Grove Duplex,duplex,2,,A,NO,NO,FL-TAX-3205,12-345-678-000-3205
+3205 Silver Palm Street,B,Miami,FL,33139,NO,Demo Tenant,5/15/2026,5/14/2027,Demo Cotenant 2,demo+cotenant2@docustay.demo,,,Coconut Grove Duplex,duplex,2,,B,NO,NO,FL-TAX-3205,12-345-678-000-3205
+3206 Galleon Trace,1,Miami,FL,33139,NO,,,,,,,,Key Largo Triplex,triplex,3,,,NO,NO,FL-TAX-3206,12-345-678-000-3206
+3206 Galleon Trace,2,Miami,FL,33139,NO,Demo Tenant,4/1/2026,3/31/2027,,,,,Key Largo Triplex,triplex,3,,2,NO,NO,FL-TAX-3206,12-345-678-000-3206
+3206 Galleon Trace,3,Miami,FL,33139,NO,Demo Tenant,4/1/2026,3/31/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,Demo Cotenant 2,demo+cotenant2@docustay.demo,Key Largo Triplex,triplex,3,,3,NO,NO,FL-TAX-3206,12-345-678-000-3206
+3207 Venetian Way,,Miami,FL,33139,NO,Demo Tenant,9/1/2026,8/31/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,Demo Cotenant 2,demo+cotenant2@docustay.demo,Islands Condominium,condo,,2,,NO,NO,FL-TAX-3207,12-345-678-000-3207
+3208 Sage Avenue,,Miami,FL,33139,NO,,,,,,,,South Point Townhomes,townhouse,,3,,NO,NO,FL-TAX-3208,12-345-678-000-3208
+3209 Atlantic Avenue,PH1,Miami,FL,33139,NO,Demo Tenant,10/1/2026,9/30/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,,,Seaside Tower,apartment,6,,PH1,NO,NO,FL-TAX-3209,12-345-678-000-3209
+3209 Atlantic Avenue,PH2,Miami,FL,33139,NO,,,,,,,,Seaside Tower,apartment,6,,,NO,NO,FL-TAX-3209,12-345-678-000-3209
+3210 Lighthouse Road,,Miami,FL,33139,NO,,,,,,,,North Bay Residence,house,,2,,NO,NO,FL-TAX-3210,12-345-678-000-3210
+3211 Sandpiper Lane,,Miami,FL,33139,NO,Demo Tenant,11/1/2026,10/31/2027,Demo Cotenant 1,demo+cotenant1@docustay.demo,,,Shoreline House,house,,3,,NO,NO,FL-TAX-3211,12-345-678-000-3211
