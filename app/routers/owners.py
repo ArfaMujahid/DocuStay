@@ -4612,8 +4612,162 @@ def owner_invite_tenant_by_property(
     )
     db.commit()
     return {"invitation_code": code, "status": "success", "message": "Tenant invitation created. Share the invite link with the tenant."}
+@router.post("/tenant-assignments/{assignment_id}/end")
+def owner_end_tenant_assignment(
+    assignment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner_onboarding_complete),
+):
+    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Owner profile not found")
 
+    ta = db.query(TenantAssignment).filter(TenantAssignment.id == assignment_id).first()
+    if not ta:
+        raise HTTPException(status_code=404, detail="Tenant assignment not found")
 
+    unit = db.query(Unit).filter(Unit.id == ta.unit_id).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+
+    prop = db.query(Property).filter(Property.id == unit.property_id, Property.deleted_at.is_(None)).first()
+    if not prop or prop.owner_profile_id != profile.id:
+        raise HTTPException(status_code=403, detail="You do not own this property")
+
+    if ta.end_date is not None and ta.end_date < date.today():
+        raise HTTPException(status_code=400, detail="Assignment already ended")
+
+    ta.end_date = date.today() - timedelta(days=1)
+
+    db.add(ta)
+
+    ip = request.client.host if request.client else None
+    ua = (request.headers.get("user-agent") or "").strip() or None
+
+    create_log(
+        db,
+        CATEGORY_STATUS_CHANGE,
+        "Tenant assignment ended",
+        f"Assignment {ta.id} ended by owner.",
+        property_id=prop.id,
+        actor_user_id=current_user.id,
+        actor_email=current_user.email,
+        ip_address=ip,
+        user_agent=ua,
+        meta={"tenant_assignment_id": ta.id},
+    )
+
+    create_ledger_event(
+        db,
+        ACTION_PROPERTY_UPDATED,
+        target_object_type="TenantAssignment",
+        target_object_id=ta.id,
+        property_id=prop.id,
+        unit_id=ta.unit_id,
+        actor_user_id=current_user.id,
+        meta={
+            "message": f"Tenant assignment {ta.id} ended.",
+            "tenant_assignment_id": ta.id,
+        },
+        ip_address=ip,
+        user_agent=ua,
+    )
+
+    db.commit()
+
+    return {"status": "success", "message": "Tenant assignment ended successfully"}
+
+@router.patch("/tenant-assignments/{assignment_id}/correct")
+def owner_correct_tenant_assignment(
+    assignment_id: int,
+    request: Request,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner_onboarding_complete),
+):
+    profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Owner profile not found")
+
+    ta = db.query(TenantAssignment).filter(TenantAssignment.id == assignment_id).first()
+    if not ta:
+        raise HTTPException(status_code=404, detail="Tenant assignment not found")
+
+    unit = db.query(Unit).filter(Unit.id == ta.unit_id).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+
+    prop = db.query(Property).filter(Property.id == unit.property_id, Property.deleted_at.is_(None)).first()
+    if not prop or prop.owner_profile_id != profile.id:
+        raise HTTPException(status_code=403, detail="You do not own this property")
+
+    old_values = {
+        "start_date": str(ta.start_date),
+        "end_date": str(ta.end_date) if ta.end_date else None,
+    }
+
+    # SAFE FIELD UPDATES ONLY
+    if "start_date" in data:
+        try:
+            ta.start_date = datetime.strptime(data["start_date"], "%Y-%m-%d").date()
+        except:
+            raise HTTPException(status_code=400, detail="Invalid start_date format")
+
+    if "end_date" in data:
+        try:
+            ta.end_date = datetime.strptime(data["end_date"], "%Y-%m-%d").date()
+        except:
+            raise HTTPException(status_code=400, detail="Invalid end_date format")
+
+    new_values = {
+        "start_date": str(ta.start_date),
+        "end_date": str(ta.end_date) if ta.end_date else None,
+    }
+
+    db.add(ta)
+
+    ip = request.client.host if request.client else None
+    ua = (request.headers.get("user-agent") or "").strip() or None
+
+    create_log(
+        db,
+        CATEGORY_STATUS_CHANGE,
+        "Tenant assignment corrected",
+        f"Assignment {ta.id} corrected.",
+        property_id=prop.id,
+        actor_user_id=current_user.id,
+        actor_email=current_user.email,
+        ip_address=ip,
+        user_agent=ua,
+        meta={
+            "tenant_assignment_id": ta.id,
+            "old_values": old_values,
+            "new_values": new_values,
+        },
+    )
+
+    create_ledger_event(
+        db,
+        ACTION_PROPERTY_UPDATED,
+        target_object_type="TenantAssignment",
+        target_object_id=ta.id,
+        property_id=prop.id,
+        unit_id=ta.unit_id,
+        actor_user_id=current_user.id,
+        meta={
+            "message": f"Tenant assignment {ta.id} corrected.",
+            "tenant_assignment_id": ta.id,
+            "old_values": old_values,
+            "new_values": new_values,
+        },
+        ip_address=ip,
+        user_agent=ua,
+    )
+
+    db.commit()
+
+    return {"status": "success", "message": "Tenant assignment corrected successfully"}
 @router.post("/units/{unit_id}/invite-tenant")
 def owner_invite_tenant(
     unit_id: int,

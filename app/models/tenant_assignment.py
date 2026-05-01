@@ -4,6 +4,12 @@ The public live page lists a tenant as the occupying leaseholder only when
 get_units_occupancy_sources resolves that unit to tenant_assignment (i.e. no
 checked-in guest stay, pending STAGED invite, or on-site manager resident takes
 priority). See app.services.occupancy.
+
+Historical integrity rule:
+- Do not delete tenant assignment records.
+- An assignment is considered ongoing when end_date is NULL.
+- Ending an assignment should set end_date, not remove the record.
+- Corrections should preserve audit history through the audit/event system.
 """
 from sqlalchemy import Column, Integer, Date, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
@@ -19,7 +25,7 @@ class TenantAssignment(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     invited_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=True)  # null = ongoing
+    end_date = Column(Date, nullable=True)  # null = ongoing; set to end assignment
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     unit = relationship("Unit", backref="tenant_assignments")
