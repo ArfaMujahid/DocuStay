@@ -7,7 +7,7 @@ import { Button } from './UI';
 /** Dispatch this event to refresh alerts immediately (e.g. after revoke, confirm occupancy). */
 export const DASHBOARD_ALERTS_REFRESH_EVENT = 'docustay-dashboard-alerts-refresh';
 
-const POLL_INTERVAL_MS = 25_000; // 25 seconds – realtime without hammering the API
+const POLL_INTERVAL_MS = 60_000; // 60 seconds – avoid excessive requests
 
 /** Ledger notification titles to hide in the notifications section. */
 const HIDDEN_LEDGER_TITLES = new Set([
@@ -107,85 +107,101 @@ export const DashboardAlertsPanel: React.FC<DashboardAlertsPanelProps> = ({
   const [tenantLeaseSubmitting, setTenantLeaseSubmitting] = useState<number | null>(null);
   const [occupancyError, setOccupancyError] = useState<string | null>(null);
   const inFlightRef = useRef(false);
+  const loadLedgerInFlightRef = useRef(false);
+  const loadAlertsInFlightRef = useRef(false);
 
   const loadLedger = useCallback(async (silent = false) => {
-    console.log("loadLedger fired", { silent });  
-    if (!role) return;
-    if (!silent) setLoading(true);
-    const fromTs = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    if (loadLedgerInFlightRef.current) return;
+    loadLedgerInFlightRef.current = true;
+
     try {
-      let list: OwnerAuditLogEntry[] = [];
-      if (role === 'owner') {
-        list = await dashboardApi.ownerLogs({ from_ts: fromTs });
-      } else if (role === 'property_manager') {
-        list = await dashboardApi.managerLogs({ from_ts: fromTs });
-      } else if (role === 'tenant') {
-        list = await dashboardApi.tenantLogs({ from_ts: fromTs });
-      } else if (role === 'guest') {
-        list = await dashboardApi.guestLogs({ from_ts: fromTs });
-      }
-      setLedgerEntries(list.slice(0, limit));
-      if (role === 'owner' || role === 'property_manager') {
-        try {
-          const dashAlerts = await dashboardApi.getAlerts({ limit: 50 });
-          const occ = dashAlerts.filter(
-            (a) =>
-              (a.alert_type === 'dms_48h' ||
-                a.alert_type === 'dms_urgent' ||
-                a.alert_type === 'dms_reminder') &&
-              typeof a.stay_id === 'number' &&
-              !a.read_at,
-          );
-          const byStay = new Map<number, DashboardAlertView>();
-          for (const a of occ.sort(
-            (x, y) => new Date(y.created_at).getTime() - new Date(x.created_at).getTime(),
-          )) {
-            const sid = a.stay_id as number;
-            if (!byStay.has(sid)) byStay.set(sid, a);
+      console.log("loadLedger fired", { silent });  
+      if (!role) return;
+      if (!silent) setLoading(true);
+      const fromTs = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      try {
+        let list: OwnerAuditLogEntry[] = [];
+        if (role === 'owner') {
+          list = await dashboardApi.ownerLogs({ from_ts: fromTs });
+        } else if (role === 'property_manager') {
+          list = await dashboardApi.managerLogs({ from_ts: fromTs });
+        } else if (role === 'tenant') {
+          list = await dashboardApi.tenantLogs({ from_ts: fromTs });
+        } else if (role === 'guest') {
+          list = await dashboardApi.guestLogs({ from_ts: fromTs });
+        }
+        setLedgerEntries(list.slice(0, limit));
+        if (role === 'owner' || role === 'property_manager') {
+          try {
+            const dashAlerts = await dashboardApi.getAlerts({ limit: 50 });
+            const occ = dashAlerts.filter(
+              (a) =>
+                (a.alert_type === 'dms_48h' ||
+                  a.alert_type === 'dms_urgent' ||
+                  a.alert_type === 'dms_reminder') &&
+                typeof a.stay_id === 'number' &&
+                !a.read_at,
+            );
+            const byStay = new Map<number, DashboardAlertView>();
+            for (const a of occ.sort(
+              (x, y) => new Date(y.created_at).getTime() - new Date(x.created_at).getTime(),
+            )) {
+              const sid = a.stay_id as number;
+              if (!byStay.has(sid)) byStay.set(sid, a);
+            }
+            setOccupancyActionAlerts(Array.from(byStay.values()));
+            const taLease = dashAlerts.filter(
+              (a) =>
+                (a.alert_type === 'tenant_lease_48h' || a.alert_type === 'tenant_lease_urgent') && !a.read_at,
+            );
+            const byTa = new Map<number, DashboardAlertView>();
+            for (const a of taLease.sort(
+              (x, y) => new Date(y.created_at).getTime() - new Date(x.created_at).getTime(),
+            )) {
+              const tid =
+                typeof a.meta?.tenant_assignment_id === 'number'
+                  ? (a.meta.tenant_assignment_id as number)
+                  : a.id;
+              if (!byTa.has(tid)) byTa.set(tid, a);
+            }
+            setTenantLeaseActionAlerts(Array.from(byTa.values()));
+          } catch {
+            setOccupancyActionAlerts([]);
+            setTenantLeaseActionAlerts([]);
           }
-          setOccupancyActionAlerts(Array.from(byStay.values()));
-          const taLease = dashAlerts.filter(
-            (a) =>
-              (a.alert_type === 'tenant_lease_48h' || a.alert_type === 'tenant_lease_urgent') && !a.read_at,
-          );
-          const byTa = new Map<number, DashboardAlertView>();
-          for (const a of taLease.sort(
-            (x, y) => new Date(y.created_at).getTime() - new Date(x.created_at).getTime(),
-          )) {
-            const tid =
-              typeof a.meta?.tenant_assignment_id === 'number'
-                ? (a.meta.tenant_assignment_id as number)
-                : a.id;
-            if (!byTa.has(tid)) byTa.set(tid, a);
-          }
-          setTenantLeaseActionAlerts(Array.from(byTa.values()));
-        } catch {
+        } else {
           setOccupancyActionAlerts([]);
           setTenantLeaseActionAlerts([]);
         }
-      } else {
+      } catch {
+        if (!silent) setLedgerEntries([]);
         setOccupancyActionAlerts([]);
         setTenantLeaseActionAlerts([]);
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      if (!silent) setLedgerEntries([]);
-      setOccupancyActionAlerts([]);
-      setTenantLeaseActionAlerts([]);
     } finally {
-      setLoading(false);
+      loadLedgerInFlightRef.current = false;
     }
   }, [role, limit]);
 
   const loadAlerts = useCallback(async (silent = false) => {
-    if (role) return;
-    if (!silent) setLoading(true);
+    if (loadAlertsInFlightRef.current) return;
+    loadAlertsInFlightRef.current = true;
+
     try {
-      const list = await dashboardApi.getAlerts({ limit, unread_only: unreadOnly });
-      setAlerts(list);
-    } catch {
-      if (!silent) setAlerts([]);
+      if (role) return;
+      if (!silent) setLoading(true);
+      try {
+        const list = await dashboardApi.getAlerts({ limit, unread_only: unreadOnly });
+        setAlerts(list);
+      } catch {
+        if (!silent) setAlerts([]);
+      } finally {
+        setLoading(false);
+      }
     } finally {
-      setLoading(false);
+      loadAlertsInFlightRef.current = false;
     }
   }, [limit, unreadOnly, role]);
 

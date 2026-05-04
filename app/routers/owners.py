@@ -8,7 +8,7 @@ from urllib.parse import unquote
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, EmailStr, field_validator
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.utils.client_calendar import effective_today_for_invite_start
@@ -353,17 +353,16 @@ def list_my_properties(
         ).all()
     if context_mode == "personal":
         props = [p for p in props if p.owner_occupied]
-    for p in props:
-        if not p.usat_token:
-            _ensure_property_usat_token(p, db)
-    db.commit()
+    # Backfill USAT tokens using indexed lookups per candidate (not full-table scan)
+    if not inactive:
+        for p in props:
+            if not p.usat_token:
+                _ensure_property_usat_token(p, db)
+        db.commit()
     if not props:
         return []
     prop_ids = [p.id for p in props]
     from collections import defaultdict
-
-    from app.services.privacy_lanes import filter_property_lane_invitations_for_owner
-    from app.services.property_invitation_summary import invitation_counts_dict
 
     all_prop_invitations = db.query(Invitation).filter(Invitation.property_id.in_(prop_ids)).all()
     invitations_by_property: dict[int, list[Invitation]] = defaultdict(list)
@@ -383,21 +382,239 @@ def list_my_properties(
     all_units = query_units_for_properties_ordered(db, prop_ids).all()
     for u in all_units:
         units_by_property_id.setdefault(u.property_id, []).append(u)
+    
+    # Pre-load all occupancy-related data to eliminate per-unit queries
+    all_unit_ids = [u.id for u in all_units]
+    
+    today = date.today()
+    # Pre-load active TenantAssignments for all units
+    active_tenant_assignments = db.query(TenantAssignment).filter(
+        TenantAssignment.unit_id.in_(all_unit_ids),
+        TenantAssignment.start_date.isnot(None),
+        TenantAssignment.start_date <= today,
+        or_(
+            TenantAssignment.end_date.is_(None),
+            TenantAssignment.end_date >= today,
+        ),
+    ).all()
+    unit_has_active_tenant = {ta.unit_id for ta in active_tenant_assignments}
+    
+    # Pre-load ResidentModes for all units (manager personal mode)
+    resident_modes = db.query(ResidentMode).filter(
+        ResidentMode.unit_id.in_(all_unit_ids),
+        ResidentMode.mode == ResidentModeType.manager_personal,
+    ).all()
+    unit_has_resident_mode = {rm.unit_id for rm in resident_modes}
+    
+    # Pre-load checked-in Stays for all units
+    checked_in_stays = db.query(Stay).filter(
+        Stay.unit_id.in_(all_unit_ids),
+        Stay.checked_in_at.isnot(None),
+        Stay.checked_out_at.is_(None),
+        Stay.cancelled_at.is_(None),
+    ).all()
+    unit_has_checked_in_stay = {s.unit_id for s in checked_in_stays}
+    
+    # BATCH-LOAD INVITATION PROCESSING DATA TO ELIMINATE PER-INVITATION QUERIES
+    # Collect all inviter IDs and emails needed for filtering logic
+    inviter_ids = set()
+    inv_emails = set()
+    for inv in all_prop_invitations:
+        if getattr(inv, "invited_by_user_id", None):
+            inviter_ids.add(inv.invited_by_user_id)
+        email = (getattr(inv, "guest_email", None) or "").strip().lower()
+        if email and "@" in email:
+            inv_emails.add(email)
+    
+    # Pre-load all relevant Users (inviters + guest emails for tenant lease lookups)
+    user_map = {}
+    if inviter_ids or inv_emails:
+        users_query = db.query(User).filter(
+            or_(
+                User.id.in_(inviter_ids) if inviter_ids else False,
+                func.lower(func.trim(User.email)).in_(inv_emails) if inv_emails else False,
+            )
+        ).all()
+        for u in users_query:
+            user_map[u.id] = u
+            if u.email:
+                user_map[u.email.strip().lower()] = u
+    
+    # Pre-load PropertyManagerAssignments for all properties
+    manager_assignments = db.query(PropertyManagerAssignment).filter(
+        PropertyManagerAssignment.property_id.in_(prop_ids)
+    ).all()
+    manager_assignment_map = defaultdict(list)
+    for ma in manager_assignments:
+        manager_assignment_map[ma.property_id].append(ma.user_id)
+    
+    # Pre-load TenantAssignments for invitations (for tenant-lease-kind invitations)
+    all_tenant_assignment_ids = set()
+    for inv in all_prop_invitations:
+        if getattr(inv, "unit_id", None):
+            all_tenant_assignment_ids.add((inv.unit_id, getattr(inv, "guest_email", None)))
+    
+    tenant_assignments_by_unit = defaultdict(list)
+    if all_tenant_assignment_ids:
+        ta_list = db.query(TenantAssignment).filter(
+            TenantAssignment.unit_id.in_([uid for uid, _ in all_tenant_assignment_ids])
+        ).all()
+        for ta in ta_list:
+            tenant_assignments_by_unit[ta.unit_id].append(ta)
+    
+    # Pre-load Stays with dead-mans-switch triggered (for occupancy_status "unknown" checks)
+    stays_dms_triggered = db.query(Stay).filter(
+        Stay.property_id.in_(prop_ids),
+        Stay.dead_mans_switch_triggered_at.isnot(None),
+        Stay.checked_out_at.is_(None),
+        Stay.cancelled_at.is_(None),
+        Stay.occupancy_confirmation_response.is_(None),
+    ).all()
+    property_has_dms_triggered = {s.property_id for s in stays_dms_triggered}
+    
+    # Pre-compute invitation lifecycle states (PENDING_STAGED, PENDING_INVITED, ACCEPTED, ACTIVE, CANCELLED, EXPIRED)
+    from app.services.invitation_kinds import is_property_invited_tenant_signup_kind
+    
+    inv_lifecycle_map = {}
+    for inv in all_prop_invitations:
+        inv_id = inv.id
+        # Determine lifecycle without database queries using pre-loaded data
+        if is_property_invited_tenant_signup_kind(getattr(inv, "invitation_kind", None)) and getattr(inv, "unit_id", None):
+            # Tenant lease: check TenantAssignment status
+            unit_tas = tenant_assignments_by_unit.get(inv.unit_id, [])
+            inv_email = (getattr(inv, "guest_email", None) or "").strip().lower()
+            matching_ta = None
+            for ta in unit_tas:
+                if inv_email and ta.guest_email and inv_email == ta.guest_email.strip().lower():
+                    matching_ta = ta
+                    break
+            if not matching_ta and unit_tas:
+                matching_ta = unit_tas[0]
+            
+            if matching_ta:
+                from app.services.tenant_lease_window import resolve_tenant_lease_assignment_status
+                status = resolve_tenant_lease_assignment_status(matching_ta, inv, today=today)
+                if status == "active":
+                    inv_lifecycle_map[inv_id] = "ACTIVE"
+                elif status == "accepted":
+                    inv_lifecycle_map[inv_id] = "ACCEPTED"
+                elif status == "expired":
+                    inv_lifecycle_map[inv_id] = "EXPIRED"
+                elif status == "pending":
+                    inv_lifecycle_map[inv_id] = "PENDING_INVITED"
+                else:
+                    inv_lifecycle_map[inv_id] = "PENDING_STAGED"
+            else:
+                # Fall back to unified lifecycle
+                raw = (getattr(inv, "status", None) or "").strip().lower()
+                tok = (getattr(inv, "token_state", None) or "").strip().upper()
+                if tok in ("REVOKED", "CANCELLED") or raw == "cancelled":
+                    inv_lifecycle_map[inv_id] = "CANCELLED"
+                elif tok == "EXPIRED" or raw == "expired":
+                    inv_lifecycle_map[inv_id] = "EXPIRED"
+                elif raw == "accepted" or tok == "BURNED":
+                    inv_lifecycle_map[inv_id] = "ACCEPTED"
+                else:
+                    inv_lifecycle_map[inv_id] = "PENDING_INVITED" if getattr(inv, "invited_by_user_id") else "PENDING_STAGED"
+        else:
+            # Non-tenant-lease: use unified lifecycle (without CSV bulk check to save queries)
+            raw = (getattr(inv, "status", None) or "").strip().lower()
+            tok = (getattr(inv, "token_state", None) or "").strip().upper()
+            if tok in ("REVOKED", "CANCELLED") or raw == "cancelled":
+                inv_lifecycle_map[inv_id] = "CANCELLED"
+            elif tok == "EXPIRED" or raw == "expired":
+                inv_lifecycle_map[inv_id] = "EXPIRED"
+            elif raw == "accepted" or tok == "BURNED":
+                inv_lifecycle_map[inv_id] = "ACCEPTED"
+            else:
+                inv_lifecycle_map[inv_id] = "PENDING_INVITED" if getattr(inv, "invited_by_user_id") else "PENDING_STAGED"
+    
     out = []
     for p in props:
         data = PropertyResponse.model_validate(p).model_dump()
         units = units_by_property_id.get(p.id, [])
         data["unit_count"] = unit_count_map.get(p.id) or (len(units) if units else 1)
-        # Use effective occupancy for display (includes tenant assignments + on-site manager resident).
-        data["occupancy_status"] = get_property_display_occupancy_status(db, p, units)
-        occupied_units = count_effectively_occupied_units(db, units) if units else (1 if (data["occupancy_status"] or "").lower() == OccupancyStatus.occupied.value else 0)
+        # Compute occupancy directly from pre-loaded data instead of making per-unit queries
+        occupied_count = 0
+        for u in units:
+            # Check stored status first (source of truth for primary residence)
+            if (u.occupancy_status or "").lower() == OccupancyStatus.occupied.value:
+                occupied_count += 1
+            # Otherwise check if effectively occupied (tenant lease, resident mode, checked-in stay)
+            elif (u.id in unit_has_active_tenant or 
+                  u.id in unit_has_resident_mode or 
+                  u.id in unit_has_checked_in_stay):
+                occupied_count += 1
+        # Determine property-level occupancy status
+        if occupied_count > 0:
+            data["occupancy_status"] = OccupancyStatus.occupied.value
+        else:
+            # Use pre-computed occupancy_status instead of calling normalize_occupancy_status_for_display (eliminates per-property query)
+            prop_occupancy = (p.occupancy_status or "").strip().lower()
+            if not prop_occupancy:
+                data["occupancy_status"] = "vacant"
+            elif prop_occupancy == OccupancyStatus.unknown.value:
+                # Only show "unknown" if there's a legitimate unanswered status confirmation (use pre-loaded data)
+                if p.id in property_has_dms_triggered:
+                    data["occupancy_status"] = OccupancyStatus.unknown.value
+                else:
+                    data["occupancy_status"] = "vacant"
+            else:
+                data["occupancy_status"] = prop_occupancy
+        
         total_units = int(data["unit_count"] or 1)
-        data["occupied_unit_count"] = occupied_units
-        data["vacant_unit_count"] = max(0, total_units - occupied_units)
-        lane_invs = filter_property_lane_invitations_for_owner(
-            db, invitations_by_property.get(p.id, []), current_user.id
-        )
-        data.update(invitation_counts_dict(lane_invs, db))
+        data["occupied_unit_count"] = occupied_count
+        data["vacant_unit_count"] = max(0, total_units - occupied_count)
+        
+        # FILTER AND COUNT INVITATIONS USING PRE-LOADED DATA (eliminates per-property, per-invitation queries)
+        prop_invitations = invitations_by_property.get(p.id, [])
+        lane_invs = []
+        for inv in prop_invitations:
+            # is_property_lane_for_owner logic inlined using pre-loaded data (no database queries)
+            inviter_id = getattr(inv, "invited_by_user_id", None)
+            
+            # Check if tenant-lane (inviter is a tenant)
+            if inviter_id:
+                inviter = user_map.get(inviter_id)
+                if inviter and inviter.role == UserRole.tenant:
+                    continue  # Skip tenant-lane invitations
+            
+            # Owner sees: invitations they created, or their assigned managers created
+            if inviter_id == current_user.id:
+                lane_invs.append(inv)
+            elif inviter_id is None:
+                if inv.owner_id == current_user.id:
+                    lane_invs.append(inv)
+            elif inviter_id:
+                inviter = user_map.get(inviter_id)
+                if inviter and inviter.role == UserRole.property_manager:
+                    if inviter_id in manager_assignment_map.get(p.id, []):
+                        lane_invs.append(inv)
+                elif inviter and inviter.role == UserRole.owner:
+                    if inv.owner_id == current_user.id:
+                        lane_invs.append(inv)
+        
+        # Count invitations using pre-computed lifecycle (eliminates per-invitation queries)
+        pending_count = 0
+        accepted_count = 0
+        active_count = 0
+        cancelled_count = 0
+        for inv in lane_invs:
+            lc = inv_lifecycle_map.get(inv.id, "PENDING_STAGED")
+            if lc in ("PENDING_STAGED", "PENDING_INVITED"):
+                pending_count += 1
+            elif lc == "ACCEPTED":
+                accepted_count += 1
+            elif lc == "ACTIVE":
+                active_count += 1
+            else:  # CANCELLED, EXPIRED
+                cancelled_count += 1
+        
+        data["invitation_pending_count"] = pending_count
+        data["invitation_accepted_count"] = accepted_count
+        data["invitation_active_count"] = active_count
+        data["invitation_cancelled_count"] = cancelled_count
+        
         out.append(PropertyResponse(**data))
     return out
 
