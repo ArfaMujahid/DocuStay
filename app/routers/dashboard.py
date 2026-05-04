@@ -1027,16 +1027,40 @@ def _invitations_to_owner_views(
     from app.services.state_resolver import resolve_invitation_display_status, resolve_tenant_state
     threshold = get_invitation_expire_cutoff_fn()
     out = []
+    
+    # Pre-load dictionaries to eliminate N+1 queries in loop
+    property_ids = list(set(inv.property_id for inv in invs))
+    property_map = {p.id: p for p in db.query(Property).filter(Property.id.in_(property_ids)).all()} if property_ids else {}
+    
+    # Pre-load AgreementSignatures for all invitations
+    invitation_codes = list(set(inv.invitation_code for inv in invs))
+    dropbox_map = {
+        as_row.invitation_code: as_row 
+        for as_row in db.query(AgreementSignature).filter(
+            AgreementSignature.invitation_code.in_(invitation_codes),
+            AgreementSignature.dropbox_sign_request_id.isnot(None),
+            AgreementSignature.signed_pdf_bytes.is_(None)
+        ).all()
+    } if invitation_codes else {}
+    
+    # Pre-load TenantAssignments for matching_assignment logic
+    unit_ids = list(set(inv.unit_id for inv in invs if inv.unit_id))
+    tenant_assignments = db.query(TenantAssignment).filter(TenantAssignment.unit_id.in_(unit_ids)).all() if unit_ids else []
+    asg_map = {}
+    for ta in tenant_assignments:
+        key = (ta.unit_id, ta.start_date, ta.end_date)
+        asg_map[key] = ta
+    
+    # Pre-load Stays for invitations
+    invitation_ids = list(set(inv.id for inv in invs))
+    stay_map = {s.invitation_id: s for s in db.query(Stay).filter(Stay.invitation_id.in_(invitation_ids)).all()} if invitation_ids else {}
+    
     for inv in invs:
-        prop = db.query(Property).filter(Property.id == inv.property_id).first()
+        prop = property_map.get(inv.property_id)
         property_name = (prop.name if prop else None) or (f"{prop.city}, {prop.state}" if prop else None) or "Property"
         
         # Bug #5b: Do not mark as expired if there's a pending Dropbox Sign request
-        has_pending_dropbox = db.query(AgreementSignature).filter(
-            AgreementSignature.invitation_code == inv.invitation_code,
-            AgreementSignature.dropbox_sign_request_id.isnot(None),
-            AgreementSignature.signed_pdf_bytes.is_(None)
-        ).first() is not None
+        has_pending_dropbox = inv.invitation_code in dropbox_map
 
         is_expired = (
             inv.status == "expired"
@@ -1057,15 +1081,8 @@ def _invitations_to_owner_views(
             # expired  -> lease window ended (or invite revoked/cancelled/expired)
             matching_assignment = None
             if inv.unit_id is not None and inv.stay_start_date is not None:
-                asg_q = db.query(TenantAssignment).filter(
-                    TenantAssignment.unit_id == inv.unit_id,
-                    TenantAssignment.start_date == inv.stay_start_date,
-                )
-                if inv.stay_end_date is None:
-                    asg_q = asg_q.filter(TenantAssignment.end_date.is_(None))
-                else:
-                    asg_q = asg_q.filter(TenantAssignment.end_date == inv.stay_end_date)
-                matching_assignment = asg_q.first()
+                key = (inv.unit_id, inv.stay_start_date, inv.stay_end_date)
+                matching_assignment = asg_map.get(key)
             resolved_tenant = resolve_tenant_state(
                 db,
                 tenant_assignment=matching_assignment,
@@ -1080,7 +1097,7 @@ def _invitations_to_owner_views(
                 assignment_status = resolved_tenant.assignment_status
                 display_status = assignment_status if assignment_status in ("pending", "accepted", "active", "expired") else "pending"
         else:
-            has_stay = db.query(Stay).filter(Stay.invitation_id == inv.id).first() is not None
+            has_stay = inv.id in stay_map
             display_status = resolve_invitation_display_status(
                 inv,
                 force_expired=is_expired,
