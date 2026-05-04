@@ -189,53 +189,73 @@ const OwnerDashboard: React.FC<{ user: UserSession; navigate: (v: string) => voi
     loadData();
   };
 
-  const loadData = () => {
-    setLoadingWrapper(true);
-    setError(null);
-    // allSettled: one failed request (e.g. 503 under pool pressure) must not wipe the whole dashboard or
-    // fire a global error when other calls already returned 200 — Promise.all did that.
-    Promise.allSettled([
-      dashboardApi.ownerStays(),
-      dashboardApi.ownerInvitations(),
-      propertiesApi.list(),
-      propertiesApi.listInactive(),
-      dashboardApi.ownerPersonalModeUnits().catch(() => ({ unit_ids: [] })),
-      dashboardApi.ownerTenants().catch(() => [] as OwnerTenantView[]),
-    ]).then((results) => {
+  const loadDataInFlightRef = useRef(false);
+
+const loadData = () => {
+  if (loadDataInFlightRef.current) return;
+  loadDataInFlightRef.current = true;
+
+  setLoadingWrapper(true);
+  setError(null);
+
+  // FIRST: load critical UI data fast
+  Promise.allSettled([
+    dashboardApi.ownerStays(),
+    propertiesApi.list(),
+  ])
+    .then((results) => {
       const r0 = results[0];
       const r1 = results[1];
-      const r2 = results[2];
-      const r3 = results[3];
-      const r4 = results[4];
-      const r5 = results[5];
+
       setStays(r0.status === 'fulfilled' ? r0.value : []);
-      setInvitations(r1.status === 'fulfilled' ? r1.value : []);
-      setProperties(r2.status === 'fulfilled' ? r2.value : []);
-      setInactiveProperties(r3.status === 'fulfilled' ? r3.value : []);
-      setPersonalModeUnits(
-        r4.status === 'fulfilled' ? ((r4.value as { unit_ids: number[] })?.unit_ids ?? []) : [],
-      );
-      setTenants(r5.status === 'fulfilled' ? (r5.value as OwnerTenantView[]) : []);
+      setProperties(r1.status === 'fulfilled' ? r1.value : []);
 
       const staysFailed = r0.status === 'rejected';
-      const listFailed = r2.status === 'rejected';
-      if (staysFailed && listFailed) {
+      const propsFailed = r1.status === 'rejected';
+
+      if (staysFailed && propsFailed) {
         const msg =
           (r0.reason instanceof Error ? r0.reason.message : null) ||
-          (r2.reason instanceof Error ? r2.reason.message : null) ||
+          (r1.reason instanceof Error ? r1.reason.message : null) ||
           'Failed to load dashboard.';
         setError(msg);
         notify('error', msg);
       } else {
         setError(null);
       }
-    }).finally(() => setLoadingWrapper(false));
-  };
+    })
+    .finally(() => {
+      setLoadingWrapper(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+      // SECOND: load secondary data in background
+      Promise.allSettled([
+        dashboardApi.ownerInvitations(),
+        propertiesApi.listInactive(),
+        dashboardApi.ownerPersonalModeUnits().catch(() => ({ unit_ids: [] })),
+        dashboardApi.ownerTenants().catch(() => [] as OwnerTenantView[]),
+      ]).then((results) => {
+        const r1 = results[0];
+        const r3 = results[1];
+        const r4 = results[2];
+        const r5 = results[3];
 
+        setInvitations(r1.status === 'fulfilled' ? r1.value : []);
+        setInactiveProperties(r3.status === 'fulfilled' ? r3.value : []);
+        setPersonalModeUnits(
+          r4.status === 'fulfilled'
+            ? ((r4.value as { unit_ids: number[] })?.unit_ids ?? [])
+            : [],
+        );
+        setTenants(r5.status === 'fulfilled' ? (r5.value as OwnerTenantView[]) : []);
+
+        loadDataInFlightRef.current = false;
+      });
+    });
+};
+
+useEffect(() => {
+  loadData();
+}, []);
   useEffect(() => {
     if (user.user_type !== 'PROPERTY_OWNER' || !user.identity_verified || !user.poa_linked) return;
     let token: string | null = null;

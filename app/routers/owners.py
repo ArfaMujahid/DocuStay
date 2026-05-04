@@ -4616,6 +4616,7 @@ def owner_invite_tenant_by_property(
 def owner_end_tenant_assignment(
     assignment_id: int,
     request: Request,
+    data: dict | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_owner_onboarding_complete),
 ):
@@ -4635,10 +4636,35 @@ def owner_end_tenant_assignment(
     if not prop or prop.owner_profile_id != profile.id:
         raise HTTPException(status_code=403, detail="You do not own this property")
 
+    old_values = {
+        "start_date": ta.start_date.isoformat() if ta.start_date else None,
+        "end_date": ta.end_date.isoformat() if ta.end_date else None,
+    }
+
+    payload = data or {}
+    raw_end_date = payload.get("end_date")
+    reason = (payload.get("reason") or "").strip() or None
+
+    if raw_end_date:
+        try:
+            selected_end_date = date.fromisoformat(str(raw_end_date))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD.")
+    else:
+        selected_end_date = date.today() - timedelta(days=1)
+
     if ta.end_date is not None and ta.end_date < date.today():
         raise HTTPException(status_code=400, detail="Assignment already ended")
 
-    ta.end_date = date.today() - timedelta(days=1)
+    if selected_end_date < ta.start_date:
+        raise HTTPException(status_code=400, detail="End date cannot be before assignment start date")
+
+    ta.end_date = selected_end_date
+
+    new_values = {
+        "start_date": ta.start_date.isoformat() if ta.start_date else None,
+        "end_date": ta.end_date.isoformat() if ta.end_date else None,
+    }
 
     db.add(ta)
 
@@ -4655,7 +4681,12 @@ def owner_end_tenant_assignment(
         actor_email=current_user.email,
         ip_address=ip,
         user_agent=ua,
-        meta={"tenant_assignment_id": ta.id},
+        meta={
+            "tenant_assignment_id": ta.id,
+            "old_values": old_values,
+            "new_values": new_values,
+            "reason": reason,
+        },
     )
 
     create_ledger_event(
@@ -4669,6 +4700,9 @@ def owner_end_tenant_assignment(
         meta={
             "message": f"Tenant assignment {ta.id} ended.",
             "tenant_assignment_id": ta.id,
+            "old_values": old_values,
+            "new_values": new_values,
+            "reason": reason,
         },
         ip_address=ip,
         user_agent=ua,

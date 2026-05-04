@@ -2005,6 +2005,18 @@ export const propertiesApi = {
       method: "POST",
       body: JSON.stringify({ email: data.email.trim().toLowerCase(), tenant_name: data.tenant_name.trim() }),
     }),
+    
+    endTenantAssignment: (
+  assignmentId: number,
+  data?: { end_date?: string; reason?: string | null }
+) =>
+  request<{ status: string; message?: string }>(
+    `/owners/tenant-assignments/${assignmentId}/end`,
+    {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }
+  ),
   /** Pending invite; tenant accepts while logged in. Updates the same assignment (no extra DB column). */
   createTenantLeaseExtension: (
     tenantAssignmentId: number,

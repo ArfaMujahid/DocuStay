@@ -307,6 +307,11 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
     unit_label: string;
     occupancy_status?: string;
   } | null>(null);
+  const [endAssignmentModalOpen, setEndAssignmentModalOpen] = useState(false);
+  const [endAssignmentTenantId, setEndAssignmentTenantId] = useState<number | ''>('');
+  const [endAssignmentDate, setEndAssignmentDate] = useState('');
+  const [endAssignmentReason, setEndAssignmentReason] = useState('');
+  const [endAssignmentSaving, setEndAssignmentSaving] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -448,6 +453,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
     const fromPool = occupantNamesFromTenantPool(pool);
     return {
       tenant,
+      tenantRows: pool,
       displayStay,
       unitStays,
       inviteCode,
@@ -482,7 +488,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
     setError(null);
     Promise.all([
       propertiesApi.get(id),
-      dashboardApi.ownerStays(),
+      dashboardApi.ownerStays().catch(() => [] as OwnerStayView[]),
       dashboardApi.ownerTenants().catch(() => [] as OwnerTenantView[]),
       dashboardApi.ownerPersonalModeUnits().catch(() => ({ unit_ids: [] })),
     ])
@@ -593,7 +599,7 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
   /** Former owner loses access when transfer is accepted; poll so we leave this page without a manual refresh. */
   useEffect(() => {
     if (!id || Number.isNaN(id)) return;
-    const intervalMs = 20000;
+    const intervalMs = 60000;
     const handle = window.setInterval(() => {
       propertiesApi.get(id).catch((e) => {
         const raw = String((e as Error)?.message ?? "").toLowerCase();
@@ -1414,54 +1420,226 @@ export const PropertyDetail: React.FC<{ propertyId: string; user: UserSession; n
                             </span>
                           )}
                           {contextMode === 'business' && (
-                            <Button
-                              variant="primary"
-                              type="button"
-                              onClick={() => {
-                                if (!canInvite) {
-                                  notify('error', 'Billing setup is still in progress. Open Billing to finish subscription setup, or try again shortly.');
-                                  navigate('dashboard/billing');
-                                  return;
-                                }
-                                const tid = unitDetailModal.id >= 0 ? unitDetailModal.id : 0;
-                                const leasePair = leaseDatesForUnitInviteFromDetail(unitDetailDerived);
-                                setUnitDetailModal(null);
-                                setInviteTenantUnitId(tid);
-                                setInviteTenantMode('single');
-                                setInviteCohortRows(emptyPropertyInviteCohortRows());
-                                setInviteFirstCohortSharedLease(false);
-                                setInviteTenantLink(null);
-                                setInviteTenantBatchLinks(null);
-                                setInviteTenantFormError(null);
-                                if (leasePair) {
-                                  setInviteTenantForm({
-                                    tenant_name: '',
-                                    tenant_email: '',
-                                    lease_start_date: leasePair.start,
-                                    lease_end_date: leasePair.end,
-                                    shared_lease: true,
-                                  });
-                                  setInviteTenantFromUnitCard(true);
-                                } else {
-                                  setInviteTenantForm({
-                                    tenant_name: '',
-                                    tenant_email: '',
-                                    lease_start_date: '',
-                                    lease_end_date: '',
-                                    shared_lease: false,
-                                  });
-                                  setInviteTenantFromUnitCard(false);
-                                }
-                                setShowInviteTenantModal(true);
-                              }}
-                            >
-                              Send invite
-                            </Button>
+                            <>
+                              <Button
+                                variant="primary"
+                                type="button"
+                                onClick={() => {
+                                  if (!canInvite) {
+                                    notify('error', 'Billing setup is still in progress. Open Billing to finish subscription setup, or try again shortly.');
+                                    navigate('dashboard/billing');
+                                    return;
+                                  }
+                                  const tid = unitDetailModal.id >= 0 ? unitDetailModal.id : 0;
+                                  const leasePair = leaseDatesForUnitInviteFromDetail(unitDetailDerived);
+                                  setUnitDetailModal(null);
+                                  setInviteTenantUnitId(tid);
+                                  setInviteTenantMode('single');
+                                  setInviteCohortRows(emptyPropertyInviteCohortRows());
+                                  setInviteFirstCohortSharedLease(false);
+                                  setInviteTenantLink(null);
+                                  setInviteTenantBatchLinks(null);
+                                  setInviteTenantFormError(null);
+                                  if (leasePair) {
+                                    setInviteTenantForm({
+                                      tenant_name: '',
+                                      tenant_email: '',
+                                      lease_start_date: leasePair.start,
+                                      lease_end_date: leasePair.end,
+                                      shared_lease: true,
+                                    });
+                                    setInviteTenantFromUnitCard(true);
+                                  } else {
+                                    setInviteTenantForm({
+                                      tenant_name: '',
+                                      tenant_email: '',
+                                      lease_start_date: '',
+                                      lease_end_date: '',
+                                      shared_lease: false,
+                                    });
+                                    setInviteTenantFromUnitCard(false);
+                                  }
+                                  setShowInviteTenantModal(true);
+                                }}
+                              >
+                                Send invite
+                              </Button>
+
+                              {unitDetailDerived?.tenantRows?.some((t) => ownerLeaseState(t) === 'active') && (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    type="button"
+                                    onClick={() => notify('success', 'Edit Assignment clicked')}
+                                  >
+                                    Edit Assignment
+                                  </Button>
+
+                                  <Button
+                                    variant="danger"
+                                    type="button"
+                                    onClick={() => {
+                                      const activeTenant = unitDetailDerived.tenantRows.find((t) => ownerLeaseState(t) === 'active');
+                                      setEndAssignmentTenantId(activeTenant?.id ?? '');
+                                      setEndAssignmentDate('');
+                                      setEndAssignmentReason('');
+                                      setEndAssignmentModalOpen(true);
+                                    }}
+                                  >
+                                    End Assignment
+                                  </Button>
+                                </>
+                              )}
+                            </>
                           )}
                         </div>
                       )}
                     </div>
                   )}
+                </Modal>
+
+                <Modal
+                  open={endAssignmentModalOpen}
+                  title="End Tenant Assignment"
+                  onClose={() => {
+                    if (!endAssignmentSaving) setEndAssignmentModalOpen(false);
+                  }}
+                  className="max-w-lg"
+                >
+                  <div className="px-6 py-5 space-y-4 text-sm text-slate-800">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Tenant assignment
+                      </label>
+                      <select
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        value={endAssignmentTenantId}
+                        onChange={(e) => setEndAssignmentTenantId(e.target.value ? Number(e.target.value) : '')}
+                      >
+                        <option value="">Select tenant</option>
+                        {(unitDetailDerived?.tenantRows || [])
+                          .filter((t) => ownerLeaseState(t) === 'active')
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.tenant_name || t.tenant_email || `Assignment ${t.id}`} — {t.start_date || '—'} to {t.end_date || 'ongoing'}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Effective end date
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        value={endAssignmentDate}
+                        onChange={(e) => setEndAssignmentDate(e.target.value)}
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        The assignment remains active through the selected end date. Use End Immediately to remove authority now.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Reason
+                      </label>
+                      <textarea
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        rows={3}
+                        value={endAssignmentReason}
+                        onChange={(e) => setEndAssignmentReason(e.target.value)}
+                        placeholder="Example: Tenant moved out, lease ended early, correction requested..."
+                      />
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <Button
+                        variant="outline"
+                        type="button"
+                        disabled={endAssignmentSaving}
+                        onClick={() => setEndAssignmentModalOpen(false)}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        type="button"
+                        disabled={endAssignmentSaving}
+                        onClick={async () => {
+                          if (!endAssignmentTenantId) {
+                            notify('error', 'Select which tenant assignment to end.');
+                            return;
+                          }
+
+                          const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+                          setEndAssignmentSaving(true);
+                          try {
+                            await propertiesApi.endTenantAssignment(Number(endAssignmentTenantId), {
+                              end_date: yesterday,
+                              reason: endAssignmentReason.trim() || null,
+                            });
+
+                            notify('success', 'Assignment ended immediately.');
+                            setEndAssignmentModalOpen(false);
+                            setUnitDetailModal(null);
+                            loadData();
+                            emitPropertiesChanged();
+                          } catch (e) {
+                            notify('error', (e as Error)?.message ?? 'Failed to end assignment.');
+                          } finally {
+                            setEndAssignmentSaving(false);
+                          }
+                        }}
+                        className="flex-1"
+                      >
+                        End Immediately
+                      </Button>
+
+                      <Button
+                        variant="danger"
+                        type="button"
+                        disabled={endAssignmentSaving}
+                        onClick={async () => {
+                          if (!endAssignmentTenantId) {
+                            notify('error', 'Select which tenant assignment to end.');
+                            return;
+                          }
+
+                          if (!endAssignmentDate) {
+                            notify('error', 'Select an effective end date.');
+                            return;
+                          }
+
+                          setEndAssignmentSaving(true);
+                          try {
+                            await propertiesApi.endTenantAssignment(Number(endAssignmentTenantId), {
+                              end_date: endAssignmentDate,
+                              reason: endAssignmentReason.trim() || null,
+                            });
+
+                            notify('success', 'Assignment ended on selected date.');
+                            setEndAssignmentModalOpen(false);
+                            setUnitDetailModal(null);
+                            loadData();
+                            emitPropertiesChanged();
+                          } catch (e) {
+                            notify('error', (e as Error)?.message ?? 'Failed to end assignment.');
+                          } finally {
+                            setEndAssignmentSaving(false);
+                          }
+                        }}
+                        className="flex-1"
+                      >
+                        End on Selected Date
+                      </Button>
+                    </div>
+                  </div>
                 </Modal>
 
                 {assignedManagers.length > 0 && (

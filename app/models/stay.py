@@ -50,3 +50,7 @@ class Stay(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships for eager loading
+    property_ref = relationship("Property", foreign_keys=[property_id])
+    invitation = relationship("Invitation", foreign_keys=[invitation_id])

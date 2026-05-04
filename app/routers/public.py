@@ -694,13 +694,26 @@ def get_live_property_page(
         agr_avail, agr_url = (False, None)
         if inv_kind == "guest":
             agr_avail, agr_url = _verify_signed_agreement_offer_for_invite_code(db, inv.invitation_code)
+            tenant_assignment_for_invite = None
+        inv_kind = (getattr(inv, "invitation_kind", None) or "guest").strip().lower()
+        if inv_kind != "guest":
+            tenant_email = (getattr(inv, "guest_email", None) or "").strip().lower()
+            tenant_assignment_for_invite = find_invitation_matching_tenant_assignment(
+                db,
+                inv,
+                 user_email_lower=tenant_email or None,
+        )
         invitations.append(
             LiveInvitationSummary(
                 invitation_code=inv.invitation_code,
                 guest_label=guest_label,
                 stay_start_date=inv.stay_start_date,
                 stay_end_date=inv.stay_end_date,
-                status=inv.status or "pending",
+                status=(
+    _lease_invite_resolved_label_for_tenant_assignment(db, tenant_assignment_for_invite, today)
+    if tenant_assignment_for_invite is not None
+    else (inv.status or "pending")
+),
                 token_state=getattr(inv, "token_state", None) or "STAGED",
                 signed_agreement_available=agr_avail,
                 signed_agreement_url=agr_url,

@@ -879,8 +879,12 @@ def owner_tenants(
             .order_by(TenantAssignment.created_at.desc())
             .all()
         )
+        # Pre-load users to eliminate N+1 queries
+        user_ids = list(set(ta.user_id for ta in assignments))
+        user_map = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
+        
         for ta in assignments:
-            tenant = db.query(User).filter(User.id == ta.user_id).first()
+            tenant = user_map.get(ta.user_id)
             unit = unit_map.get(ta.unit_id)
             prop = prop_map.get(unit.property_id) if unit else None
             today = date.today()
@@ -935,16 +939,20 @@ def owner_tenants(
         .order_by(Invitation.created_at.desc())
         .all()
     )
+    # Pre-load existing TenantAssignments by unit_id to eliminate N+1 queries
+    all_unit_ids = list(set(inv.unit_id for inv in tenant_invs if inv.unit_id))
+    existing_assignments_by_unit = {}
+    if all_unit_ids:
+        for ta in db.query(TenantAssignment).filter(TenantAssignment.unit_id.in_(all_unit_ids)).all():
+            if ta.unit_id not in existing_assignments_by_unit:
+                existing_assignments_by_unit[ta.unit_id] = ta
+    
     for inv in tenant_invs:
         if is_tenant_lease_extension_kind(getattr(inv, "invitation_kind", None)):
             continue
         if getattr(inv, "status", None) == "accepted":
             continue
-        has_assignment = (
-            db.query(TenantAssignment)
-            .filter(TenantAssignment.unit_id == inv.unit_id)
-            .first()
-        ) if inv.unit_id else None
+        has_assignment = existing_assignments_by_unit.get(inv.unit_id) if inv.unit_id else None
         if has_assignment and is_standard_tenant_invite_kind(getattr(inv, "invitation_kind", None)):
             continue
         unit = unit_map.get(inv.unit_id) if inv.unit_id else None
@@ -1369,9 +1377,16 @@ def owner_stays(
         return []
     owned_prop_ids = owner_profile_property_ids(db, current_user.id)
     # Load stays on owned properties (OwnerProfile), not Stay.owner_id — that column can lag after ownership transfer.
-    stays_by_owner = db.query(Stay).filter(Stay.property_id.in_(owned_prop_ids)).all() if owned_prop_ids else []
+    from sqlalchemy.orm import joinedload
+    stays_by_owner = db.query(Stay).options(
+        joinedload(Stay.property_ref),
+        joinedload(Stay.invitation)
+    ).filter(Stay.property_id.in_(owned_prop_ids)).all() if owned_prop_ids else []
     inv_ids = [r[0] for r in db.query(Invitation.id).filter(Invitation.owner_id == current_user.id).all()]
-    stays_by_inv = db.query(Stay).filter(Stay.invitation_id.in_(inv_ids)).all() if inv_ids else []
+    stays_by_inv = db.query(Stay).options(
+        joinedload(Stay.property_ref),
+        joinedload(Stay.invitation)
+    ).filter(Stay.invitation_id.in_(inv_ids)).all() if inv_ids else []
     seen_ids = {s.id for s in stays_by_owner}
     stays = list(stays_by_owner)
     for s in stays_by_inv:
@@ -1382,15 +1397,25 @@ def owner_stays(
     stays = filter_property_lane_stays_for_owner(db, stays, current_user.id)
     allowed_units = owner_personal_guest_scope_unit_ids(db, current_user.id)
     stays = [s for s in stays if stay_in_owner_personal_guest_scope(db, s, allowed_units)]
+    
+    # Pre-load dictionaries to eliminate N+1 queries in loop
+    property_ids = list(set(s.property_id for s in stays))
+    region_codes = list(set(s.region_code for s in stays))
+    invitation_ids = list(set(s.invitation_id for s in stays if s.invitation_id))
+    
+    property_map = {p.id: p for p in db.query(Property).filter(Property.id.in_(property_ids)).all()} if property_ids else {}
+    region_map = {r.region_code: r for r in db.query(RegionRule).filter(RegionRule.region_code.in_(region_codes)).all()} if region_codes else {}
+    invitation_map = {i.id: i for i in db.query(Invitation).filter(Invitation.id.in_(invitation_ids)).all()} if invitation_ids else {}
+    
     out = []
     for s in stays:
         show_guest_pii = viewer_is_relationship_owner_for_stay(db, s, current_user.id)
         guest_name = label_for_stay(db, s) if show_guest_pii else REDACTED_GUEST_AUTHORIZATION_LABEL
 
-        prop = db.query(Property).filter(Property.id == s.property_id).first()
+        prop = property_map.get(s.property_id)
         property_name = (prop.name if prop else None) or (f"{prop.city}, {prop.state}" if prop else None) or "Property"
 
-        rule = db.query(RegionRule).filter(RegionRule.region_code == s.region_code).first()
+        rule = region_map.get(s.region_code)
         jle = resolve_jurisdiction(
             db,
             JLEInput(
@@ -1513,10 +1538,15 @@ def owner_stays(
     invs_no_stay = filter_property_lane_invitations_for_owner(db, q.all(), current_user.id)
     invs_no_stay = [inv for inv in invs_no_stay if invitation_in_owner_personal_guest_scope(db, inv, allowed_units)]
     profile = db.query(OwnerProfile).filter(OwnerProfile.user_id == current_user.id).first()
+    
+    # Pre-load properties for invitations without stays
+    inv_no_stay_property_ids = list(set(inv.property_id for inv in invs_no_stay))
+    inv_property_map = {p.id: p for p in db.query(Property).filter(Property.id.in_(inv_no_stay_property_ids)).all()} if inv_no_stay_property_ids else {}
+    
     for inv in invs_no_stay:
         if (inv.property_id, inv.stay_start_date, inv.stay_end_date) in stay_key:
             continue
-        prop = db.query(Property).filter(Property.id == inv.property_id).first()
+        prop = inv_property_map.get(inv.property_id)
         if prop is None:
             continue
         if profile is None or prop.owner_profile_id != profile.id:

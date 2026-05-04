@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { dashboardApi, emitPropertiesChanged, type DashboardAlertView, type OwnerAuditLogEntry } from '../services/api';
 import { formatDateTimeLocal } from '../utils/dateUtils';
 import { scrubAuditLogStateChangeParagraph } from '../utils/auditLogMessage';
@@ -106,8 +106,10 @@ export const DashboardAlertsPanel: React.FC<DashboardAlertsPanelProps> = ({
   const [occupancySubmitting, setOccupancySubmitting] = useState<number | null>(null);
   const [tenantLeaseSubmitting, setTenantLeaseSubmitting] = useState<number | null>(null);
   const [occupancyError, setOccupancyError] = useState<string | null>(null);
+  const inFlightRef = useRef(false);
 
   const loadLedger = useCallback(async (silent = false) => {
+    console.log("loadLedger fired", { silent });  
     if (!role) return;
     if (!silent) setLoading(true);
     const fromTs = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -187,12 +189,19 @@ export const DashboardAlertsPanel: React.FC<DashboardAlertsPanelProps> = ({
     }
   }, [limit, unreadOnly, role]);
 
-  const load = useCallback(
+    const load = useCallback(
     async (silent = false) => {
-      if (role) {
-        await loadLedger(silent);
-      } else {
-        await loadAlerts(silent);
+      if (inFlightRef.current) return;
+
+      inFlightRef.current = true;
+      try {
+        if (role) {
+          await loadLedger(silent);
+        } else {
+          await loadAlerts(silent);
+        }
+      } finally {
+        inFlightRef.current = false;
       }
     },
     [role, loadLedger, loadAlerts]
