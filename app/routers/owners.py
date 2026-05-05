@@ -428,14 +428,19 @@ def list_my_properties(
     
     # Pre-load all relevant Users (inviters + guest emails for tenant lease lookups)
     user_map = {}
+
     if inviter_ids or inv_emails:
-        users_query = db.query(User).filter(
-            or_(
-                User.id.in_(inviter_ids) if inviter_ids else False,
-                func.lower(func.trim(User.email)).in_(inv_emails) if inv_emails else False,
-            )
-        ).all()
-        for u in users_query:
+        conditions = []
+
+        if inviter_ids:
+            conditions.append(User.id.in_(inviter_ids))
+
+        if inv_emails:
+             conditions.append(func.lower(func.trim(User.email)).in_(inv_emails))
+
+        users = db.query(User).filter(or_(*conditions)).all() if conditions else []
+
+        for u in users:
             user_map[u.id] = u
             if u.email:
                 user_map[u.email.strip().lower()] = u
@@ -485,7 +490,10 @@ def list_my_properties(
             inv_email = (getattr(inv, "guest_email", None) or "").strip().lower()
             matching_ta = None
             for ta in unit_tas:
-                if inv_email and ta.guest_email and inv_email == ta.guest_email.strip().lower():
+                tenant_user = user_map.get(getattr(ta, "tenant_id", None)) or user_map.get(getattr(ta, "user_id", None))
+                tenant_email = (getattr(tenant_user, "email", "") or "").strip().lower()
+
+                if inv_email and tenant_email and inv_email == tenant_email:
                     matching_ta = ta
                     break
             if not matching_ta and unit_tas:
@@ -615,6 +623,21 @@ def list_my_properties(
         data["invitation_active_count"] = active_count
         data["invitation_cancelled_count"] = cancelled_count
         
+        # Re-attach nested data required by OwnerDashboard.tsx
+        data["units"] = units_by_property_id.get(p.id, [])
+        data["invitations"] = invitations_by_property.get(p.id, [])
+
+        # Fix casing for frontend checks
+        if data.get("occupancy_status"):
+            data["occupancy_status"] = data["occupancy_status"].upper()
+
+        # Ensure Shield Mode is passed
+        data["shield_mode_active"] = data.get("occupancy_status") in [
+            "UNCONFIRMED",
+            "UNKNOWN",
+            "unconfirmed",
+            "unknown",
+        ]
         out.append(PropertyResponse(**data))
     return out
 

@@ -230,7 +230,7 @@ const loadData = () => {
       // SECOND: load secondary data in background
       Promise.allSettled([
         dashboardApi.ownerInvitations(),
-        propertiesApi.listInactive(),
+        propertiesApi.list(),
         dashboardApi.ownerPersonalModeUnits().catch(() => ({ unit_ids: [] })),
         dashboardApi.ownerTenants().catch(() => [] as OwnerTenantView[]),
       ]).then((results) => {
